@@ -472,7 +472,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2">
            <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex flex-col gap-1 border border-white/20"><div className="flex items-center gap-2 font-bold text-blue-100"><Building className="w-3 h-3"/> Perusahaan</div><div className="truncate">{user.perusahaan || '-'}</div></div>
-           <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex flex-col gap-1 border border-white/20"><div className="flex items-center gap-2 font-bold text-green-100"><Briefcase className="w-3 h-3"/> Status</div><div>{user.statusKaryawan || '-'}</div></div>
+           <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex flex-col gap-1 border border-white/20"><div className="flex items-center gap-2 font-bold text-green-100"><Briefcase className="w-3 h-3"/> Status Karyawan</div><div>{user.statusKaryawan || '-'}</div></div>
            <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border border-white/20"><CreditCard className="w-3 h-3 text-yellow-300"/> Payroll: {user.noPayroll || '-'}</div>
            <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border border-white/20"><PieChart className="w-3 h-3 text-pink-300"/> Sisa Cuti: {user.sisaCuti}</div>
         </div>
@@ -506,8 +506,8 @@ function Dashboard({ user, setUser, setView, masterData }) {
               </div>
               <h4 className="font-bold text-gray-800">{item.label}</h4>
               {!isAttendance ? 
-                <p className="text-[10px] text-gray-400">Ajukan {item.label}</p> : 
-                <p className="text-[10px] text-gray-400">Absen {item.label}</p>
+                <p className="text-[10px] text-gray-400">Ajukan Form {item.label}</p> : 
+                <p className="text-[10px] text-gray-400">Mulai {item.label}</p>
               }
             </button>
           )
@@ -589,7 +589,7 @@ function AdminPanel({ user, setView, masterData }) {
             <input required type="text" className="w-full p-2 border rounded" value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Nama Karyawan" />
             <input required type="text" className="w-full p-2 border rounded" value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="Username" />
             <input required type="text" className="w-full p-2 border rounded" value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Password" />
-            <div className="grid grid-cols-2 gap-2"><input type="text" className="w-full p-2 border rounded" value={userData.perusahaan} onChange={e => setUserData({...userData, perusahaan: e.target.value})} placeholder="Perusahaan (PT)" /><input type="text" className="w-full p-2 border rounded" value={userData.statusKaryawan} onChange={e => setUserData({...userData, statusKaryawan: e.target.value})} placeholder="Status Karyawan" /></div>
+            <div className="grid grid-cols-2 gap-2"><input type="text" className="w-full p-2 border rounded" value={userData.perusahaan} onChange={e => setUserData({...userData, perusahaan: e.target.value})} placeholder="Perusahaan (PT)" /><input type="text" className="w-full p-2 border rounded" value={userData.statusKaryawan} onChange={e => setUserData({...userData, statusKaryawan: e.target.value})} placeholder="Status-Karyawan" /></div>
             <div className="grid grid-cols-2 gap-2"><input type="text" className="w-full p-2 border rounded" value={userData.noPayroll} onChange={e => setUserData({...userData, noPayroll: e.target.value})} placeholder="No Payroll" /><input type="number" className="w-full p-2 border rounded" value={userData.sisaCuti} onChange={e => setUserData({...userData, sisaCuti: e.target.value})} placeholder="Sisa Cuti" /></div>
             <div className="grid grid-cols-2 gap-2"><div><label className="text-xs text-gray-500">Divisi</label><select className="w-full p-2 border rounded" value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>{masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}{masterData.divisions.length === 0 && <option>Staff</option>}</select></div><div><label className="text-xs text-gray-500">Role</label><select className="w-full p-2 border rounded" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>{masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}</select></div></div>
             <div className="border p-3 rounded-lg bg-gray-50"><label className="text-xs font-bold text-gray-700 block mb-2">Hak Akses Menu:</label><div className="grid grid-cols-2 gap-2">{masterData.menus.map(item => (<label key={item.value} className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={userData.akses.includes(item.value)} onChange={() => handleCheckboxChange(item.value)} className="w-4 h-4 text-blue-600 rounded" />{item.label}</label>))}</div></div>
