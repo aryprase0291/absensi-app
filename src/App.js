@@ -2,12 +2,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-// --- IMPORT DIPERBAIKI (Gunakan Kurung Kurawal { }) ---
 import Cropper from 'react-easy-crop';
-import { getCroppedImg } from './cropImageHelper'; // Perbaikan di sini
+import { getCroppedImg } from './cropImageHelper'; 
 
-// Import Icon lengkap
 import { 
   Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, 
   Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, 
@@ -34,10 +31,30 @@ export default function AppAbsensi() {
   const logoutTimerRef = useRef(null);
   const TIMEOUT_DURATION = 5 * 60 * 1000; 
 
+  // --- LOGIC PERSISTENT LOGIN (BARU) ---
+  useEffect(() => {
+    // Cek apakah ada data user tersimpan di localStorage saat aplikasi pertama kali dimuat
+    const storedUser = localStorage.getItem('app_user');
+    const storedMasterData = localStorage.getItem('app_master_data');
+    
+    if (storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      setUser(parsedUser);
+      if (storedMasterData) {
+        setMasterData(JSON.parse(storedMasterData));
+      }
+      setView('dashboard'); // Langsung ke dashboard jika ada sesi tersimpan
+    }
+  }, []);
+
   const handleLogout = useCallback(() => {
     setUser(null);
     setMasterData({ menus: [], roles: [], divisions: [] });
     setView('login');
+    // Hapus data sesi dari localStorage saat logout
+    localStorage.removeItem('app_user');
+    localStorage.removeItem('app_master_data');
+    
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
   }, []);
 
@@ -66,9 +83,16 @@ export default function AppAbsensi() {
     const menus = rawMasterData.filter(m => m.kategori === 'Menu');
     const roles = rawMasterData.filter(m => m.kategori === 'Role');
     const divisions = rawMasterData.filter(m => m.kategori === 'Divisi');
-    setMasterData({ menus, roles, divisions });
+    
+    const processedMasterData = { menus, roles, divisions };
+    
+    setMasterData(processedMasterData);
     setUser(userData);
     setView('dashboard');
+
+    // Simpan data ke localStorage agar tahan refresh
+    localStorage.setItem('app_user', JSON.stringify(userData));
+    localStorage.setItem('app_master_data', JSON.stringify(processedMasterData));
   };
 
   return (
@@ -302,14 +326,13 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-// --- DASHBOARD (DENGAN FITUR CROP) ---
+// --- DASHBOARD (DENGAN UPDATE OTOMATIS) ---
 function Dashboard({ user, setUser, setView, masterData }) {
   const [time, setTime] = useState(new Date());
   const [stats, setStats] = useState({});
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
-  // STATE UNTUK CROPPER
   const [tempImageSrc, setTempImageSrc] = useState(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -318,6 +341,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
 
   useEffect(() => { const timer = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(timer); }, []);
   
+  // LOGIC UPDATE: Panggil stats setiap kali user (atau sesi refresh) terdeteksi
   useEffect(() => {
     const fetchStats = async () => {
       try { 
@@ -333,19 +357,16 @@ function Dashboard({ user, setUser, setView, masterData }) {
     if (user) fetchStats();
   }, [user]);
 
-  // 1. Handler saat file dipilih (Buka Modal Cropper)
   const onFileChange = async (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       const imageDataUrl = await readFile(file);
       setTempImageSrc(imageDataUrl);
       setShowCropper(true);
-      // Reset input file agar bisa pilih file yang sama lagi jika dibatalkan
       e.target.value = null; 
     }
   };
 
-  // Helper membaca file jadi URL
   const readFile = (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -354,34 +375,33 @@ function Dashboard({ user, setUser, setView, masterData }) {
     });
   };
 
-  // Callback saat cropping selesai di UI
   const onCropComplete = useCallback((croppedArea, croppedAreaPixels) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
-  // 2. Handler saat tombol "Simpan Foto" diklik di Modal
   const handleSaveCroppedImage = async () => {
     if (!croppedAreaPixels || !tempImageSrc) return;
     setUploading(true);
     try {
-      // Generate base64 gambar yang sudah dicrop
       const croppedImageBase64 = await getCroppedImg(tempImageSrc, croppedAreaPixels);
       
-      // Kirim ke GAS
       const response = await fetch(SCRIPT_URL, { 
         method: 'POST', 
         body: JSON.stringify({ 
             action: 'upload_profile', 
             id: user.id, 
             nama: user.nama, 
-            foto: croppedImageBase64 // Kirim hasil crop
+            foto: croppedImageBase64 
         }) 
       });
       const data = await response.json();
       if (data.result === 'success') { 
-        // Tambahkan timestamp agar browser me-refresh gambar (cache busting)
+        // Cache busting untuk update gambar real-time
         const newPhotoUrl = data.fotoUrl + (data.fotoUrl.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
-        setUser(prev => ({ ...prev, fotoProfil: newPhotoUrl })); 
+        const updatedUser = { ...user, fotoProfil: newPhotoUrl };
+        setUser(updatedUser); 
+        // Update juga di localStorage agar persist
+        localStorage.setItem('app_user', JSON.stringify(updatedUser));
         alert('Foto profil berhasil diperbarui!'); 
       } else { 
         alert('Gagal upload: ' + data.message); 
@@ -411,11 +431,11 @@ function Dashboard({ user, setUser, setView, masterData }) {
                   image={tempImageSrc}
                   crop={crop}
                   zoom={zoom}
-                  aspect={1} // Rasio 1:1 (Kotak/Lingkaran)
+                  aspect={1} // Rasio 1:1
                   onCropChange={setCrop}
                   onCropComplete={onCropComplete}
                   onZoomChange={setZoom}
-                  cropShape="round" // Bentuk crop lingkaran di UI
+                  cropShape="round" 
                   showGrid={false}
                 />
             </div>
@@ -442,11 +462,10 @@ function Dashboard({ user, setUser, setView, masterData }) {
         <div className="flex items-center gap-4 relative z-10">
           <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}>
             <div className="bg-white/20 p-1 rounded-full w-16 h-16 flex items-center justify-center overflow-hidden border-2 border-white/30">
-              {/* Tambahkan key timestamp agar React me-render ulang gambar saat URL berubah */}
+              {/* Force refresh gambar dengan key unik */}
               {user.fotoProfil ? <img key={user.fotoProfil} src={user.fotoProfil} alt="Profil" className="w-full h-full object-cover rounded-full" /> : <User className="w-8 h-8 text-white" />}
             </div>
             <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><Upload className="w-5 h-5 text-white" /></div>
-            {/* Ubah handler onChange */}
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onFileChange} />
           </div>
           <div><h2 className="text-xl font-bold">{user?.nama || 'Tanpa Nama'}</h2><p className="text-blue-100 text-sm">{user?.divisi || '-'} {user?.role === 'admin' && <span className="bg-yellow-400 text-black text-[10px] px-2 rounded-full ml-1">ADMIN</span>}</p>{uploading && <p className="text-xs text-yellow-300 mt-1 italic">Mengupload foto...</p>}</div>
@@ -498,7 +517,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
   );
 }
 
-// --- ATTENDANCE FORM ---
+// --- ATTENDANCE FORM, ADMIN PANEL, CHANGE PASSWORD, DLL SAMA SEPERTI SEBELUMNYA ---
 function AttendanceForm({ user, setView, editItem, setEditItem }) {
   const type = localStorage.getItem('absenType') || 'Hadir';
   const isEditMode = !!editItem;
