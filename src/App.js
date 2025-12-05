@@ -10,7 +10,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronLeft, ChevronDown, ChevronUp, Search
 } from 'lucide-react';
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyt9qWwK6jpsLFcU93wRNBr3XqwgoRHJtmF-MIWxr3hdc3tJQn0hAdhODoSLqViM8Oj0Q/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby5sUFr5JrG4_jKzJeR3pwRPf_TgMFcXXOV7EGOUGDU3e0JlxHApckQbmMi_yLsgR3kRw/exec';
 
 const ICON_MAP = {
   'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar
