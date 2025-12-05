@@ -5,13 +5,13 @@ import autoTable from 'jspdf-autotable';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageHelper'; 
 
-// UPDATE: Penambahan icon ScanFace, Fingerprint, dan Smartphone
+// UPDATE: Menambahkan ChevronLeft untuk tombol Back
 import { 
   Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, 
   Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, 
   Briefcase, Upload, FileText, AlertTriangle, X, Download, FileSpreadsheet, 
   File as FileIcon, Filter, FileDown, Crop, Check, CheckSquare, ThumbsUp, ThumbsDown, Users,
-  ScanFace, Fingerprint, Smartphone 
+  ScanFace, Fingerprint, Smartphone, ChevronLeft 
 } from 'lucide-react';
 
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwePCCyxWGbzStLtPxJglqw5c7sp5Sc8LqpjFB5rzpxoanXUitjVATljGSEE5bERvvmrQ/exec';
@@ -23,6 +23,21 @@ const ICON_MAP = {
 const COLOR_MAP = {
   'Hadir': 'bg-green-500', 'Pulang': 'bg-red-500', 'Ijin': 'bg-yellow-500', 'Sakit': 'bg-orange-500', 'Lembur': 'bg-purple-500', 'Dinas': 'bg-indigo-500', 'Cuti': 'bg-pink-500'
 };
+
+// --- COMPONENT BARU: TOMBOL BACK DINAMIS ---
+function BackButton({ onClick }) {
+  return (
+    <button 
+      onClick={onClick} 
+      className="group flex items-center gap-2 pl-1 pr-4 py-1.5 bg-white text-slate-600 rounded-full shadow-sm border border-slate-200 hover:bg-white hover:text-blue-600 hover:border-blue-200 hover:shadow-md transition-all duration-300 active:scale-95"
+    >
+      <div className="bg-slate-100 p-1.5 rounded-full group-hover:bg-blue-50 transition-colors">
+        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+      </div>
+      <span className="text-sm font-bold">Kembali</span>
+    </button>
+  );
+}
 
 export default function AppAbsensi() {
   const [user, setUser] = useState(null); 
@@ -91,7 +106,6 @@ export default function AppAbsensi() {
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-slate-800">
       <div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">
-        {/* Navbar hanya muncul jika bukan di halaman login */}
         {view !== 'login' && (
             <div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative">
             <div className="flex items-center gap-2">
@@ -243,7 +257,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem }) {
   
   return (
     <div className="p-4 flex flex-col h-full overflow-y-auto">
-      <div className="flex items-center gap-2 mb-4"><button onClick={handleBack} className="p-2 hover:bg-gray-200 rounded-full">Back</button><h2 className="text-xl font-bold">{isEditMode ? 'Edit Data' : `Konfirmasi ${type}`}</h2></div>
+      {/* UPDATE: Menggunakan BackButton */}
+      <div className="flex items-center gap-2 mb-4">
+        <BackButton onClick={handleBack} />
+        <h2 className="text-xl font-bold ml-2">{isEditMode ? 'Edit Data' : `Konfirmasi ${type}`}</h2>
+      </div>
       
       {isH3Required && (
         <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-3 mb-4 text-xs">
@@ -350,9 +368,10 @@ function ApprovalScreen({ user, setView }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
+      {/* UPDATE: Menggunakan BackButton */}
       <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setView('dashboard')} className="p-2 hover:bg-gray-200 rounded-full">Back</button>
-        <h2 className="text-xl font-bold">Daftar Approval</h2>
+        <BackButton onClick={() => setView('dashboard')} />
+        <h2 className="text-xl font-bold ml-2">Daftar Approval</h2>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4 text-xs text-blue-800">
@@ -542,7 +561,11 @@ function HistoryScreen({ user, setView, setEditItem }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
-      <div className="flex items-center gap-2 mb-4"><button onClick={() => setView('dashboard')} className="p-2 hover:bg-gray-200 rounded-full">Back</button><h2 className="text-xl font-bold">Riwayat & Laporan</h2></div>
+      {/* UPDATE: Menggunakan BackButton */}
+      <div className="flex items-center gap-2 mb-4">
+        <BackButton onClick={() => setView('dashboard')} />
+        <h2 className="text-xl font-bold ml-2">Riwayat & Laporan</h2>
+      </div>
       
       <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 mb-4">
         <div className="flex items-center gap-2 mb-2 text-xs font-bold text-gray-500"><Filter className="w-4 h-4" /> Filter Data</div>
@@ -665,9 +688,10 @@ function AdminPanel({ user, setView, masterData }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
+      {/* UPDATE: Menggunakan BackButton */}
       <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setView('dashboard')} className="p-2 hover:bg-gray-200 rounded-full">Back</button>
-        <h2 className="text-xl font-bold">Admin Panel</h2>
+        <BackButton onClick={() => setView('dashboard')} />
+        <h2 className="text-xl font-bold ml-2">Admin Panel</h2>
       </div>
 
       <div className="flex gap-2 mb-6 bg-gray-200 p-1 rounded-lg">
@@ -865,7 +889,7 @@ function LoginScreen({ onLogin }) {
         
         <div className="mt-6 text-center">
           <p className="text-[10px] text-gray-400">
-            &copy; {new Date().getFullYear()} E-Absensi Online | By: IT Support
+            &copy; {new Date().getFullYear()} E-Absensi Online | By : IT SUPPORT
           </p>
         </div>
       </div>
@@ -873,4 +897,47 @@ function LoginScreen({ onLogin }) {
   ); 
 }
 
-function ChangePasswordScreen({ user, setView }) { const [oldPassword, setOldPassword] = useState(''); const [newPassword, setNewPassword] = useState(''); const [loading, setLoading] = useState(false); const handleChangePassword = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'ganti_password', id: user.id, oldPassword, newPassword }) }).then(r => r.json()); if (res.result === 'success') { alert('Password berhasil diubah!'); setView('dashboard'); } else { alert(res.message); } } catch (err) { alert('Gagal menghubungi server.'); } finally { setLoading(false); } }; return ( <div className="p-4"><div className="flex items-center gap-2 mb-6"><button onClick={() => setView('dashboard')} className="p-2 hover:bg-gray-200 rounded-full">Back</button><h2 className="text-xl font-bold">Ganti Password</h2></div><div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200"><form onSubmit={handleChangePassword} className="space-y-4"><input required type="password" className="w-full p-2 border rounded" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="Password Lama" /><input required type="password" className="w-full p-2 border rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Password Baru" /><button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700">{loading ? 'Memproses...' : 'Ubah Password'}</button></form></div></div> ); }
+function ChangePasswordScreen({ user, setView }) { 
+  const [oldPassword, setOldPassword] = useState(''); 
+  const [newPassword, setNewPassword] = useState(''); 
+  const [loading, setLoading] = useState(false); 
+  
+  const handleChangePassword = async (e) => { 
+    e.preventDefault(); 
+    setLoading(true); 
+    try { 
+      const res = await fetch(SCRIPT_URL, { 
+        method: 'POST', 
+        body: JSON.stringify({ action: 'ganti_password', id: user.id, oldPassword, newPassword }) 
+      }).then(r => r.json()); 
+      if (res.result === 'success') { 
+        alert('Password berhasil diubah!'); 
+        setView('dashboard'); 
+      } else { 
+        alert(res.message); 
+      } 
+    } catch (err) { 
+      alert('Gagal menghubungi server.'); 
+    } finally { 
+      setLoading(false); 
+    } 
+  }; 
+  
+  return ( 
+    <div className="p-4">
+      {/* UPDATE: Menggunakan BackButton */}
+      <div className="flex items-center gap-2 mb-6">
+        <BackButton onClick={() => setView('dashboard')} />
+        <h2 className="text-xl font-bold ml-2">Ganti Password</h2>
+      </div>
+      
+      <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          <input required type="password" className="w-full p-2 border rounded" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="Password Lama" />
+          <input required type="password" className="w-full p-2 border rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Password Baru" />
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700">{loading ? 'Memproses...' : 'Ubah Password'}</button>
+        </form>
+      </div>
+    </div> 
+  ); 
+}
