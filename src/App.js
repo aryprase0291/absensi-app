@@ -14,7 +14,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronLeft 
 } from 'lucide-react';
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyEE59UQ1Kc1QjxGIlgIUTF8A8XxD195KSuZY8ulvjNQWudXcURvJL43_O4DkwflTTmTQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzN3_YQM8VlCxew1S7WCJHFqMdLAgymdPI3ckwsiLds4odqbIcBPgirJ6ViNvlyEUkf4w/exec';
 
 const ICON_MAP = {
   'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar
@@ -207,13 +207,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem }) {
   const takePhoto = () => { const video = videoRef.current; const canvas = canvasRef.current; if (video && canvas) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; canvas.getContext('2d').drawImage(video, 0, 0); setPhoto(canvas.toDataURL('image/jpeg')); video.srcObject.getTracks().forEach(track => track.stop()); setCameraActive(false); } };
   
   const handleSubmit = async () => {
-    // --- LOGIKA BARU 1: VALIDASI CUTI DI FRONTEND ---
-    // Jika tipe Cuti dan sisa cuti < 1, batalkan submit
+    // LOGIKA 1: VALIDASI CUTI
     if (type === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1) {
         alert('Maaf, Sisa Cuti Anda (0) tidak mencukupi untuk mengajukan Cuti.');
         return;
     }
-    // ------------------------------------------------
 
     if (isEditMode) {
         const entryTime = new Date(editItem.waktu).getTime();
@@ -344,7 +342,8 @@ function ApprovalScreen({ user, setView }) {
             action: 'get_approval_list', 
             userId: user.id, 
             divisi: user.divisi, 
-            role: user.role // Server side logic akan cek jika admin/hrd return semua data pending
+            role: user.role,
+            lokasi: user.lokasi || 'All' // UPDATE: KIRIM LOKASI ADMIN
         }) 
       });
       const data = await res.json();
@@ -376,15 +375,14 @@ function ApprovalScreen({ user, setView }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
-      {/* UPDATE: Menggunakan BackButton */}
       <div className="flex items-center gap-2 mb-4">
         <BackButton onClick={() => setView('dashboard')} />
-        <h2 className="text-xl font-bold ml-2">Daftar Approval</h2>
+        <h2 className="text-xl font-bold ml-2">Daftar Approval ({user.lokasi || 'All'})</h2>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4 text-xs text-blue-800">
         <p className="font-bold">Info:</p>
-        <p>Halaman ini menampilkan semua pengajuan dari karyawan yang berstatus <strong>Pending</strong>.</p>
+        <p>Halaman ini menampilkan pengajuan dari karyawan di <strong>{user.lokasi}</strong> yang berstatus <strong>Pending</strong>.</p>
       </div>
 
       {loading ? <p className="text-center text-gray-500 mt-10">Memuat data pengajuan...</p> : (
@@ -403,9 +401,14 @@ function ApprovalScreen({ user, setView }) {
                       <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
                         <User className="w-4 h-4 text-gray-500"/> {item.nama}
                       </h4>
-                      <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold border border-gray-200">
-                        {item.divisi}
-                      </span>
+                      <div className="flex gap-1 mt-1">
+                        <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold border border-gray-200">
+                            {item.divisi}
+                        </span>
+                        <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-bold border border-blue-200">
+                            {item.lokasi}
+                        </span>
+                      </div>
                   </div>
                   <div className="text-right">
                       <span className="text-xs font-bold px-2 py-1 bg-orange-100 text-orange-700 rounded border border-orange-200">
@@ -453,7 +456,7 @@ function Dashboard({ user, setUser, setView, masterData }) { const [time, setTim
   return ( 
     <div className="p-4 pb-20"> 
       {showCropper && ( <div className="fixed inset-0 z-50 bg-black bg-opacity-75 flex flex-col items-center justify-center p-4"> <div className="bg-white p-4 rounded-xl w-full max-w-md relative h-[400px] flex flex-col"> <h3 className="text-lg font-bold mb-2 flex items-center gap-2"><Crop className="w-5 h-5"/> Sesuaikan Foto</h3> <div className="relative flex-1 bg-gray-100 rounded-lg overflow-hidden"><Cropper image={tempImageSrc} crop={crop} zoom={zoom} aspect={1} onCropChange={setCrop} onCropComplete={onCropComplete} onZoomChange={setZoom} cropShape="round" showGrid={false} /></div> <div className="flex gap-2 mt-4"><button onClick={() => setShowCropper(false)} className="flex-1 py-2 border border-gray-300 rounded-lg font-bold text-gray-600 hover:bg-gray-50">Batal</button><button onClick={handleSaveCroppedImage} disabled={uploading} className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-blue-700">{uploading ? 'Menyimpan...' : <><Check className="w-4 h-4"/> Simpan Foto</>}</button></div> </div> </div> )} 
-      <div className="bg-gradient-to-r from-blue-500 to-blue-700 rounded-2xl p-6 text-white shadow-lg mb-6 relative"> <div className="flex items-center gap-4 relative z-10"> <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}> <div className="bg-white/20 p-1 rounded-full w-16 h-16 flex items-center justify-center overflow-hidden border-2 border-white/30"> {user.fotoProfil ? <img key={user.fotoProfil} src={user.fotoProfil} alt="Profil" className="w-full h-full object-cover rounded-full" referrerPolicy="no-referrer" /> : <User className="w-8 h-8 text-white" />} </div> <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><Upload className="w-5 h-5 text-white" /></div> <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onFileChange} /> </div> <div><h2 className="text-xl font-bold">{user?.nama || 'Tanpa Nama'}</h2><p className="text-blue-100 text-sm">{user?.divisi || '-'} {user?.role === 'admin' && <span className="bg-yellow-400 text-black text-[10px] px-2 rounded-full ml-1">ADMIN</span>}</p>{uploading && <p className="text-xs text-yellow-300 mt-1 italic">Mengupload foto...</p>}</div> </div> <div className="mt-4 grid grid-cols-2 gap-2"> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex flex-col gap-1 border border-white/20"><div className="flex items-center gap-2 font-bold text-blue-100"><Building className="w-3 h-3"/> Perusahaan</div><div className="truncate">{user.perusahaan || '-'}</div></div> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex flex-col gap-1 border border-white/20"><div className="flex items-center gap-2 font-bold text-green-100"><Briefcase className="w-3 h-3"/> Status</div><div>{user.statusKaryawan || '-'}</div></div> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border border-white/20"><CreditCard className="w-3 h-3 text-yellow-300"/> Payroll: {user.noPayroll || '-'}</div> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border border-white/20"><PieChart className="w-3 h-3 text-pink-300"/> Sisa Cuti: {user.sisaCuti}</div> </div> <div className="mt-4 pt-4 border-t border-white/20 flex justify-between items-end relative z-10"><div><p className="text-xs text-blue-200">Hari ini</p><p className="font-semibold">{time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div><div className="text-3xl font-bold tracking-widest">{time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</div></div> </div> 
+      <div className="bg-gradient-to-r from-blue-500 to-blue-700 rounded-2xl p-6 text-white shadow-lg mb-6 relative"> <div className="flex items-center gap-4 relative z-10"> <div className="relative group cursor-pointer" onClick={() => fileInputRef.current.click()}> <div className="bg-white/20 p-1 rounded-full w-16 h-16 flex items-center justify-center overflow-hidden border-2 border-white/30"> {user.fotoProfil ? <img key={user.fotoProfil} src={user.fotoProfil} alt="Profil" className="w-full h-full object-cover rounded-full" referrerPolicy="no-referrer" /> : <User className="w-8 h-8 text-white" />} </div> <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><Upload className="w-5 h-5 text-white" /></div> <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={onFileChange} /> </div> <div><h2 className="text-xl font-bold">{user?.nama || 'Tanpa Nama'}</h2><p className="text-blue-100 text-sm">{user?.divisi || '-'} {user?.role === 'admin' && <span className="bg-yellow-400 text-black text-[10px] px-2 rounded-full ml-1">ADMIN</span>}</p><p className="text-blue-200 text-xs mt-1 bg-blue-800/30 px-2 py-0.5 rounded w-fit">{user.lokasi || 'Surabaya'}</p>{uploading && <p className="text-xs text-yellow-300 mt-1 italic">Mengupload foto...</p>}</div> </div> <div className="mt-4 grid grid-cols-2 gap-2"> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex flex-col gap-1 border border-white/20"><div className="flex items-center gap-2 font-bold text-blue-100"><Building className="w-3 h-3"/> Perusahaan</div><div className="truncate">{user.perusahaan || '-'}</div></div> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex flex-col gap-1 border border-white/20"><div className="flex items-center gap-2 font-bold text-green-100"><Briefcase className="w-3 h-3"/> Status</div><div>{user.statusKaryawan || '-'}</div></div> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border border-white/20"><CreditCard className="w-3 h-3 text-yellow-300"/> Payroll: {user.noPayroll || '-'}</div> <div className="bg-white/10 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border border-white/20"><PieChart className="w-3 h-3 text-pink-300"/> Sisa Cuti: {user.sisaCuti}</div> </div> <div className="mt-4 pt-4 border-t border-white/20 flex justify-between items-end relative z-10"><div><p className="text-xs text-blue-200">Hari ini</p><p className="font-semibold">{time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div><div className="text-3xl font-bold tracking-widest">{time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</div></div> </div> 
       
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2"> 
         <button onClick={() => setView('history')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition"><History className="w-5 h-5" /><span className="text-xs">Riwayat</span></button> 
@@ -486,7 +489,7 @@ function Dashboard({ user, setUser, setView, masterData }) { const [time, setTim
                     key={item.value} 
                     onClick={() => { 
                         if(isCutiEmpty) {
-                            alert('Sisa Cuti Anda Habis (>1). Tidak dapat mengajukan cuti.');
+                            alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.');
                             return;
                         }
                         localStorage.setItem('absenType', item.value); 
@@ -601,7 +604,13 @@ function HistoryScreen({ user, setView, setEditItem }) {
   };
 
   const displayData = getFilteredHistory();
-  const getStatusColor = (status) => { if (status === 'Approved') return 'bg-green-100 text-green-700 border-green-200'; if (status === 'Rejected') return 'bg-red-100 text-red-700 border-red-200'; return 'bg-yellow-100 text-yellow-700 border-yellow-200'; };
+  const getStatusColor = (status) => { 
+      // UPDATE WARNA STATUS
+      if (status === 'Approved' || status === 'Verified') return 'bg-green-100 text-green-700 border-green-200'; 
+      if (status === 'Rejected') return 'bg-red-100 text-red-700 border-red-200'; 
+      return 'bg-yellow-100 text-yellow-700 border-yellow-200'; 
+  };
+  
   const uniqueTypes = ['All', ...new Set(history.map(item => item.tipe))];
 
   return (
@@ -635,12 +644,26 @@ function HistoryScreen({ user, setView, setEditItem }) {
           {displayData.length === 0 && <p className="text-center text-gray-400 text-sm py-4">Tidak ada data sesuai filter.</p>}
           {displayData.map((item, idx) => {
             const canEdit = isEditable(item.waktu, item.status);
+            
+            // LOGIC TAMPILAN HADIR/PULANG
+            const isRegularAbsen = item.tipe === 'Hadir' || item.tipe === 'Pulang';
+
             return (
               <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
                 <div className="flex justify-between items-start mb-2">
                   <div><h4 className="font-bold text-gray-800 text-lg">{item.tipe}</h4><p className="text-xs text-gray-500 font-medium">{formatDateIndo(item.waktu)}</p></div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getStatusColor(item.status)}`}>{item.status || 'Pending'}</span>
+                    
+                    {/* HANYA TAMPILKAN LABEL STATUS JIKA BUKAN HADIR/PULANG */}
+                    {!isRegularAbsen && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getStatusColor(item.status)}`}>{item.status || 'Pending'}</span>
+                    )}
+                    {isRegularAbsen && (
+                         <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                             {formatTimeOnly(item.waktu)}
+                        </span>
+                    )}
+
                     <div className="flex gap-1 mt-1">
                       <button onClick={() => handleDownloadSingle(item)} className="p-1.5 bg-blue-50 text-blue-600 rounded border border-blue-100" title="Download Form"><FileDown className="w-4 h-4"/></button>
                       
@@ -682,7 +705,8 @@ function AdminPanel({ user, setView, masterData }) {
     username: '', password: '', nama: '', email: '', 
     divisi: 'Staff', role: 'karyawan', akses: [], 
     noPayroll: '', sisaCuti: '', perusahaan: '', 
-    statusKaryawan: '', emailAtasan: '' 
+    statusKaryawan: '', emailAtasan: '',
+    lokasi: 'Surabaya' // UPDATE: DEFAULT LOKASI
   }); 
   const [masterInput, setMasterInput] = useState({ kategori: 'Menu', value: '', label: '' });
 
@@ -708,7 +732,7 @@ function AdminPanel({ user, setView, masterData }) {
           username: '', password: '', nama: '', email: '', 
           divisi: 'Staff', role: 'karyawan', akses: [], 
           noPayroll: '', sisaCuti: '', perusahaan: '', 
-          statusKaryawan: '', emailAtasan: ''
+          statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya'
         });
       } else {
         alert(res.message);
@@ -733,7 +757,6 @@ function AdminPanel({ user, setView, masterData }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
-      {/* UPDATE: Menggunakan BackButton */}
       <div className="flex items-center gap-2 mb-4">
         <BackButton onClick={() => setView('dashboard')} />
         <h2 className="text-xl font-bold ml-2">Admin Panel</h2>
@@ -776,13 +799,27 @@ function AdminPanel({ user, setView, masterData }) {
                   {masterData.divisions.length === 0 && <option>Staff</option>}
                 </select>
               </div>
+
+              {/* UPDATE: INPUT LOKASI */}
               <div>
-                <label className="text-xs text-gray-500">Role</label>
-                <select className="w-full p-2 border rounded" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>
-                  {masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}
+                <label className="text-xs text-gray-500">Lokasi Penempatan</label>
+                <select className="w-full p-2 border rounded" value={userData.lokasi} onChange={e => setUserData({...userData, lokasi: e.target.value})}>
+                  <option value="Surabaya">Surabaya</option>
+                  <option value="Jakarta">Jakarta</option>
                 </select>
               </div>
+
             </div>
+
+             <div className="grid grid-cols-1 gap-2 mt-2">
+                 <div>
+                    <label className="text-xs text-gray-500">Role</label>
+                    <select className="w-full p-2 border rounded" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>
+                      {masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}
+                    </select>
+                 </div>
+            </div>
+
             <div className="border p-3 rounded-lg bg-gray-50">
               <label className="text-xs font-bold text-gray-700 block mb-2">Hak Akses Menu:</label>
               <div className="grid grid-cols-2 gap-2">
