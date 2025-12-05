@@ -207,6 +207,14 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem }) {
   const takePhoto = () => { const video = videoRef.current; const canvas = canvasRef.current; if (video && canvas) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; canvas.getContext('2d').drawImage(video, 0, 0); setPhoto(canvas.toDataURL('image/jpeg')); video.srcObject.getTracks().forEach(track => track.stop()); setCameraActive(false); } };
   
   const handleSubmit = async () => {
+    // --- LOGIKA BARU 1: VALIDASI CUTI DI FRONTEND ---
+    // Jika tipe Cuti dan sisa cuti < 1, batalkan submit
+    if (type === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1) {
+        alert('Maaf, Sisa Cuti Anda (0) tidak mencukupi untuk mengajukan Cuti.');
+        return;
+    }
+    // ------------------------------------------------
+
     if (isEditMode) {
         const entryTime = new Date(editItem.waktu).getTime();
         const now = new Date().getTime();
@@ -463,7 +471,44 @@ function Dashboard({ user, setUser, setView, masterData }) { const [time, setTim
 
       <h3 className="font-bold text-gray-700 mb-3 px-1">Menu Absensi</h3> 
       <div className="grid grid-cols-2 gap-4"> 
-        {allowedMenus.map((item) => { const Icon = ICON_MAP[item.value] || Star; const colorClass = COLOR_MAP[item.value] || 'bg-blue-400'; const count = stats[item.value] || stats[item.value.toLowerCase()] || 0; const isAttendance = ['Hadir', 'Pulang'].includes(item.value); return ( <button key={item.value} onClick={() => { localStorage.setItem('absenType', item.value); setView('form'); }} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition text-left group relative overflow-hidden"> {!isAttendance && (<div className="absolute top-0 right-0 bg-red-50 text-red-600 text-xl font-bold px-3 py-1 rounded-bl-2xl border-l border-b border-red-100 shadow-sm z-10">{count}</div>)} <div className={`${colorClass} w-10 h-10 rounded-lg flex items-center justify-center text-white mb-3 shadow-sm group-hover:scale-110 transition`}><Icon className="w-5 h-5" /></div> <h4 className="font-bold text-gray-800">{item.label}</h4> {!isAttendance ? <p className="text-[10px] text-gray-400">Ajukan Form {item.label}</p> : <p className="text-[10px] text-gray-400">Mulai {item.label}</p>} </button> ) })} 
+        {allowedMenus.map((item) => { 
+            const Icon = ICON_MAP[item.value] || Star; 
+            const colorClass = COLOR_MAP[item.value] || 'bg-blue-400'; 
+            const count = stats[item.value] || stats[item.value.toLowerCase()] || 0; 
+            const isAttendance = ['Hadir', 'Pulang'].includes(item.value); 
+            
+            // --- LOGIKA BARU 1: CEK SISA CUTI ---
+            const isCutiEmpty = item.value === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1;
+            // ------------------------------------
+
+            return ( 
+                <button 
+                    key={item.value} 
+                    onClick={() => { 
+                        if(isCutiEmpty) {
+                            alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.');
+                            return;
+                        }
+                        localStorage.setItem('absenType', item.value); 
+                        setView('form'); 
+                    }} 
+                    className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition text-left group relative overflow-hidden ${isCutiEmpty ? 'opacity-50 grayscale' : ''}`}
+                > 
+                    {!isAttendance && (<div className="absolute top-0 right-0 bg-red-50 text-red-600 text-xl font-bold px-3 py-1 rounded-bl-2xl border-l border-b border-red-100 shadow-sm z-10">{count}</div>)} 
+                    <div className={`${colorClass} w-10 h-10 rounded-lg flex items-center justify-center text-white mb-3 shadow-sm group-hover:scale-110 transition`}>
+                        <Icon className="w-5 h-5" />
+                    </div> 
+                    <h4 className="font-bold text-gray-800">{item.label}</h4> 
+                    {!isAttendance ? 
+                        <p className="text-[10px] text-gray-400">
+                            {isCutiEmpty ? 'Sisa Cuti Habis' : `Ajukan Form ${item.label}`}
+                        </p> 
+                        : 
+                        <p className="text-[10px] text-gray-400">Mulai {item.label}</p>
+                    } 
+                </button> 
+            ) 
+        })} 
       </div> 
     </div> 
   ); 
