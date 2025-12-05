@@ -5,14 +5,16 @@ import autoTable from 'jspdf-autotable';
 import Cropper from 'react-easy-crop';
 import { getCroppedImg } from './cropImageHelper'; 
 
+// UPDATE: Penambahan icon ScanFace, Fingerprint, dan Smartphone
 import { 
   Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, 
   Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, 
   Briefcase, Upload, FileText, AlertTriangle, X, Download, FileSpreadsheet, 
-  File as FileIcon, Filter, FileDown, Crop, Check, CheckSquare, ThumbsUp, ThumbsDown, Users
+  File as FileIcon, Filter, FileDown, Crop, Check, CheckSquare, ThumbsUp, ThumbsDown, Users,
+  ScanFace, Fingerprint, Smartphone 
 } from 'lucide-react';
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbym_tbCkqKO9RsxOdWRm4yJAqU4ppYbaHWoXQYYh3v8XevGkBWyJEK8WIcDzgxX039vnw/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwePCCyxWGbzStLtPxJglqw5c7sp5Sc8LqpjFB5rzpxoanXUitjVATljGSEE5bERvvmrQ/exec';
 
 const ICON_MAP = {
   'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar
@@ -89,26 +91,29 @@ export default function AppAbsensi() {
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-slate-800">
       <div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">
-        <div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative">
-          <div className="flex items-center gap-2">
-            <Activity className="w-6 h-6" />
-            <h1 className="font-bold text-lg">E-Absensi</h1>
-          </div>
-          {user && (
-            <div className="flex items-center gap-3">
-              <button onClick={() => setView('ganti_password')} className="text-white hover:text-blue-200" title="Ganti Password">
-                <Key className="w-5 h-5" />
-              </button>
-              <button 
-                onClick={handleLogout} 
-                className="bg-red-500/80 p-1.5 rounded-full hover:bg-red-600 transition shadow-sm"
-                title="Keluar Aplikasi"
-              >
-                <X className="w-5 h-5 text-white" />
-              </button>
+        {/* Navbar hanya muncul jika bukan di halaman login */}
+        {view !== 'login' && (
+            <div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative">
+            <div className="flex items-center gap-2">
+                <Activity className="w-6 h-6" />
+                <h1 className="font-bold text-lg">E-Absensi</h1>
             </div>
-          )}
-        </div>
+            {user && (
+                <div className="flex items-center gap-3">
+                <button onClick={() => setView('ganti_password')} className="text-white hover:text-blue-200" title="Ganti Password">
+                    <Key className="w-5 h-5" />
+                </button>
+                <button 
+                    onClick={handleLogout} 
+                    className="bg-red-500/80 p-1.5 rounded-full hover:bg-red-600 transition shadow-sm"
+                    title="Keluar Aplikasi"
+                >
+                    <X className="w-5 h-5 text-white" />
+                </button>
+                </div>
+            )}
+            </div>
+        )}
 
         <div className="p-0">
           {view === 'login' && <LoginScreen onLogin={handleLogin} />}
@@ -748,6 +753,124 @@ function AdminPanel({ user, setView, masterData }) {
   );
 }
 
-function LoginScreen({ onLogin }) { const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [loading, setLoading] = useState(false); const handleSubmit = async (e) => { e.preventDefault(); setLoading(true); try { const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'login', username, password }) }); const data = await response.json(); if (data.result === 'success' && data.user) onLogin(data.user, data.masterData || []); else alert(data.message || 'Login Gagal'); } catch (err) { alert('Gagal koneksi server.'); } finally { setLoading(false); } }; return ( <div className="p-8 flex flex-col justify-center h-[80vh]"> <div className="text-center mb-8"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"><User className="w-10 h-10 text-blue-600" /></div><h2 className="text-2xl font-bold text-gray-800">E-Absensi</h2><p className="text-gray-500 text-sm mt-1">Silakan login</p></div> <form onSubmit={handleSubmit} className="space-y-4"> <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full p-3 border rounded-lg" placeholder="Username" required /> <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 border rounded-lg" placeholder="Password" required /> <button type="submit" disabled={loading} className="w-full py-3 rounded-lg text-white font-bold bg-blue-600 hover:bg-blue-700 shadow-lg">{loading ? 'Loading...' : 'Login'}</button> </form> </div> ); }
+// --- NEW LOGIN SCREEN (UPDATED) ---
+function LoginScreen({ onLogin }) { 
+  const [username, setUsername] = useState(''); 
+  const [password, setPassword] = useState(''); 
+  const [loading, setLoading] = useState(false); 
+
+  const handleSubmit = async (e) => { 
+    e.preventDefault(); 
+    setLoading(true); 
+    try { 
+      const response = await fetch(SCRIPT_URL, { 
+        method: 'POST', 
+        body: JSON.stringify({ action: 'login', username, password }) 
+      }); 
+      const data = await response.json(); 
+      if (data.result === 'success' && data.user) {
+        onLogin(data.user, data.masterData || []); 
+      } else {
+        alert(data.message || 'Login Gagal'); 
+      }
+    } catch (err) { 
+      alert('Gagal koneksi server.'); 
+    } finally { 
+      setLoading(false); 
+    } 
+  }; 
+
+  return ( 
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 p-4 relative overflow-hidden">
+      
+      {/* Dekorasi Background */}
+      <div className="absolute top-10 left-10 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl animate-pulse"></div>
+      <div className="absolute bottom-10 right-10 w-48 h-48 bg-purple-400 opacity-10 rounded-full blur-3xl"></div>
+
+      <div className="bg-white/95 backdrop-blur-sm p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-white/50 relative z-10">
+        
+        {/* Ilustrasi Mesin Absensi */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="relative group">
+            {/* Efek Glow */}
+            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+            
+            <div className="relative bg-white p-4 rounded-2xl border border-gray-100 shadow-lg flex items-center justify-center w-24 h-24">
+              {/* Animasi Garis Scan */}
+              <div className="absolute w-full h-1 bg-blue-500/50 top-4 animate-[bounce_2s_infinite]"></div>
+              <ScanFace className="w-12 h-12 text-blue-600" />
+            </div>
+            
+            {/* Icon Fingerprint kecil */}
+            <div className="absolute -bottom-2 -right-2 bg-purple-600 text-white p-1.5 rounded-full border-2 border-white shadow-sm">
+              <Fingerprint className="w-4 h-4" />
+            </div>
+          </div>
+          
+          <h2 className="text-2xl font-bold text-slate-800 mt-5 tracking-tight">E-Absensi Online</h2>
+          <p className="text-slate-500 text-xs mt-1 text-center px-4">
+            Silakan scan kredensial Anda untuk masuk ke sistem.
+          </p>
+        </div>
+
+        {/* Form Login */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-600 ml-1">Username</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Smartphone className="h-5 w-5 text-gray-400" />
+              </div>
+              <input 
+                type="text" 
+                value={username} 
+                onChange={e => setUsername(e.target.value)} 
+                className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors bg-gray-50/50" 
+                placeholder="Masukkan ID / Username" 
+                required 
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-600 ml-1">Password</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Key className="h-5 w-5 text-gray-400" />
+              </div>
+              <input 
+                type="password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+                className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors bg-gray-50/50" 
+                placeholder="Masukkan Kata Sandi" 
+                required 
+              />
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={loading} 
+            className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-lg shadow-blue-500/30 transform transition hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                <span>Memproses...</span>
+              </div>
+            ) : 'Masuk Sekarang'}
+          </button>
+        </form>
+        
+        <div className="mt-6 text-center">
+          <p className="text-[10px] text-gray-400">
+            &copy; {new Date().getFullYear()} E-Absensi Online | By: IT Support
+          </p>
+        </div>
+      </div>
+    </div> 
+  ); 
+}
 
 function ChangePasswordScreen({ user, setView }) { const [oldPassword, setOldPassword] = useState(''); const [newPassword, setNewPassword] = useState(''); const [loading, setLoading] = useState(false); const handleChangePassword = async (e) => { e.preventDefault(); setLoading(true); try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'ganti_password', id: user.id, oldPassword, newPassword }) }).then(r => r.json()); if (res.result === 'success') { alert('Password berhasil diubah!'); setView('dashboard'); } else { alert(res.message); } } catch (err) { alert('Gagal menghubungi server.'); } finally { setLoading(false); } }; return ( <div className="p-4"><div className="flex items-center gap-2 mb-6"><button onClick={() => setView('dashboard')} className="p-2 hover:bg-gray-200 rounded-full">Back</button><h2 className="text-xl font-bold">Ganti Password</h2></div><div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200"><form onSubmit={handleChangePassword} className="space-y-4"><input required type="password" className="w-full p-2 border rounded" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="Password Lama" /><input required type="password" className="w-full p-2 border rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Password Baru" /><button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700">{loading ? 'Memproses...' : 'Ubah Password'}</button></form></div></div> ); }
