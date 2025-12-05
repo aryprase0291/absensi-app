@@ -14,7 +14,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronLeft 
 } from 'lucide-react';
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwePCCyxWGbzStLtPxJglqw5c7sp5Sc8LqpjFB5rzpxoanXUitjVATljGSEE5bERvvmrQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9qf1xC3zlD-mhfy3L6U6LybSbIkdVhiWM15BX7A5g5bmO-xuhi-1e_TGQ2G34XZ0CKA/exec';
 
 const ICON_MAP = {
   'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar
@@ -486,7 +486,7 @@ function Dashboard({ user, setUser, setView, masterData }) { const [time, setTim
                     key={item.value} 
                     onClick={() => { 
                         if(isCutiEmpty) {
-                            alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.');
+                            alert('Sisa Cuti Anda Habis (>1). Tidak dapat mengajukan cuti.');
                             return;
                         }
                         localStorage.setItem('absenType', item.value); 
