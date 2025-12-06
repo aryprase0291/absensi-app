@@ -10,7 +10,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronLeft, ChevronDown, ChevronUp, Search
 } from 'lucide-react';
 
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby5sUFr5JrG4_jKzJeR3pwRPf_TgMFcXXOV7EGOUGDU3e0JlxHApckQbmMi_yLsgR3kRw/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbznoILV_F_XeggyQVZYUB2k_KiAii3BNcnH_Jv_lT8xULVp1aogonBXJWmjkVJebNw-Gw/exec';
 
 const ICON_MAP = {
   'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar
@@ -242,7 +242,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem }) {
       const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.result === 'success') { 
-        alert(isEditMode ? 'Data diupdate!' : 'Absensi Berhasil!');
+        alert(data.message);
         if (data.newSisaCuti !== undefined && data.newSisaCuti !== null) {
            const updatedUser = { ...user, sisaCuti: data.newSisaCuti };
            setUser(updatedUser);
@@ -468,7 +468,11 @@ function Dashboard({ user, setUser, setView, masterData }) {
   if (!user) return null; 
   const availableMenus = masterData.menus || []; 
   const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter(item => user.akses.includes(item.value)) : availableMenus; 
+  
+  // UPDATE: Logic Hak Akses Dashboard Button
   const canApprove = ['admin', 'hrd', 'manager'].includes(user.role);
+  // HANYA ADMIN yang bisa lihat Panel
+  const canAccessPanel = user.role === 'admin'; 
 
   const hour = time.getHours();
   let greeting = 'Selamat Pagi';
@@ -571,7 +575,12 @@ function Dashboard({ user, setUser, setView, masterData }) {
             </button>
         )}
 
-        {user?.role === 'admin' && ( <button onClick={() => setView('admin')} className="flex-1 min-w-[100px] bg-slate-800 text-white p-3 rounded-xl shadow-sm flex flex-col items-center justify-center gap-1 font-bold hover:bg-slate-700 transition active:scale-95"><Settings className="w-5 h-5" /><span className="text-xs">Panel</span></button> )} 
+        {/* UPDATE: HANYA ADMIN YANG BISA AKSES PANEL */}
+        {canAccessPanel && ( 
+            <button onClick={() => setView('admin')} className="flex-1 min-w-[100px] bg-slate-800 text-white p-3 rounded-xl shadow-sm flex flex-col items-center justify-center gap-1 font-bold hover:bg-slate-700 transition active:scale-95">
+                <Settings className="w-5 h-5" /><span className="text-xs">Panel</span>
+            </button> 
+        )} 
       </div> 
 
       <h3 className="font-bold text-gray-700 mb-3 px-1 flex items-center gap-2">
@@ -625,7 +634,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
   ); 
 }
 
-// --- HISTORY SCREEN (UPDATE: ADMIN LOCATION FILTER & SEARCH NAME) ---
+// --- HISTORY SCREEN (UPDATE: EDIT LOGIC RESTORED) ---
 function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -635,48 +644,42 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [filterType, setFilterType] = useState('All'); 
   const [showWebReport, setShowWebReport] = useState(false);
   
-  // -- ADMIN SPECIFIC STATES --
-  const isAdmin = user.role === 'admin';
-  const isSuperAdmin = isAdmin && (user.lokasi === 'All' || !user.lokasi);
+  const canViewAll = ['admin', 'hrd'].includes(user.role);
+  const isSuperAdmin = user.role === 'admin' && (user.lokasi === 'All' || !user.lokasi);
   
   const [allUsers, setAllUsers] = useState([]); 
   const [selectedUserIds, setSelectedUserIds] = useState([]); 
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
-  
-  // New: States for Filtering Users
-  const [locationFilter, setLocationFilter] = useState('All'); // For Dropdown
-  const [searchUser, setSearchUser] = useState(''); // For Name Search
+  const [locationFilter, setLocationFilter] = useState('All'); 
+  const [searchUser, setSearchUser] = useState(''); 
 
-  // FETCH USERS (With Location Filter)
   const fetchUsers = async () => {
     try {
         const res = await fetch(SCRIPT_URL, { 
             method: 'POST', 
             body: JSON.stringify({ 
                 action: 'get_user_list_simple',
-                lokasi: user.lokasi || 'All', // Lokasi Admin (Permission)
-                filterLokasi: locationFilter // Lokasi yg ingin dilihat (Filter UI)
+                lokasi: user.lokasi || 'All', 
+                filterLokasi: locationFilter 
             }) 
         });
         const data = await res.json();
         if(data.result === 'success') {
              setAllUsers(data.list);
-             // Reset selection when location changes to avoid ID mismatch
              setSelectedUserIds([]); 
         }
     } catch(e) { console.error("Gagal load users"); }
   }
 
-  // FETCH HISTORY (With Location Security)
   const fetchHistory = async () => {
     setLoading(true);
     try { 
       const payload = { 
         action: 'get_history', 
         userId: user.id,
-        isAdmin: isAdmin,
-        adminLokasi: user.lokasi || 'All', // Kirim Lokasi Admin
-        targetUserIds: isAdmin ? selectedUserIds : [] 
+        canViewAll: canViewAll, 
+        requestorLokasi: user.lokasi || 'All', 
+        targetUserIds: canViewAll ? selectedUserIds : [] 
       };
       
       const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
@@ -686,14 +689,14 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   };
 
   useEffect(() => { 
-      if(isAdmin) fetchUsers();
+      if(canViewAll) fetchUsers();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationFilter]); // Re-fetch users when location filter changes
+  }, [locationFilter]); 
 
   useEffect(() => {
       fetchHistory(); 
       // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedUserIds]); // Re-fetch history when user selection changes
+  }, [selectedUserIds]); 
 
   // -- HELPER FORMATTERS --
   const formatDateIndo = (dateString) => { if (!dateString || dateString === '-') return '-'; try { const date = new Date(dateString); return date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return dateString; } };
@@ -730,8 +733,12 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const handleDelete = async (uuid) => { if (!window.confirm('Yakin hapus data ini?')) return; try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) }); const data = await res.json(); if (data.result === 'success') { alert('Terhapus'); fetchHistory(); } else { alert(data.message); } } catch (e) { alert('Gagal hapus'); } };
   const handleEdit = (item) => { setEditItem(item); localStorage.setItem('absenType', item.tipe); setView('form'); };
 
+  // --- LOGIC RESTORED: Edit Allowed if NOT Approved/Rejected AND Time < 1 Hour ---
   const isEditable = (waktuStr, status) => {
-    if (status !== 'Pending') return false;
+    // Block editing if manual approval decision is made
+    if (status === 'Approved' || status === 'Rejected') return false;
+    
+    // Time check (1 Hour)
     if (!waktuStr || waktuStr === '-') return false;
     try {
         const entryTime = new Date(waktuStr).getTime();
@@ -761,19 +768,13 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   };
 
   const selectAllUsers = () => {
-     // Filter users visible in list (after search)
      const visibleUsers = allUsers.filter(u => u.nama.toLowerCase().includes(searchUser.toLowerCase()));
      const visibleIds = visibleUsers.map(u => u.id);
-     
-     // Check if all visible are selected
      const allVisibleSelected = visibleIds.every(id => selectedUserIds.includes(id));
 
      if(allVisibleSelected) {
-         // Deselect visible ones
          setSelectedUserIds(selectedUserIds.filter(id => !visibleIds.includes(id)));
      } else {
-         // Select visible ones
-         // Merge unique IDs
          const newSelection = [...new Set([...selectedUserIds, ...visibleIds])];
          setSelectedUserIds(newSelection);
      }
@@ -800,18 +801,16 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
             </div>
             
             <div className="p-4 flex-1">
-                {/* Header Laporan */}
                 <div className="mb-6 border-b pb-4">
                     <h2 className="text-xl font-bold text-gray-800 uppercase mb-2">Laporan Data Absensi</h2>
                     <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
                         <div><strong>Dicetak Oleh:</strong> {user.nama}</div>
                         <div><strong>Periode Cetak:</strong> {formatDateTimeFull(new Date())}</div>
-                        <div><strong>Lokasi Admin:</strong> {user.lokasi || 'All'}</div>
+                        <div><strong>Lokasi:</strong> {user.lokasi || 'All'}</div>
                         <div><strong>Filter Lokasi:</strong> {locationFilter}</div>
                     </div>
                 </div>
 
-                {/* Tabel Data (Responsive) */}
                 <div className="overflow-x-auto">
                     <table className="w-full text-xs text-left border-collapse border border-gray-200">
                         <thead className="bg-gray-100 text-gray-700 uppercase font-bold">
@@ -862,8 +861,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         <h2 className="text-xl font-bold ml-2">Riwayat & Laporan</h2>
       </div>
       
-      {/* FILTER ADMIN USER CHECKLIST */}
-      {isAdmin && (
+      {canViewAll && (
          <div className="bg-slate-800 text-white p-3 rounded-xl shadow-sm mb-4">
             <button 
                 onClick={() => setIsFilterExpanded(!isFilterExpanded)}
@@ -878,7 +876,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
             {isFilterExpanded && (
                 <div className="mt-3 bg-slate-700 p-3 rounded-lg max-h-[400px] overflow-y-auto">
                     
-                    {/* DROPDOWN FILTER LOKASI (HANYA UNTUK SUPER ADMIN / LOKASI 'ALL') */}
                     {isSuperAdmin && (
                         <div className="mb-3 bg-slate-600 p-2 rounded">
                             <label className="text-[10px] text-gray-300 block mb-1">Pilih Lokasi:</label>
@@ -890,12 +887,10 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                 <option value="All">Semua Lokasi</option>
                                 <option value="Surabaya">Surabaya</option>
                                 <option value="Jakarta">Jakarta</option>
-                                {/* Opsi dinamis jika ada master data lokasi bisa ditambahkan disini */}
                             </select>
                         </div>
                     )}
 
-                    {/* SEARCH USER */}
                     <div className="mb-3 relative">
                         <input 
                             type="text" 
@@ -966,7 +961,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-                        {item.tipe} {isAdmin && <span className="text-xs font-normal text-gray-500">({item.nama})</span>}
+                        {item.tipe} {canViewAll && <span className="text-xs font-normal text-gray-500">({item.nama})</span>}
                     </h4>
                     <p className="text-xs text-gray-500 font-medium">{formatDateIndo(item.waktu)}</p>
                   </div>
@@ -982,7 +977,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                     )}
 
                     <div className="flex gap-1 mt-1">
-                      {canEdit && !isAdmin && (
+                      {canEdit && !canViewAll && (
                         <>
                           <button onClick={() => handleEdit(item)} className="p-1.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-100" title="Edit (Batas 1 Jam)"><Edit className="w-4 h-4"/></button>
                           <button onClick={() => handleDelete(item.uuid)} className="p-1.5 bg-red-50 text-red-600 rounded border border-red-100" title="Hapus (Batas 1 Jam)"><Trash2 className="w-4 h-4"/></button>
@@ -995,13 +990,14 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                 
                 {(item.tglMulai && item.tglMulai !== '-') && (<div className="text-xs text-blue-600 flex gap-2 mt-1 font-medium items-center bg-blue-50 p-1.5 rounded w-fit"><Calendar className="w-3 h-3"/> {formatDateShort(item.tglMulai)} s/d {formatDateShort(item.tglSelesai)}</div>)}
                 
-                {item.tipe === 'Cuti' && item.status === 'Pending' && !isAdmin && (
+                {/* TOMBOL REQUEST APPROVAL MANUAL */}
+                {item.tipe === 'Cuti' && item.status === 'Pending' && !canViewAll && (
                   <button 
                     onClick={() => handleRequestApproval(item)} 
                     disabled={sendingEmail}
-                    className="w-full mt-3 bg-purple-600 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-purple-700"
+                    className="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-purple-200 border border-purple-200"
                   >
-                    {sendingEmail ? 'Mengirim...' : <><CheckSquare className="w-4 h-4"/> Ajukan Approval</>}
+                    {sendingEmail ? 'Mengirim...' : <><CheckSquare className="w-3 h-3"/> Kirim Ulang Email Approval</>}
                   </button>
                 )}
               </div>
@@ -1038,7 +1034,11 @@ function AdminPanel({ user, setView, masterData }) {
     try {
       const res = await fetch(SCRIPT_URL, { 
         method: 'POST', 
-        body: JSON.stringify({ action: 'tambah_user', ...userData }) 
+        body: JSON.stringify({ 
+            action: 'tambah_user', 
+            roleRequester: user.role, // SECURITY: Kirim Role Pengguna
+            ...userData 
+        }) 
       }).then(r => r.json());
 
       if(res.result === 'success') {
@@ -1061,7 +1061,11 @@ function AdminPanel({ user, setView, masterData }) {
     try { 
       const res = await fetch(SCRIPT_URL, { 
         method: 'POST', 
-        body: JSON.stringify({ action: 'tambah_master', ...masterInput }) 
+        body: JSON.stringify({ 
+            action: 'tambah_master', 
+            roleRequester: user.role, // SECURITY: Kirim Role Pengguna
+            ...masterInput 
+        }) 
       }).then(r=>r.json()); 
       if(res.result === 'success') { 
         alert('Data Ditambah!'); 
@@ -1079,7 +1083,11 @@ function AdminPanel({ user, setView, masterData }) {
 
       <div className="flex gap-2 mb-6 bg-gray-200 p-1 rounded-lg">
         <button onClick={() => setActiveTab('user')} className={`flex-1 py-2 text-sm font-bold rounded-md ${activeTab === 'user' ? 'bg-white shadow' : 'text-gray-500'}`}>Tambah User</button>
-        <button onClick={() => setActiveTab('master')} className={`flex-1 py-2 text-sm font-bold rounded-md ${activeTab === 'master' ? 'bg-white shadow' : 'text-gray-500'}`}>Tambah Master Data</button>
+        
+        {/* UPDATE: HANYA ADMIN YANG BISA LIHAT TAB MASTER DATA */}
+        {user.role === 'admin' && (
+            <button onClick={() => setActiveTab('master')} className={`flex-1 py-2 text-sm font-bold rounded-md ${activeTab === 'master' ? 'bg-white shadow' : 'text-gray-500'}`}>Tambah Master Data</button>
+        )}
       </div>
 
       {activeTab === 'user' ? (
