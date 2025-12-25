@@ -1,14 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 // Import Icons
-// PERBAIKAN: Menghapus 'Printer' dari import karena tidak digunakan
+// Menghapus 'Printer' dari import karena tidak digunakan
 import { 
   Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, 
   Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, 
   Briefcase, FileText, AlertTriangle, X, 
   File as FileIcon, Filter, CheckSquare, Users, Eye, 
-  ScanFace, Fingerprint, Smartphone, ChevronLeft, ChevronDown, ChevronUp, Search, 
+  ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
   MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
-  Venus
 } from 'lucide-react';
 
 import { SCRIPT_URL } from './config/constants';
@@ -1558,6 +1557,21 @@ const handleDecision = async (uuid, decision, namaUser) => {
                 <p className="italic text-gray-500">"{item.catatan || 'Tidak ada catatan'}"</p>
               </div>
 
+{/* --- [TAMBAHAN] TOMBOL LIHAT BUKTI --- */}
+<div className="flex flex-wrap gap-2 mb-3">
+    {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
+        <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 transition">
+            <Camera className="w-3 h-3"/> View Photo
+        </a>
+    )}
+    {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
+        <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-200 hover:bg-orange-100 transition">
+            <FileIcon className="w-3 h-3"/> View Attachment
+        </a>
+    )}
+</div>
+{/* ------------------------------------- */}
+
               <div className="flex gap-2">
                   <button 
                     onClick={() => handleDecision(item.uuid, 'approve', item.nama)} 
@@ -1935,6 +1949,21 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                 <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded mb-2 italic border border-gray-100">"{item.catatan || '-'}"</p>
                 {(item.tglMulai && item.tglMulai !== '-') && (<div className="text-xs text-blue-600 flex gap-2 mt-1 font-medium items-center bg-blue-50 p-1.5 rounded w-fit"><Calendar className="w-3 h-3"/> {formatDateShort(item.tglMulai)} s/d {formatDateShort(item.tglSelesai)}</div>)}
                 
+{/* --- [TAMBAHAN] TOMBOL LIHAT BUKTI DI HISTORY --- */}
+<div className="flex flex-wrap gap-2 mt-2">
+    {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
+        <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-300 text-[10px] font-bold hover:bg-gray-200">
+             <Camera className="w-3 h-3"/> Foto
+        </a>
+    )}
+    {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
+        <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-2 py-1 rounded border border-orange-200 text-[10px] font-bold hover:bg-orange-100">
+             <FileIcon className="w-3 h-3"/> Dokumen
+        </a>
+    )}
+</div>
+{/* ----------------------------------------------- */}
+
                 {item.tipe === 'Cuti' && item.status === 'Pending' && !canViewAll && (
                   <button onClick={() => handleRequestApproval(item)} disabled={sendingEmail} className="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-purple-200 border border-purple-200">
                     {sendingEmail ? 'Mengirim...' : <><CheckSquare className="w-3 h-3"/> Kirim Ulang Email Approval</>}
