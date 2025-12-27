@@ -407,7 +407,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
                     <p className="text-[10px] text-gray-400 mt-1">
                         {isAttendance 
                             ? `Tap untuk ${item.label}` 
-                            : (isCutiEmpty ? 'Kuota Habis' : (isIjinFull ? 'Limit Tercapai (4/4)' : 'Pengajuan Form'))
+                            : (isCutiEmpty ? 'Maksimal Pengajuan Ijin 4x /bulan' : (isIjinFull ? 'Limit Tercapai (4/4)' : 'Pengajuan Form'))
                         }
                     </p> 
                 </button> 
@@ -898,11 +898,8 @@ function RemarkScreen({ user, setView }) {
                                 <option>Koreksi Profil (Nama/Divisi/Lainnya)</option>
                                 <option>Koreksi Absensi (Lupa Absen Masuk/Pulang)</option>
                                 <option>Koreksi Cuti / Sisa Cuti</option>
-                                <option>Koreksi Shift Kerja</option>
-                                <option>Koreksi Jam Kerja</option>
-                                <option>Masukan dan Keluhan</option>
-                                <option>Pertanyaan</option>
-                                <option>Lainnya</option>
+                                <option>Koreksi Shift / Jam Kerja</option>
+                                <option>Koreksi Lainnya</option>
                             </select>
                         </div>
                         <div>
@@ -1599,25 +1596,33 @@ const handleDecision = async (uuid, decision, namaUser) => {
   );
 }
 
-// --- 5. HISTORY SCREEN ---
+// --- 5. HISTORY SCREEN (UPDATED: Filter Status & Resend Email Button) ---
 function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sendingEmail, setSendingEmail] = useState(false);
+  
+  // FILTER STATE
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
   const [filterType, setFilterType] = useState('All'); 
+  const [filterStatus, setFilterStatus] = useState('All'); // <--- [BARU] State Filter Status
+
   const [showWebReport, setShowWebReport] = useState(false);
   const [reportStatusFilter, setReportStatusFilter] = useState('All');
 
   const userRole = user.role ? String(user.role).toLowerCase() : '';
   const canViewAll = ['admin', 'hrd'].includes(userRole);
   const isSuperAdmin = userRole === 'admin' && (user.lokasi === 'All' || !user.lokasi);
+  
   const [allUsers, setAllUsers] = useState([]); 
   const [selectedUserIds, setSelectedUserIds] = useState([]); 
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [locationFilter, setLocationFilter] = useState('All');
   const [searchUser, setSearchUser] = useState(''); 
+
+  // DAFTAR TIPE ABSEN YANG BUTUH APPROVAL (Untuk logika tombol kirim ulang email)
+  const APPROVAL_TYPES = ['Cuti', 'Sakit', 'Dinas Luar', 'Lembur', 'Tukar Shift', 'Off', 'Cuti EO'];
 
   const fetchUsers = async () => {
     try {
@@ -1655,54 +1660,37 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
   useEffect(() => { 
       if(canViewAll) fetchUsers();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationFilter]);
 
   useEffect(() => {
       fetchHistory(); 
-      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedUserIds]);
 
-  const formatDateIndo = (dateString) => { if (!dateString || dateString === '-') return '-';
-    try { const date = new Date(dateString); return date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
-    } catch (e) { return dateString; } };
-  const formatDateShort = (dateString) => { if (!dateString || dateString === '-') return '-';
-    try { return new Date(dateString).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return dateString; } };
-  const formatTimeOnly = (val) => { if (!val || val === '-') return '-';
-    if (typeof val === 'string' && (val.includes('T') || val.length > 8)) { try { const dateObj = new Date(val);
-    if (!isNaN(dateObj.getTime())) { return dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':');
-    } } catch (e) { return val.substring(0, 5); } } return val.length >= 5 ? val.substring(0, 5) : val; };
-  const formatDateTimeFull = (val) => {
-    if (!val || val === '-') return '-';
-    try {
-        const d = new Date(val);
-        if(isNaN(d.getTime())) return val;
-        const dd = String(d.getDate()).padStart(2, '0');
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const yy = String(d.getFullYear()).slice(-2);
-        const hh = String(d.getHours()).padStart(2, '0');
-        const min = String(d.getMinutes()).padStart(2, '0');
-        return `${dd}-${mm}-${yy} ${hh}:${min}`;
-    } catch(e) { return val; }
-  };
+  // FORMATTERS
+  const formatDateIndo = (dateString) => { if (!dateString || dateString === '-') return '-'; try { const date = new Date(dateString); return date.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return dateString; } };
+  const formatDateShort = (dateString) => { if (!dateString || dateString === '-') return '-'; try { return new Date(dateString).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return dateString; } };
+  const formatTimeOnly = (val) => { if (!val || val === '-') return '-'; if (typeof val === 'string' && (val.includes('T') || val.length > 8)) { try { const dateObj = new Date(val); if (!isNaN(dateObj.getTime())) { return dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':'); } } catch (e) { return val.substring(0, 5); } } return val.length >= 5 ? val.substring(0, 5) : val; };
+  const formatDateTimeFull = (val) => { if (!val || val === '-') return '-'; try { const d = new Date(val); if(isNaN(d.getTime())) return val; const dd = String(d.getDate()).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const yy = String(d.getFullYear()).slice(-2); const hh = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${dd}-${mm}-${yy} ${hh}:${min}`; } catch(e) { return val; } };
 
+  // HANDLE ACTIONS
   const handleRequestApproval = async (item) => {
     const detailTanggal = item.tglMulai && item.tglMulai !== '-' 
         ? `${formatDateIndo(item.tglMulai)} s/d ${formatDateIndo(item.tglSelesai)}`
         : formatDateIndo(item.waktu);
+    
     const message = `Kirim email pengajuan approval untuk:\n\nForm: ${item.tipe}\nTanggal: ${detailTanggal}\n\nLanjutkan kirim ke Kepala Divisi?`;
     if (!window.confirm(message)) return;
+    
     setSendingEmail(true);
     try {
       const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'request_approval_email', uuid: item.uuid }) });
-      const data = await res.json(); alert(data.message);
+      const data = await res.json(); 
+      alert(data.message);
     } catch (e) { alert("Gagal kirim email"); } 
     finally { setSendingEmail(false); }
   };
-  const handleDelete = async (uuid) => { if (!window.confirm('Yakin hapus data ini?')) return;
-    try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) });
-    const data = await res.json(); if (data.result === 'success') { alert('Berhasil dihapus'); fetchHistory(); } else { alert(data.message);
-    } } catch (e) { alert('Gagal hapus'); } };
+
+  const handleDelete = async (uuid) => { if (!window.confirm('Yakin hapus data ini?')) return; try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) }); const data = await res.json(); if (data.result === 'success') { alert('Berhasil dihapus'); fetchHistory(); } else { alert(data.message); } } catch (e) { alert('Gagal hapus'); } };
   const handleEdit = (item) => { setEditItem(item); localStorage.setItem('absenType', item.tipe); setView('form'); };
   
   const isEditable = (waktuStr, status) => {
@@ -1716,47 +1704,45 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     } catch (e) { return false; }
   };
 
+  // --- LOGIC FILTERING UPDATE (DATE + TYPE + STATUS) ---
   const getFilteredHistory = () => { 
     return history.filter(item => { 
       const itemDate = new Date(item.waktu).setHours(0, 0, 0, 0); 
       const start = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null; 
       const end = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null; 
+      
       const matchDate = (!start && !end) || (start && end && itemDate >= start && itemDate <= end) || (start && itemDate >= start) || (end && itemDate <= end);
       const matchType = filterType === 'All' || item.tipe === filterType;
-      return matchDate && matchType;
+      
+      // [BARU] Logika Filter Status
+      const matchStatus = filterStatus === 'All' || item.status === filterStatus;
+
+      return matchDate && matchType && matchStatus;
     });
   };
   
   const toggleUserSelection = (id) => {
-     if(selectedUserIds.includes(id)) {
-        setSelectedUserIds(selectedUserIds.filter(x => x !== id));
-     } else {
-        setSelectedUserIds([...selectedUserIds, id]);
-     }
+     if(selectedUserIds.includes(id)) { setSelectedUserIds(selectedUserIds.filter(x => x !== id)); } 
+     else { setSelectedUserIds([...selectedUserIds, id]); }
   };
 
   const selectAllUsers = () => {
      const visibleUsers = allUsers.filter(u => u.nama.toLowerCase().includes(searchUser.toLowerCase()));
      const visibleIds = visibleUsers.map(u => u.id);
      const allVisibleSelected = visibleIds.every(id => selectedUserIds.includes(id));
-     if(allVisibleSelected) {
-         setSelectedUserIds(selectedUserIds.filter(id => !visibleIds.includes(id)));
-     } else {
-         const newSelection = [...new Set([...selectedUserIds, ...visibleIds])];
-         setSelectedUserIds(newSelection);
-     }
+     if(allVisibleSelected) { setSelectedUserIds(selectedUserIds.filter(id => !visibleIds.includes(id))); } 
+     else { const newSelection = [...new Set([...selectedUserIds, ...visibleIds])]; setSelectedUserIds(newSelection); }
   };
 
   const displayData = getFilteredHistory().filter(item => {
-      if (canViewAll) {
-          if (item.tipe === 'Hadir' || item.tipe === 'Pulang') return false;
-      }
+      if (canViewAll) { if (item.tipe === 'Hadir' || item.tipe === 'Pulang') return false; }
       return true;
   });
 
   const reportData = [...getFilteredHistory()]
     .filter(item => reportStatusFilter === 'All' || item.status === reportStatusFilter)
     .sort((a, b) => a.nama.localeCompare(b.nama));
+
   const getStatusColor = (status) => { 
       if (status === 'Approved' || status === 'Verified') return 'bg-green-100 text-green-700 border-green-200';
       if (status === 'Rejected') return 'bg-red-100 text-red-700 border-red-200'; 
@@ -1767,16 +1753,13 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
       
+      {/* MODAL WEB REPORT (TETAP SAMA) */}
       {showWebReport && (
         <div className="fixed inset-0 bg-white z-[60] overflow-auto flex flex-col font-sans">
             <div className="bg-slate-800 p-4 text-white flex justify-between items-center shadow-md sticky top-0 z-10">
                 <h3 className="font-bold flex items-center gap-2"><FileIcon className="w-5 h-5"/> Laporan</h3>
                 <div className="flex items-center gap-2">
-                    <select 
-                        value={reportStatusFilter}
-                        onChange={(e) => setReportStatusFilter(e.target.value)}
-                        className="text-xs text-black p-1 rounded border-none outline-none cursor-pointer"
-                    >
+                    <select value={reportStatusFilter} onChange={(e) => setReportStatusFilter(e.target.value)} className="text-xs text-black p-1 rounded border-none outline-none cursor-pointer">
                         <option value="All">Semua Status</option>
                         <option value="Pending">Pending</option>
                         <option value="Approved">Approved</option>
@@ -1786,7 +1769,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                     <button onClick={() => setShowWebReport(false)} className="bg-white/20 p-1.5 rounded-full hover:bg-white/30"><X className="w-5 h-5"/></button>
                 </div>
             </div>
-            
             <div className="p-6 flex-1">
                 <div className="mb-6 border-b pb-4">
                     <h2 className="text-2xl font-bold text-slate-800 uppercase mb-2 tracking-tight">Laporan Data Absensi</h2>
@@ -1797,7 +1779,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                         <div><span className="font-semibold text-gray-800">Filter Lokasi:</span> {locationFilter}</div>
                     </div>
                 </div>
-
                 <div className="overflow-auto max-h-[70vh] rounded-lg border border-gray-200 shadow-sm relative">
                     <table className="w-full text-xs text-left divide-y divide-gray-200 whitespace-nowrap">
                         <thead className="bg-slate-100 text-slate-700 uppercase font-bold sticky top-0 z-10 shadow-sm">
@@ -1820,9 +1801,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                     <td className="px-4 py-3 font-mono text-gray-600">{item.noPayroll || '-'}</td>
                                     <td className="px-4 py-3 font-bold text-gray-800">{item.nama}</td>
                                     <td className="px-4 py-3">
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                            {item.tipe}
-                                        </span>
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">{item.tipe}</span>
                                     </td>
                                     <td className="px-4 py-3 text-gray-600">{formatDateTimeFull(item.waktu)}</td>
                                     <td className="px-4 py-3 text-gray-600">
@@ -1833,45 +1812,34 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                     </td>
                                     <td className="px-4 py-3 italic text-gray-500 max-w-[200px] truncate" title={item.catatan}>{item.catatan || '-'}</td>
                                     <td className="px-4 py-3 text-center">
-                                        <span className={`inline-block px-2 py-1 text-[10px] font-bold rounded-full border ${getStatusColor(item.status)}`}>
-                                            {item.status || 'Pending'}
-                                        </span>
+                                        <span className={`inline-block px-2 py-1 text-[10px] font-bold rounded-full border ${getStatusColor(item.status)}`}>{item.status || 'Pending'}</span>
                                     </td>
                                     <td className="px-4 py-3 text-gray-500 text-[10px]">{formatDateTimeFull(item.approvalTime)}</td>
                                 </tr>
                             ))}
-                            {reportData.length === 0 && (
-                                <tr><td colSpan="9" className="p-8 text-center text-gray-400 italic">Tidak ada data untuk ditampilkan.</td></tr>
-                            )}
+                            {reportData.length === 0 && ( <tr><td colSpan="9" className="p-8 text-center text-gray-400 italic">Tidak ada data untuk ditampilkan.</td></tr> )}
                         </tbody>
                     </table>
-                </div>
-                <div className="mt-4 text-center text-xs text-gray-400 print:hidden">
-                    Gunakan fitur cetak bawaan browser (Ctrl + P) untuk menyimpan sebagai PDF.
                 </div>
             </div>
         </div>
       )}
 
+      {/* HEADER UTAMA */}
       <div className="flex items-center gap-2 mb-4">
         <BackButton onClick={() => setView('dashboard')} />
         <h2 className="text-xl font-bold ml-2">Riwayat & Laporan</h2>
       </div>
       
+      {/* FILTER USER KHUSUS ADMIN (TETAP) */}
       {canViewAll && (
          <div className="bg-slate-800 text-white p-3 rounded-xl shadow-sm mb-4">
-             <button 
-                onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-                className="flex items-center justify-between w-full font-bold text-sm"
-            >
-                <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4"/> Filter Karyawan ({selectedUserIds.length > 0 ? selectedUserIds.length : 'Semua di ' + locationFilter})
-                </div>
+             <button onClick={() => setIsFilterExpanded(!isFilterExpanded)} className="flex items-center justify-between w-full font-bold text-sm">
+                <div className="flex items-center gap-2"><Users className="w-4 h-4"/> Filter Karyawan ({selectedUserIds.length > 0 ? selectedUserIds.length : 'Semua di ' + locationFilter})</div>
                 {isFilterExpanded ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}
             </button>
-            
             {isFilterExpanded && (
-                 <div className="mt-3 bg-slate-700 p-3 rounded-lg max-h-[400px] overflow-y-auto">
+                  <div className="mt-3 bg-slate-700 p-3 rounded-lg max-h-[400px] overflow-y-auto">
                     {isSuperAdmin && (
                         <div className="mb-3 bg-slate-600 p-2 rounded">
                             <label className="text-[10px] text-gray-300 block mb-1">Pilih Lokasi:</label>
@@ -1881,7 +1849,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                 <option value="Jakarta">Jakarta</option>
                             </select>
                         </div>
-                    )}
+                     )}
                     <div className="mb-3 relative">
                         <input type="text" placeholder="Cari Nama Karyawan..." value={searchUser} onChange={(e) => setSearchUser(e.target.value)} className="w-full p-2 pl-8 text-sm text-black rounded" />
                         <Search className="w-4 h-4 text-gray-500 absolute left-2.5 top-2.5"/>
@@ -1904,18 +1872,36 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
          </div>
       )}
 
+      {/* --- BOX FILTER UTAMA --- */}
       <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 mb-4">
         <div className="flex items-center gap-2 mb-2 text-xs font-bold text-gray-500"><Filter className="w-4 h-4" /> Filter Data</div>
         <div className="grid grid-cols-2 gap-2 mb-2"> 
           <div><label className="text-[10px] text-gray-400">Dari Tanggal</label><input type="date" className="w-full border rounded p-1 text-sm" value={filterStart} onChange={e => setFilterStart(e.target.value)} /></div> 
           <div><label className="text-[10px] text-gray-400">Sampai Tanggal</label><input type="date" className="w-full border rounded p-1 text-sm" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} /></div> 
         </div>
-        <div className="mb-3">
-            <label className="text-[10px] text-gray-400">Form Absen</label>
-            <select className="w-full border rounded p-1.5 text-sm bg-white" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-                {uniqueTypes.map((t, i) => ( <option key={i} value={t}>{t === 'All' ? 'Semua Form' : t}</option> ))}
-            </select>
+        
+        <div className="grid grid-cols-2 gap-2 mb-3">
+             {/* Filter Form Absen */}
+             <div>
+                <label className="text-[10px] text-gray-400">Form Absen</label>
+                <select className="w-full border rounded p-1.5 text-sm bg-white" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                    {uniqueTypes.map((t, i) => ( <option key={i} value={t}>{t === 'All' ? 'Semua Form' : t}</option> ))}
+                </select>
+             </div>
+
+             {/* [BARU] Filter Status */}
+             <div>
+                <label className="text-[10px] text-gray-400">Status</label>
+                <select className="w-full border rounded p-1.5 text-sm bg-white" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                    <option value="All">Semua Status</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                    <option value="Verified">Verified</option>
+                </select>
+             </div>
         </div>
+
         <div className="flex gap-2"> 
           <button onClick={() => setShowWebReport(true)} className="flex-1 flex items-center justify-center gap-2 p-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition text-sm font-bold"><Eye className="w-4 h-4" /> Lihat Laporan</button> 
         </div>
@@ -1928,6 +1914,10 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
             const canEdit = isEditable(item.waktu, item.status);
             const isRegularAbsen = item.tipe === 'Hadir' || item.tipe === 'Pulang';
 
+            // [PERBAIKAN] Logika Tombol Kirim Ulang Email
+            // Muncul jika: Tipe ada di APPROVAL_TYPES, Status Pending, dan Bukan Admin (View All)
+            const showResendButton = APPROVAL_TYPES.includes(item.tipe) && item.status === 'Pending' && !canViewAll;
+
             return (
               <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative">
                 <div className="flex justify-between items-start mb-2">
@@ -1938,8 +1928,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                     <p className="text-xs text-gray-500 font-medium">{formatDateIndo(item.waktu)}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                      {!isRegularAbsen && (<span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getStatusColor(item.status)}`}>{item.status || 'Pending'}</span>)}
-                     {isRegularAbsen && (<span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{formatTimeOnly(item.waktu)}</span>)}
+                    {!isRegularAbsen && (<span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getStatusColor(item.status)}`}>{item.status || 'Pending'}</span>)}
+                    {isRegularAbsen && (<span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">{formatTimeOnly(item.waktu)}</span>)}
                     <div className="flex gap-1 mt-1">
                       {canEdit && !canViewAll && (
                         <>
@@ -1950,26 +1940,26 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                     </div>
                   </div>
                 </div>
-                
+               
                 <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded mb-2 italic border border-gray-100">"{item.catatan || '-'}"</p>
                 {(item.tglMulai && item.tglMulai !== '-') && (<div className="text-xs text-blue-600 flex gap-2 mt-1 font-medium items-center bg-blue-50 p-1.5 rounded w-fit"><Calendar className="w-3 h-3"/> {formatDateShort(item.tglMulai)} s/d {formatDateShort(item.tglSelesai)}</div>)}
                 
-{/* --- [TAMBAHAN] TOMBOL LIHAT BUKTI DI HISTORY --- */}
-<div className="flex flex-wrap gap-2 mt-2">
-    {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
-        <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-300 text-[10px] font-bold hover:bg-gray-200">
-             <Camera className="w-3 h-3"/> Lampiran
-        </a>
-    )}
-    {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
-        <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-2 py-1 rounded border border-orange-200 text-[10px] font-bold hover:bg-orange-100">
-             <FileIcon className="w-3 h-3"/> Lampiran
-        </a>
-    )}
-</div>
-{/* ----------------------------------------------- */}
+                {/* BUTTON LIHAT BUKTI */}
+                <div className="flex flex-wrap gap-2 mt-2">
+                    {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
+                        <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-300 text-[10px] font-bold hover:bg-gray-200">
+                             <Camera className="w-3 h-3"/> Lampiran
+                        </a>
+                    )}
+                    {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
+                        <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-2 py-1 rounded border border-orange-200 text-[10px] font-bold hover:bg-orange-100">
+                             <FileIcon className="w-3 h-3"/> Lampiran
+                        </a>
+                    )}
+                </div>
 
-                {item.tipe === 'Cuti' && item.status === 'Pending' && !canViewAll && (
+                {/* [PERBAIKAN] TOMBOL KIRIM ULANG EMAIL */}
+                {showResendButton && (
                   <button onClick={() => handleRequestApproval(item)} disabled={sendingEmail} className="w-full mt-3 bg-purple-100 text-purple-700 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 hover:bg-purple-200 border border-purple-200">
                     {sendingEmail ? 'Mengirim...' : <><CheckSquare className="w-3 h-3"/> Kirim Ulang Email Approval</>}
                   </button>
