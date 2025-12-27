@@ -16,11 +16,16 @@ import BackButton from './components/BackButton';
 
 
 const ICON_MAP = {
-  'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar
+  'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 
+  'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar, 
+  'Tukar Shift': CalendarCheck, 'Off': CalendarCheck // Tambahkan Icon untuk Off
 };
 
 const COLOR_MAP = {
-  'Hadir': 'bg-green-500', 'Pulang': 'bg-red-500', 'Ijin': 'bg-yellow-500', 'Sakit': 'bg-orange-500', 'Lembur': 'bg-purple-500', 'Dinas': 'bg-indigo-500', 'Cuti': 'bg-pink-500'
+  'Hadir': 'bg-green-500', 'Pulang': 'bg-red-500', 'Ijin': 'bg-yellow-500', 
+  'Sakit': 'bg-orange-500', 'Lembur': 'bg-purple-500', 'Dinas': 'bg-indigo-500', 
+  'Cuti': 'bg-pink-500',
+  'Tukar Shift': 'bg-teal-500', 'Off': 'bg-gray-500' // Tambahkan Warna untuk Off
 };
 
 
@@ -1202,7 +1207,7 @@ const handleSubmit = async () => {
     }
 
     if (isPhotoRequired && !isEditMode && !photo) { 
-        alert(type === 'Sakit' ? 'Mohon ambil foto Surat Dokter menggunakan kamera.' : 'Foto Wajib untuk form absen ini.'); 
+        alert(type === 'Sakit' ? 'Mohon foto Surat Dokter menggunakan kamera.' : 'Foto Wajib untuk form absen ini.'); 
         return; 
     }
     
@@ -1696,7 +1701,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   };
   const handleDelete = async (uuid) => { if (!window.confirm('Yakin hapus data ini?')) return;
     try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) });
-    const data = await res.json(); if (data.result === 'success') { alert('Terhapus'); fetchHistory(); } else { alert(data.message);
+    const data = await res.json(); if (data.result === 'success') { alert('Berhasil dihapus'); fetchHistory(); } else { alert(data.message);
     } } catch (e) { alert('Gagal hapus'); } };
   const handleEdit = (item) => { setEditItem(item); localStorage.setItem('absenType', item.tipe); setView('form'); };
   
@@ -1953,12 +1958,12 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 <div className="flex flex-wrap gap-2 mt-2">
     {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
         <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-300 text-[10px] font-bold hover:bg-gray-200">
-             <Camera className="w-3 h-3"/> Foto
+             <Camera className="w-3 h-3"/> Lampiran
         </a>
     )}
     {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
         <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-2 py-1 rounded border border-orange-200 text-[10px] font-bold hover:bg-orange-100">
-             <FileIcon className="w-3 h-3"/> Dokumen
+             <FileIcon className="w-3 h-3"/> Lampiran
         </a>
     )}
 </div>
