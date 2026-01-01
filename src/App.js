@@ -1424,178 +1424,6 @@ const handleSubmit = async () => {
   );
 }
 
-// --- 4. APPROVAL SCREEN ---
-// function ApprovalScreen({ user, setView }) {
-//   const [list, setList] = useState([]);
-//   const [loading, setLoading] = useState(true);
-
-//   // FIX WARNING: Wrap in useCallback
-//   const fetchApprovalList = useCallback(async () => {
-//     setLoading(true);
-//     try {
-//       const res = await fetch(SCRIPT_URL, { 
-//         method: 'POST', 
-//         body: JSON.stringify({ 
-//             action: 'get_approval_list', 
-//             userId: user.id, 
-//             divisi: user.divisi, 
-//             role: user.role,
-//             lokasi: user.lokasi || 'All' 
-//         }) 
-//       });
-//       const data = await res.json();
-//       if (data.result === 'success') setList(data.list);
-//     } catch (e) { alert('Gagal memuat data approval'); } finally { setLoading(false); }
-//   }, [user.id, user.divisi, user.role, user.lokasi]);
-
-//   useEffect(() => { fetchApprovalList(); }, [fetchApprovalList]);
-
-// const handleDecision = async (uuid, decision, namaUser) => {
-//     const isReject = decision === 'reject';
-//     const actionText = isReject ? 'Menolak' : 'Menyetujui';
-    
-//     // 1. Munculkan Prompt Alasan
-//     const pesanPrompt = isReject 
-//         ? `Alasan PENOLAKAN untuk ${namaUser} (Wajib diisi):` 
-//         : `Catatan PERSETUJUAN untuk ${namaUser} (Opsional):`;
-        
-//     const alasanInput = window.prompt(pesanPrompt, "");
-
-//     // 2. Validasi
-//     if (alasanInput === null) return; // Klik Batal di prompt
-//     if (isReject && alasanInput.trim() === "") {
-//         alert("Gagal! Anda wajib memberikan alasan jika menolak pengajuan.");
-//         return;
-//     }
-
-//     if (!window.confirm(`Yakin ingin ${actionText} pengajuan ini?`)) return;
-
-//     try {
-//         const res = await fetch(SCRIPT_URL, { 
-//             method: 'POST', 
-//             body: JSON.stringify({ 
-//                 action: 'process_approval', 
-//                 uuid, 
-//                 decision, 
-//                 approverName: user.nama,
-//                 alasan: alasanInput.trim() // Kirim alasan ke backend
-//             }) 
-//         }).then(r => r.json());
-
-//         if (res.result === 'success') { 
-//             alert(res.message);
-//             fetchApprovalList(); 
-//         } else {
-//             alert(res.message);
-//         }
-//     } catch (e) {
-//         alert('Terjadi kesalahan koneksi');
-//     }
-// };
-
-//   const formatDateIndo = (dateString) => { 
-//   if (!dateString || dateString === '-') return '-';
-//   try { 
-//     const date = new Date(dateString); 
-//     // Menggunakan Intl.DateTimeFormat untuk format DD-MM-YYYY
-//     const day = String(date.getDate()).padStart(2, '0');
-//     const month = String(date.getMonth() + 1).padStart(2, '0');
-//     const year = date.getFullYear();
-    
-//     return `${day}-${month}-${year}`;
-//   } catch (e) { 
-//     return dateString; 
-//   } 
-// };
-//   return (
-//     <div className="p-4 h-full overflow-y-auto pb-20">
-//       <div className="flex items-center gap-2 mb-4">
-//         <BackButton onClick={() => setView('dashboard')} />
-//         <h2 className="text-xl font-bold ml-2">Daftar Approval ({user.lokasi || 'All'})</h2>
-//       </div>
-
-//       <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4 text-xs text-blue-800">
-//         <p className="font-bold">Info:</p>
-//         <p>Halaman ini menampilkan pengajuan dari karyawan di <strong>{user.lokasi}</strong> yang berstatus <strong>Pending</strong>.</p>
-//       </div>
-
-//       {loading ? <p className="text-center text-gray-500 mt-10">Memuat data pengajuan...</p> : (
-//         <div className="space-y-4">
-//           {list.length === 0 && (
-//               <div className="text-center py-10 flex flex-col items-center">
-//                   <CheckCircle className="w-12 h-12 text-gray-300 mb-2" />
-//                    <p className="text-gray-400">Tidak ada pengajuan pending saat ini.</p>
-//               </div>
-//           )}
-          
-//           {list.map((item, idx) => (
-//             <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-orange-400 relative overflow-hidden">
-//               <div className="flex justify-between items-start mb-2">
-//                   <div>
-//                       <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-//                         <User className="w-4 h-4 text-gray-500"/> {item.nama}
-//                       </h4>
-//                       <div className="flex gap-1 mt-1">
-//                         <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold border border-gray-200">
-//                             {item.divisi}
-//                         </span>
-//                         <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-bold border border-blue-200">
-//                             {item.lokasi}
-//                         </span>
-//                       </div>
-//                   </div>
-//                   <div className="text-right">
-//                       <span className="text-xs font-bold px-2 py-1 bg-orange-100 text-orange-700 rounded border border-orange-200">
-//                             {item.tipe}
-//                       </span>
-//                   </div>
-//               </div>
-              
-//               <div className="text-sm text-gray-600 mb-3 bg-gray-50 p-2 rounded border border-gray-100 mt-2">
-//                 <div className="flex items-center gap-2 mb-1">
-//                     <Calendar className="w-3 h-3 text-gray-400"/> 
-//                     <span className="font-medium">{item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)} - ${formatDateIndo(item.tglSelesai)}` : formatDateIndo(item.waktu)}</span>
-//                 </div>
-//                 <p className="italic text-gray-500">"{item.catatan || 'Tidak ada catatan'}"</p>
-//               </div>
-
-// {/* --- [TAMBAHAN] TOMBOL LIHAT BUKTI --- */}
-// <div className="flex flex-wrap gap-2 mb-3">
-//     {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
-//         <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 transition">
-//             <Camera className="w-3 h-3"/> View Photo
-//         </a>
-//     )}
-//     {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
-//         <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-200 hover:bg-orange-100 transition">
-//             <FileIcon className="w-3 h-3"/> View Attachment
-//         </a>
-//     )}
-// </div>
-// {/* ------------------------------------- */}
-
-//               <div className="flex gap-2">
-//                   <button 
-//                     onClick={() => handleDecision(item.uuid, 'approve', item.nama)} 
-//                     className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center justify-center gap-2"
-//                   >
-//                     <CheckCircle className="w-4 h-4"/> Approve
-//                   </button>
-//                   <button 
-//                     onClick={() => handleDecision(item.uuid, 'reject', item.nama)} 
-//                     className="flex-1 bg-red-100 text-red-600 py-2 rounded-lg text-sm font-bold hover:bg-red-200 flex items-center justify-center gap-2 border border-red-200"
-//                   >
-//                     <X className="w-4 h-4"/> Reject
-//                   </button>
-//               </div>
-//             </div>
-//           ))}
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
-
 // --- 4. APPROVAL SCREEN (UPDATED: DENGAN FILTER TIPE) ---
 function ApprovalScreen({ user, setView }) {
   const [list, setList] = useState([]);
@@ -2604,6 +2432,7 @@ function ChangePasswordScreen({ user, setView }) {
 function DbAbsenScreen({ user, setView }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [ijinStats, setIjinStats] = useState({ count: 0, bookedDates: [] });
 
   // STATE FILTER
   const [filterStart, setFilterStart] = useState('');
@@ -2637,7 +2466,23 @@ function DbAbsenScreen({ user, setView }) {
         const data = await res.json();
         if (data.result === 'success') {
             setList(data.list);
-        } else {
+        } 
+        
+        // --- 2. [BARU] Ambil Data Stats untuk Limit Ijin ---
+        const resStats = await fetch(SCRIPT_URL, { 
+            method: 'POST', 
+            body: JSON.stringify({ action: 'get_stats', userId: user.id }) 
+        });
+        const dataStats = await resStats.json();
+        if (dataStats.result === 'success' && dataStats.stats) {
+             setIjinStats({
+                 count: dataStats.stats.ijin_usage || 0,
+                 bookedDates: dataStats.stats.booked_dates || []
+             });
+        }
+        // --------------------------------------------------
+        
+        else {
             alert(data.message);
         }
       } catch (e) {
@@ -2714,6 +2559,7 @@ function DbAbsenScreen({ user, setView }) {
       if (!dayName) return '-';
       const map = { 'SUN': 'MINGGU', 'MON': 'SENIN', 'TUE': 'SELASA', 'WED': 'RABU', 'THU': 'KAMIS', 'FRI': 'JUMAT', 'SAT': 'SABTU' };
       const key = String(dayName).toUpperCase().substring(0, 3);
+      
       return map[key] || dayName;
   };
 
@@ -2812,9 +2658,9 @@ function DbAbsenScreen({ user, setView }) {
                 </div>
             )}
 {filteredList.map((item, idx) => {
+    // 1. Logika Lama: Penentuan Keterangan & Deteksi Telat (TETAP)
     const textKeterangan = KETERANGAN_MAP[item.symbol] ? `(${KETERANGAN_MAP[item.symbol]})` : '';
     
-    // LOGIKA BARU: Cek apakah simbol mengandung "T" atau "TELAT"
     const isLate = item.symbol && (
         item.symbol.toUpperCase() === 'T' || 
         item.symbol.toUpperCase().includes('TELAT') ||
@@ -2822,8 +2668,25 @@ function DbAbsenScreen({ user, setView }) {
         item.symbol.toUpperCase().includes('TSI')
     );
 
+    // 2. LOGIKA BARU: Cek Limit & Tanggal (TAMBAHAN)
+    // Menggunakan optional chaining (?.) untuk keamanan jika data belum load
+    const currentCount = ijinStats?.count || 0;
+    const bookedList = ijinStats?.bookedDates || [];
+
+    const isLimitReached = currentCount >= 4; 
+    const isAlreadyBooked = bookedList.includes(item.tanggal);
+    
+    // Tombol dimatikan jika: Limit habis ATAU Tanggal ini sudah diajukan
+    const isButtonDisabled = isLimitReached || isAlreadyBooked;
+
+    // Tentukan Label Tombol secara Dinamis
+    let buttonLabel = `Ajukan Form Ijin (${item.tanggal})`;
+    if (isAlreadyBooked) buttonLabel = "Sudah Diajukan";
+    else if (isLimitReached) buttonLabel = "Limit Ijin Penuh (4/4)";
+
     return (
         <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+            {/* --- HEADER KARTU (TETAP) --- */}
             <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-2">
                 <div>
                     <p className="text-xs text-gray-500 font-bold uppercase">
@@ -2832,15 +2695,15 @@ function DbAbsenScreen({ user, setView }) {
                     <h4 className="font-bold text-gray-800">{item.tanggal}</h4>
                 </div>
                 <div className="text-right">
-                     <span className={`text-xs font-bold px-2 py-1 rounded ${getSymbolColor(item.symbol)} block`}>
-                          {item.symbol || '-'} <br/>
-                          <span className="text-[10px] opacity-80 font-normal">{textKeterangan}</span>
-                     </span>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${getSymbolColor(item.symbol)} block`}>
+                            {item.symbol || '-'} <br/>
+                            <span className="text-[10px] opacity-80 font-normal">{textKeterangan}</span>
+                        </span>
                 </div>
             </div>
             
+            {/* --- DATA JAM (TETAP) --- */}
             <div className="grid grid-cols-2 gap-y-2 text-sm">
-                {/* ... (Konten Jam Masuk, Pulang, dsb tetap sama) ... */}
                 <div>
                     <p className="text-[10px] text-gray-400">Jam Masuk</p>
                     <p className="font-medium font-bold text-blue-600">{formatTimeOnly(item.masuk)}</p>
@@ -2851,17 +2714,17 @@ function DbAbsenScreen({ user, setView }) {
                 </div>
                 <div>
                     <p className="text-[10px] text-gray-400">Jam Kerja</p>
-                     <p className="font-medium">{item.jamKerja}</p>
+                        <p className="font-medium">{item.jamKerja}</p>
                 </div>
                 <div>
                     <p className="text-[10px] text-gray-400">Telat</p>
                     <p className={`font-medium ${item.telat ? 'text-red-600' : 'text-gray-600'}`}>
                     {formatTimeOnly(item.telat)} 
                     </p>
-              </div>
+                </div>
             </div>
 
- {/* --- [RESTORE] LOG WAKTU SCAN --- */}
+            {/* --- LOG SCAN (TETAP) --- */}
             <div className="mt-3">
                 <p className="text-[10px] text-gray-400 mb-1">Log Scan Mesin:</p>
                 <div className="bg-gray-50 p-2.5 rounded border border-gray-200 text-xs font-mono text-gray-600 break-words leading-relaxed">
@@ -2869,30 +2732,35 @@ function DbAbsenScreen({ user, setView }) {
                 </div>
             </div>
 
-            {/* --- TOMBOL TAMBAHAN UNTUK IJIN --- */}
+            {/* --- TOMBOL IJIN (DIPERBARUI) --- */}
             {isLate && (
                 <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
                     <button 
+                        disabled={isButtonDisabled} // 1. Matikan fungsi klik jika disabled
                         onClick={() => {
-                            // Simpan tipe absen ke localStorage
+                            if(isButtonDisabled) return; // 2. Cegah eksekusi jika disabled
+                            
+                            // Logic lama tetap jalan
                             localStorage.setItem('absenType', 'Ijin');
-                            // SetView ke form
                             setView('form');
-                            // Opsional: Anda bisa menambahkan logic untuk mengisi otomatis catatan
-                            // berdasarkan tanggal telat tersebut jika diperlukan.
                         }}
-                        className="w-full flex items-center justify-center gap-2 py-2 bg-orange-50 text-orange-600 border border-orange-200 rounded-lg text-xs font-bold hover:bg-orange-100 transition-colors active:scale-95"
+                        // 3. Styling Dinamis (Abu-abu jika disabled, Orange jika aktif)
+                        className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-colors border
+                            ${isButtonDisabled 
+                                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
+                                : 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100 active:scale-95'
+                            }
+                        `}
                     >
-                        <FileText className="w-3.5 h-3.5" />
-                        Ajukan Form Ijin ({item.tanggal})
+                        {/* Ganti Icon jika disabled */}
+                        {isButtonDisabled ? <CheckCircle className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
+                        {buttonLabel}
                     </button>
                 </div>
             )}
-
-            {/* ... (Bagian Log Waktu Scan tetap sama) ... */}
         </div>
-        );
-        })}
+    );
+})}
         </div>
       )}
     </div>
