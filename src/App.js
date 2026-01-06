@@ -142,10 +142,16 @@ export default function AppAbsensi() {
   );
 }
 
-// --- 1. DASHBOARD SCREEN ---
+// --- 1. DASHBOARD SCREEN (PERIODE SESUAI DB ABSEN) ---
 function Dashboard({ user, setUser, setView, masterData }) { 
   const [time, setTime] = useState(new Date());
-  const [stats, setStats] = useState({}); 
+  // Tambahkan periode_db di initial state
+  const [stats, setStats] = useState({ 
+    total_hadir: 0, total_ijin: 0, 
+    total_telat_freq: 0, total_telat_menit: 0, 
+    total_csa: 0,
+    periode_db: '-' // Default
+  }); 
   const [showNews, setShowNews] = useState(false);
   const [newsContent, setNewsContent] = useState(null);
 
@@ -173,7 +179,6 @@ function Dashboard({ user, setUser, setView, masterData }) {
     const fetchNews = async () => {
       const hasBeenShown = sessionStorage.getItem('announcement_shown');
       if (hasBeenShown) return;
-
       try {
         const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_latest_announcement' }) });
         const data = await res.json();
@@ -190,84 +195,167 @@ function Dashboard({ user, setUser, setView, masterData }) {
 
   const availableMenus = masterData.menus || [];
   const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter(item => user.akses.includes(item.value)) : availableMenus; 
-  
   const userRole = user.role ? String(user.role).toLowerCase() : '';
   const canApprove = ['admin', 'hrd', 'manager'].includes(userRole);
   const canAccessPanel = userRole === 'admin' && userRole !== 'hrd';
   const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
   const isShiftWorker = userRole === 'karyawan_shift';
+  const formatDigit = (num) => num.toString().padStart(2, '0');
 
+  // Greeting Logic
   const hour = time.getHours();
   let greeting = 'Selamat Pagi';
   let greetingIcon = '☀️';
-
   if (hour >= 11 && hour < 15) { greeting = 'Selamat Siang'; greetingIcon = '🌤️'; }
   else if (hour >= 15 && hour < 18) { greeting = 'Selamat Sore'; greetingIcon = '🌥️'; }
   else if (hour >= 18) { greeting = 'Selamat Malam'; greetingIcon = '🌙'; }
 
-  const formatDigit = (num) => num.toString().padStart(2, '0');
-  
   return ( 
-    <div className="p-4 pb-20"> 
-      {/* --- KARTU DASHBOARD UTAMA (TAMPILAN LAMA) --- */}
-      <div className="relative rounded-3xl p-6 shadow-xl mb-6 overflow-hidden text-white group">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 bg-[length:400%_400%] animate-[gradient_6s_ease_infinite]"></div>
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-700"></div>
+    <div className="p-4 pb-20 bg-gray-50 min-h-screen"> 
+      
+      {/* --- KARTU PROFIL UTAMA --- */}
+      <div className="relative rounded-3xl p-6 shadow-xl shadow-blue-100 mb-6 overflow-hidden text-slate-800 bg-white border border-white">
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-50 via-blue-50 to-white opacity-80"></div>
+        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+        <div className="absolute bottom-0 left-0 w-32 h-32 bg-cyan-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
 
-         <div className="relative z-10">
-            <div className="flex justify-between items-start mb-6">
+        <div className="relative z-10">
+            <div className="flex justify-between items-start mb-4">
                 <div>
-                    <p className="text-blue-100 text-sm font-medium mb-1 flex items-center gap-2">
+                    <p className="text-blue-600 text-sm font-bold mb-1 flex items-center gap-2">
                        {greetingIcon} {greeting}
                     </p>
-                    <h2 className="text-2xl font-bold tracking-tight">{user.nama}</h2>
-                    <p className="text-xs text-blue-200 bg-blue-800/30 px-2 py-0.5 rounded-full w-fit mt-1 border border-blue-400/30">
+                    <h2 className="text-2xl font-extrabold tracking-tight text-slate-800">{user.nama}</h2>
+                    <p className="text-xs text-slate-500 font-medium bg-white/60 backdrop-blur px-2 py-1 rounded-lg w-fit mt-1 border border-slate-100 shadow-sm">
                         {user.divisi} • {user.lokasi || 'Indonesia'}
                     </p>
                 </div>
                 <div className="text-right">
-                    <div className="text-4xl font-black font-mono tracking-widest flex items-center justify-end">
+                    <div className="text-4xl font-black font-mono tracking-widest flex items-center justify-end text-blue-600">
                         <span>{formatDigit(time.getHours())}</span>
-                        <span className="animate-[pulse_1s_infinite] mx-1 text-blue-300">:</span>
+                        <span className="animate-pulse mx-1 text-slate-300">:</span>
                         <span>{formatDigit(time.getMinutes())}</span>
                     </div>
-                    <p className="text-xs font-medium text-blue-100 mt-1 uppercase tracking-wider">
+                    <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
                         {time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
                 </div>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/20 shadow-inner">
-                 <div className="grid grid-cols-2 gap-y-4 gap-x-6">
-                     <div className="flex flex-col">
-                        <span className="text-[10px] text-blue-200 uppercase tracking-wider flex items-center gap-1"><Building className="w-3 h-3"/> Perusahaan</span>
-                        <span className="text-sm font-semibold truncate" title={user.perusahaan}>{user.perusahaan || '-'}</span>
-                     </div>
-                     <div className="flex flex-col">
-                        <span className="text-[10px] text-blue-200 uppercase tracking-wider flex items-center gap-1"><CreditCard className="w-3 h-3"/> Payroll</span>
-                        <span className="text-sm font-semibold font-mono tracking-wide">{user.noPayroll || '-'}</span>
-                     </div>
-                     <div className="flex flex-col">
-                        <span className="text-[10px] text-blue-200 uppercase tracking-wider flex items-center gap-1"><Briefcase className="w-3 h-3"/> Status</span>
-                        <span className="text-sm font-semibold">{user.statusKaryawan || '-'}</span>
-                     </div>
-                     <div className="flex flex-col">
-                        <span className="text-[10px] text-blue-200 uppercase tracking-wider flex items-center gap-1"><PieChart className="w-3 h-3"/> Sisa Cuti</span>
-                        <span className="text-lg font-bold text-yellow-300">{user.sisaCuti} Hari</span>
-                     </div>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
+                    <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
+                        <CreditCard className="w-4 h-4"/>
+                    </div>
+                    <div className="overflow-hidden">
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">Payroll</p>
+                        <p className="text-xs font-bold text-slate-700 font-mono truncate">{user.noPayroll || '-'}</p>
+                    </div>
+                 </div>
+                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
+                    <div className="bg-amber-100 p-2 rounded-lg text-amber-600">
+                        <PieChart className="w-4 h-4"/>
+                    </div>
+                    <div>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">Sisa Cuti</p>
+                        <p className="text-xs font-bold text-slate-700">{user.sisaCuti} Hari</p>
+                    </div>
+                 </div>
+                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
+                    <div className="bg-indigo-100 p-2 rounded-lg text-indigo-600">
+                        <Building className="w-4 h-4"/>
+                    </div>
+                    <div className="overflow-hidden">
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">Perusahaan</p>
+                        <p className="text-xs font-bold text-slate-700 truncate" title={user.perusahaan}>{user.perusahaan || '-'}</p>
+                    </div>
+                 </div>
+                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
+                    <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600">
+                        <Briefcase className="w-4 h-4"/>
+                    </div>
+                    <div>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">Status</p>
+                        <p className="text-xs font-bold text-slate-700">{user.statusKaryawan || '-'}</p>
+                    </div>
                  </div>
             </div>
         </div>
       </div> 
+
+      {/* --- STATISTIK DASHBOARD (FONT KECIL, ICON BESAR, PERIODE DB) --- */}
+     <div className="flex justify-between items-end mb-3 px-1">
+          <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
+              <Activity className="w-4 h-4 text-blue-500"/> Statistik
+          </h3>
+          <div className="flex flex-col items-end">
+             <span className="text-[9px] text-slate-400 font-medium">Periode Data Absen:</span>
+             <span className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded-full text-blue-600 font-bold shadow-sm">
+                 {/* MENAMPILKAN PERIODE DARI DATA MESIN */}
+                 {stats.periode_db || 'Memuat Data...'}
+             </span>
+          </div>
+      </div>
       
-      {/* MENU SHORTCUT (TAMPILAN LAMA) */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+          {/* Kartu Hadir */}
+          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-emerald-400 flex items-center justify-between">
+              <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Hadir</span>
+                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_hadir || 0}</p>
+              </div>
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <CheckCircle className="w-6 h-6"/> 
+              </div>
+          </div>
+
+          {/* Kartu Ijin */}
+          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-blue-400 flex items-center justify-between">
+              <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Ijin</span>
+                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_ijin || 0}</p>
+              </div>
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+                  <FileText className="w-6 h-6"/>
+              </div>
+          </div>
+
+           {/* Kartu Terlambat */}
+           <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-orange-400 flex items-center justify-between relative overflow-hidden">
+              <div className="z-10">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Telat</span>
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <p className="text-lg font-extrabold text-slate-700">{stats.total_telat_freq || 0}x</p>
+                    <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-1.5 rounded">
+                        {stats.total_telat_menit || 0}m
+                    </span>
+                  </div>
+              </div>
+              <div className="p-3 bg-orange-50 text-orange-600 rounded-xl z-10">
+                  <Clock className="w-6 h-6"/>
+              </div>
+          </div>
+
+           {/* Kartu CSA (Cuti Sakit Alpa) */}
+           <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-rose-400 flex items-center justify-between">
+              <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cuti/Skt/Alpa</span>
+                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_csa || 0}</p>
+              </div>
+              <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+                  <AlertTriangle className="w-6 h-6"/>
+              </div>
+          </div>
+      </div>
+
+      {/* --- MENU SHORTCUT & KARYAWAN SHIFT & GRID MENU --- */}
+      {/* (Tidak ada perubahan, kode tetap sama seperti sebelumnya) */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide"> 
         <button onClick={() => setView('history')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition active:scale-95"><History className="w-5 h-5" /><span className="text-xs">Riwayat</span></button> 
         <button onClick={() => setView('db_absen')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
             <Fingerprint className="w-5 h-5" /> 
             <span className="text-xs">Data Mesin</span>
-          </button>
+           </button>
         <button 
             onClick={() => setView('remark')} 
             className={`flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 font-bold transition active:scale-95 ${isHRDOrAdmin ? 'text-purple-600 hover:bg-purple-50' : 'text-orange-600 hover:bg-orange-50'}`}
@@ -290,23 +378,21 @@ function Dashboard({ user, setUser, setView, masterData }) {
         )} 
       </div> 
 
-      {/* MENU KHUSUS KARYAWAN SHIFT --- */}
       {isShiftWorker && (
          <div className="mb-6">
-            <h3 className="font-bold text-gray-700 mb-2 px-1 flex items-center gap-2">
-                 <div className="w-1 h-5 bg-indigo-600 rounded-full"></div>
-                 Menu Running Shift
-            </h3>
+            <h3 className="font-bold text-slate-700 mb-2 px-1 flex items-center gap-2 text-sm">
+                 <CalendarCheck className="w-4 h-4 text-indigo-500"/> Menu Running Shift
+             </h3>
             <button 
                 onClick={() => setView('input_shift')}
                 className="w-full bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between group active:scale-95 transition-all shadow-sm hover:shadow-md hover:bg-indigo-100"
             >
                 <div className="flex items-center gap-3">
-                     <div className="bg-indigo-600 text-white p-2.5 rounded-lg shadow-sm group-hover:rotate-12 transition-transform">
+                      <div className="bg-indigo-600 text-white p-2.5 rounded-lg shadow-sm group-hover:rotate-12 transition-transform">
                         <CalendarCheck className="w-6 h-6" />
                     </div>
                     <div className="text-left">
-                       <h4 className="font-bold text-indigo-900">Input Jadwal Shift</h4>
+                        <h4 className="font-bold text-indigo-900">Input Jadwal Shift</h4>
                         <p className="text-xs text-indigo-600">Atur tanggal & jam kerja Shift Anda</p>
                     </div>
                 </div>
@@ -317,27 +403,16 @@ function Dashboard({ user, setUser, setView, masterData }) {
          </div>
       )}
 
-      <h3 className="font-bold text-gray-700 mb-3 px-1 flex items-center gap-2">
-          <div className="w-1 h-5 bg-blue-600 rounded-full"></div>
-          Menu Absensi
+      <h3 className="font-bold text-slate-700 mb-3 px-1 flex items-center gap-2 text-sm">
+          <ScanFace className="w-4 h-4 text-blue-500"/> Menu Absensi
       </h3> 
 
-      {/* --- GRID MENU BUTTONS (DENGAN LOGIKA LIMIT IJIN 4X) --- */}
       <div className="grid grid-cols-2 gap-4"> 
         {allowedMenus.map((item) => { 
             const Icon = ICON_MAP[item.value] || Star; 
             const colorClass = COLOR_MAP[item.value] || 'bg-blue-400'; 
-            const count = stats[item.value] || stats[item.value.toLowerCase()] || 0; 
-            const isAttendance = ['Hadir', 'Pulang'].includes(item.value);
-            
-            // LOGIKA LIMIT & DISABLE
             const isCutiEmpty = item.value === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1;
-            
-            // [LOGIKA BARU]: Cek kuota ijin (Total riwayat >= 4)
-            // 'stats.ijin_count' didapat dari backend handleGetStats yang baru
             const isIjinFull = item.value === 'Ijin' && (stats.ijin_count || 0) >= 4;
-
-            // Jika salah satu true, tombol disable
             const isDisabled = isCutiEmpty || isIjinFull;
 
             return ( 
@@ -345,70 +420,49 @@ function Dashboard({ user, setUser, setView, masterData }) {
                     key={item.value} 
                     disabled={isDisabled} 
                     onClick={() => { 
-                        if(isCutiEmpty) { alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.'); return; }
-                        
-                        // Alert khusus Ijin
+                         if(isCutiEmpty) { alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.'); return; }
                         if(isIjinFull) { alert('Pengajuan IJIN sudah mencapai batas maksimal (4x per bulan).'); return; }
-
                         localStorage.setItem('absenType', item.value); 
                         setView('form'); 
                     }} 
-                    // [STYLE LAMA DIKEMBALIKAN + STYLE DISABLE]
-                    className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 transition-all duration-300 
+                    className={`bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transition-all duration-300 
                     text-left group relative overflow-hidden transform 
                     ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-lg'}`}
-                > 
-                    {/* Background Circle Effect */}
+                 > 
                     <div className={`absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:scale-150 transition duration-500 ${colorClass}`}></div>
-                    
-                    {/* Badge Count (Hanya muncul jika tidak disabled dan ada datanya) */}
-                    {!isAttendance && count > 0 && !isDisabled && (
-                        <div className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-bl-xl shadow-sm z-10 animate-bounce">{count}</div>
-                    )} 
- 
                     <div className={`${colorClass} w-10 h-10 rounded-xl flex items-center justify-center text-white mb-3 shadow-md group-hover:scale-110 group-hover:rotate-3 transition`}>
                         <Icon className="w-5 h-5" />
                     </div> 
-                   
-                    <h4 className="font-bold text-gray-800 group-hover:text-blue-600 transition">{item.label}</h4> 
+                    <h4 className="font-bold text-slate-800 group-hover:text-blue-600 transition">{item.label}</h4> 
                     <p className="text-[10px] text-gray-400 mt-1">
-                        {isAttendance 
-                            ? `Tap untuk ${item.label}` 
-                            : (isCutiEmpty 
-                                ? 'Sisa CUTI Habis' 
-                                : (isIjinFull ? 'IJIN Maksimal 4x /bulan' : 'Pengajuan Form')
-                              )
-                        }
+                        {(isCutiEmpty ? 'Sisa CUTI Habis' : (isIjinFull ? 'IJIN Maksimal 4x /bulan' : 'Tap untuk Form'))}
                     </p> 
-                </button> 
+                 </button> 
             ) 
         })} 
       </div>
 
-      {/* MODAL PENGUMUMAN (TAMPILAN LAMA) */}
       {showNews && newsContent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden transform animate-in zoom-in-95 duration-300">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white relative">
+             <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white relative">
               <div className="absolute -top-4 -right-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
               <div className="flex items-center gap-3 mb-1">
                 <div className="bg-white/20 p-2 rounded-lg">
                   <MessageSquare className="w-6 h-6 text-white" />
-                </div>
+                 </div>
                 <h3 className="font-bold text-lg tracking-tight">INFORMASI</h3>
               </div>
               <p className="text-blue-100 text-[10px] uppercase tracking-widest font-medium">
                 {newsContent.waktu}
               </p>
             </div>
-            
             <div className="p-6">
               <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 mb-6">
                 <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
                   "{newsContent.isi}"
                </p>
               </div>
-              
               <button 
                 onClick={() => {
                   setShowNews(false);
@@ -421,10 +475,17 @@ function Dashboard({ user, setUser, setView, masterData }) {
             </div>
           </div>
         </div>
-      )}
+       )}
 
       <style>{`
-        @keyframes gradient { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        @keyframes blob { 
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
       `}</style>
     </div> 
   );
