@@ -148,7 +148,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
   const [stats, setStats] = useState({}); 
   const [showNews, setShowNews] = useState(false);
   const [newsContent, setNewsContent] = useState(null);
-  
+
   useEffect(() => { 
     const timer = setInterval(() => setTime(new Date()), 1000); 
     return () => clearInterval(timer); 
@@ -171,15 +171,11 @@ function Dashboard({ user, setUser, setView, masterData }) {
 
   useEffect(() => {
     const fetchNews = async () => {
-      // CEK APAKAH SUDAH PERNAH DITAMPILKAN DALAM SESI INI
       const hasBeenShown = sessionStorage.getItem('announcement_shown');
-      if (hasBeenShown) return; // Jika sudah pernah, jangan fetch/tampilkan lagi
+      if (hasBeenShown) return;
 
       try {
-        const res = await fetch(SCRIPT_URL, { 
-          method: 'POST', 
-          body: JSON.stringify({ action: 'get_latest_announcement' }) 
-        });
+        const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_latest_announcement' }) });
         const data = await res.json();
         if (data.result === 'success' && data.data) {
           setNewsContent(data.data);
@@ -190,10 +186,9 @@ function Dashboard({ user, setUser, setView, masterData }) {
     fetchNews();
   }, []);
 
-  // Validasi user harus di atas return utama
   if (!user) return null; 
 
-  const availableMenus = masterData.menus || []; 
+  const availableMenus = masterData.menus || [];
   const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter(item => user.akses.includes(item.value)) : availableMenus; 
   
   const userRole = user.role ? String(user.role).toLowerCase() : '';
@@ -214,13 +209,13 @@ function Dashboard({ user, setUser, setView, masterData }) {
   
   return ( 
     <div className="p-4 pb-20"> 
-      {/* --- KARTU DASHBOARD UTAMA --- */}
+      {/* --- KARTU DASHBOARD UTAMA (TAMPILAN LAMA) --- */}
       <div className="relative rounded-3xl p-6 shadow-xl mb-6 overflow-hidden text-white group">
         <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 bg-[length:400%_400%] animate-[gradient_6s_ease_infinite]"></div>
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl animate-pulse delay-700"></div>
 
-        <div className="relative z-10">
+         <div className="relative z-10">
             <div className="flex justify-between items-start mb-6">
                 <div>
                     <p className="text-blue-100 text-sm font-medium mb-1 flex items-center gap-2">
@@ -266,13 +261,13 @@ function Dashboard({ user, setUser, setView, masterData }) {
         </div>
       </div> 
       
-      {/* MENU SHORTCUT */}
+      {/* MENU SHORTCUT (TAMPILAN LAMA) */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide"> 
         <button onClick={() => setView('history')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition active:scale-95"><History className="w-5 h-5" /><span className="text-xs">Riwayat</span></button> 
         <button onClick={() => setView('db_absen')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
             <Fingerprint className="w-5 h-5" /> 
             <span className="text-xs">Data Mesin</span>
-         </button>
+          </button>
         <button 
             onClick={() => setView('remark')} 
             className={`flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 font-bold transition active:scale-95 ${isHRDOrAdmin ? 'text-purple-600 hover:bg-purple-50' : 'text-orange-600 hover:bg-orange-50'}`}
@@ -285,7 +280,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
             <button onClick={() => setView('approval')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-green-600 font-bold hover:bg-green-50 transition active:scale-95">
                 <Users className="w-5 h-5" />
                 <span className="text-xs">Approval</span>
-            </button>
+           </button>
         )}
 
         {canAccessPanel && ( 
@@ -311,11 +306,11 @@ function Dashboard({ user, setUser, setView, masterData }) {
                         <CalendarCheck className="w-6 h-6" />
                     </div>
                     <div className="text-left">
-                        <h4 className="font-bold text-indigo-900">Input Jadwal Shift</h4>
+                       <h4 className="font-bold text-indigo-900">Input Jadwal Shift</h4>
                         <p className="text-xs text-indigo-600">Atur tanggal & jam kerja Shift Anda</p>
                     </div>
                 </div>
-                <div className="bg-white p-1.5 rounded-full text-indigo-400">
+                 <div className="bg-white p-1.5 rounded-full text-indigo-400">
                     <ChevronDown className="-rotate-90 w-4 h-4" />
                 </div>
             </button>
@@ -327,40 +322,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
           Menu Absensi
       </h3> 
 
-      {/* <div className="grid grid-cols-2 gap-4"> 
-        {allowedMenus.map((item) => { 
-            const Icon = ICON_MAP[item.value] || Star; 
-            const colorClass = COLOR_MAP[item.value] || 'bg-blue-400'; 
-            const count = stats[item.value] || stats[item.value.toLowerCase()] || 0; 
-            const isAttendance = ['Hadir', 'Pulang'].includes(item.value);
-            const isCutiEmpty = item.value === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1;
-
-            return ( 
-                <button 
-                    key={item.value} 
-                    onClick={() => { 
-                        if(isCutiEmpty) { alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.'); return; }
-                        localStorage.setItem('absenType', item.value); 
-                        setView('form'); 
-                    }} 
-                    className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 text-left group relative overflow-hidden transform hover:-translate-y-1 ${isCutiEmpty ? 'opacity-50 grayscale' : ''}`}
-                > 
-                    <div className={`absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:scale-150 transition duration-500 ${colorClass}`}></div>
-                    {!isAttendance && count > 0 && (<div className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-bl-xl shadow-sm z-10 animate-bounce">{count}</div>)} 
- 
-                    <div className={`${colorClass} w-10 h-10 rounded-xl flex items-center justify-center text-white mb-3 shadow-md group-hover:scale-110 group-hover:rotate-3 transition`}>
-                        <Icon className="w-5 h-5" />
-                    </div> 
-                    
-                    <h4 className="font-bold text-gray-800 group-hover:text-blue-600 transition">{item.label}</h4> 
-                    <p className="text-[10px] text-gray-400 mt-1">
-                        {isAttendance ? `Tap untuk ${item.label}` : (isCutiEmpty ? 'Kuota Habis' : 'Pengajuan Form')}
-                    </p> 
-                </button> 
-            ) 
-        })} 
-      </div>  */}
-
+      {/* --- GRID MENU BUTTONS (DENGAN LOGIKA LIMIT IJIN 4X) --- */}
       <div className="grid grid-cols-2 gap-4"> 
         {allowedMenus.map((item) => { 
             const Icon = ICON_MAP[item.value] || Star; 
@@ -368,33 +330,38 @@ function Dashboard({ user, setUser, setView, masterData }) {
             const count = stats[item.value] || stats[item.value.toLowerCase()] || 0; 
             const isAttendance = ['Hadir', 'Pulang'].includes(item.value);
             
-            // --- LOGIKA DISABLE CUTI (LAMA) ---
+            // LOGIKA LIMIT & DISABLE
             const isCutiEmpty = item.value === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1;
-
-            // --- LOGIKA BARU: DISABLE IJIN JIKA SUDAH >= 4 HARI ---
-            // stats.ijin_usage kita dapat dari backend handleGetStats yang baru
-            const isIjinFull = item.value === 'Ijin' && (stats.ijin_usage || 0) >= 4;
             
-            // Gabungkan kondisi disable
+            // [LOGIKA BARU]: Cek kuota ijin (Total riwayat >= 4)
+            // 'stats.ijin_count' didapat dari backend handleGetStats yang baru
+            const isIjinFull = item.value === 'Ijin' && (stats.ijin_count || 0) >= 4;
+
+            // Jika salah satu true, tombol disable
             const isDisabled = isCutiEmpty || isIjinFull;
 
             return ( 
                 <button 
                     key={item.value} 
-                    disabled={isDisabled} // Matikan tombol
+                    disabled={isDisabled} 
                     onClick={() => { 
                         if(isCutiEmpty) { alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.'); return; }
-                        if(isIjinFull) { alert('Kuota Ijin bulan ini habis (Maks 4 Hari).'); return; }
+                        
+                        // Alert khusus Ijin
+                        if(isIjinFull) { alert('Pengajuan IJIN sudah mencapai batas maksimal (4x per bulan).'); return; }
 
                         localStorage.setItem('absenType', item.value); 
                         setView('form'); 
                     }} 
+                    // [STYLE LAMA DIKEMBALIKAN + STYLE DISABLE]
                     className={`bg-white p-4 rounded-xl shadow-sm border border-gray-100 transition-all duration-300 
                     text-left group relative overflow-hidden transform 
-                    ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-lg'}`} 
+                    ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-lg'}`}
                 > 
+                    {/* Background Circle Effect */}
                     <div className={`absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:scale-150 transition duration-500 ${colorClass}`}></div>
                     
+                    {/* Badge Count (Hanya muncul jika tidak disabled dan ada datanya) */}
                     {!isAttendance && count > 0 && !isDisabled && (
                         <div className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-bl-xl shadow-sm z-10 animate-bounce">{count}</div>
                     )} 
@@ -402,12 +369,15 @@ function Dashboard({ user, setUser, setView, masterData }) {
                     <div className={`${colorClass} w-10 h-10 rounded-xl flex items-center justify-center text-white mb-3 shadow-md group-hover:scale-110 group-hover:rotate-3 transition`}>
                         <Icon className="w-5 h-5" />
                     </div> 
-                    
+                   
                     <h4 className="font-bold text-gray-800 group-hover:text-blue-600 transition">{item.label}</h4> 
                     <p className="text-[10px] text-gray-400 mt-1">
                         {isAttendance 
                             ? `Tap untuk ${item.label}` 
-                            : (isCutiEmpty ? 'Maksimal Pengajuan Ijin 4x /bulan' : (isIjinFull ? 'Limit Tercapai (4/4)' : 'Pengajuan Form'))
+                            : (isCutiEmpty 
+                                ? 'Sisa CUTI Habis' 
+                                : (isIjinFull ? 'IJIN Maksimal 4x /bulan' : 'Pengajuan Form')
+                              )
                         }
                     </p> 
                 </button> 
@@ -415,7 +385,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
         })} 
       </div>
 
-      {/* --- PINDAHKAN MODAL KE SINI (DI DALAM RETURN) --- */}
+      {/* MODAL PENGUMUMAN (TAMPILAN LAMA) */}
       {showNews && newsContent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden transform animate-in zoom-in-95 duration-300">
@@ -436,13 +406,12 @@ function Dashboard({ user, setUser, setView, masterData }) {
               <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 mb-6">
                 <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
                   "{newsContent.isi}"
-                </p>
+               </p>
               </div>
               
               <button 
                 onClick={() => {
                   setShowNews(false);
-                  // TANDAI BAHWA PENGUMUMAN SUDAH DILIHAT DALAM SESI INI
                   sessionStorage.setItem('announcement_shown', 'true');
                 }}
                 className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg"
@@ -2605,6 +2574,9 @@ function DbAbsenScreen({ user, setView }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // [BARU] State untuk menyimpan jumlah ijin user saat ini
+  const [ijinCount, setIjinCount] = useState(0);
+
   // STATE FILTER
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
@@ -2622,6 +2594,25 @@ function DbAbsenScreen({ user, setView }) {
       'EO': 'Extra Ordinary', 'NF': 'Tidak Absen Mesin'
   };
 
+  // [BARU] Effect untuk mengambil Stats (Limit Ijin) saat halaman dibuka
+  useEffect(() => {
+    const fetchStats = async () => {
+        try {
+            const res = await fetch(SCRIPT_URL, { 
+                method: 'POST', 
+                body: JSON.stringify({ action: 'get_stats', userId: user.id }) 
+            });
+            const data = await res.json();
+            if (data.result === 'success') {
+                // Simpan jumlah ijin ke state
+                setIjinCount(data.stats.ijin_count || 0);
+            }
+        } catch (e) { console.error("Gagal load stats di DbAbsen"); }
+    };
+    if (user) fetchStats();
+  }, [user]);
+
+  // Effect untuk mengambil Data Absen Mesin
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -2651,54 +2642,33 @@ function DbAbsenScreen({ user, setView }) {
     if (user) fetchData();
   }, [user]);
 
-  // --- HELPER: PARSING TANGGAL YANG LEBIH KUAT ---
-  // Fungsi ini mengatasi masalah format DD-MM-YYYY atau DD/MM/YYYY
+  // Helper Parsing Tanggal
   const parseDate = (dateStr) => {
       if (!dateStr) return null;
       try {
-          // Jika format sudah YYYY-MM-DD (ISO)
           if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return new Date(dateStr);
-          
-          // Jika format DD-MM-YYYY atau DD/MM/YYYY (Indonesia)
           const parts = dateStr.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
           if (parts) {
-             // parts[1]=Tgl, parts[2]=Bulan, parts[3]=Tahun
-             // Ubah ke format ISO YYYY-MM-DD agar bisa dibaca new Date()
              return new Date(`${parts[3]}-${parts[2]}-${parts[1]}`);
           }
-          // Fallback
           return new Date(dateStr);
-      } catch (e) {
-          return null;
-      }
+      } catch (e) { return null; }
   };
 
-  // --- LOGIC FILTERING ---
+  // Logic Filtering
   const filteredList = list.filter(item => {
-    // 1. Filter Tanggal (DIPERBAIKI)
     let matchDate = true;
     if (filterStart || filterEnd) {
-        const itemDateObj = parseDate(item.tanggal); // Gunakan helper parseDate
-        
+        const itemDateObj = parseDate(item.tanggal); 
         if (itemDateObj && !isNaN(itemDateObj.getTime())) {
              const itemTime = itemDateObj.setHours(0, 0, 0, 0);
-             
              const startTime = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null;
              const endTime = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null;
-
              matchDate = (!startTime || itemTime >= startTime) && (!endTime || itemTime <= endTime);
-        } else {
-             // Jika tanggal item tidak valid/kosong, jangan tampilkan jika sedang filter tanggal
-             matchDate = false;
-        }
+        } else { matchDate = false; }
     }
-
-    // 2. Filter Status
     let matchStatus = true;
-    if (filterStatus !== 'All') {
-        matchStatus = item.symbol === filterStatus;
-    }
-
+    if (filterStatus !== 'All') { matchStatus = item.symbol === filterStatus; }
     return matchDate && matchStatus;
   });
 
@@ -2706,7 +2676,7 @@ function DbAbsenScreen({ user, setView }) {
       if(!sym) return 'bg-gray-100 text-gray-600';
       const s = sym.toUpperCase();
       if(s === 'H' || s === 'A') return 'bg-green-100 text-green-700'; 
-      if(s === 'T' || s.includes('T')) return 'bg-red-100 text-red-700'; 
+      if(s === 'T' || s.includes('T')) return 'bg-red-100 text-red-700';
       return 'bg-blue-100 text-blue-700';
   };
 
@@ -2717,11 +2687,7 @@ function DbAbsenScreen({ user, setView }) {
       return map[key] || dayName;
   };
 
-  const clearFilter = () => {
-    setFilterStart('');
-    setFilterEnd('');
-    setFilterStatus('All');
-  };
+  const clearFilter = () => { setFilterStart(''); setFilterEnd(''); setFilterStatus('All'); };
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
@@ -2730,7 +2696,6 @@ function DbAbsenScreen({ user, setView }) {
             <BackButton onClick={() => setView('dashboard')} />
             <h2 className="text-xl font-bold ml-2">Data Mesin</h2>
         </div>
-        
         <button 
             onClick={() => setShowFilter(!showFilter)} 
             className={`p-2 rounded-lg border transition-colors ${showFilter ? 'bg-blue-100 text-blue-600 border-blue-300' : 'bg-white text-gray-500 border-gray-200'}`}
@@ -2755,46 +2720,27 @@ function DbAbsenScreen({ user, setView }) {
                     </button>
                 )}
             </div>
-            
             <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="text-[10px] text-gray-400 block mb-1">Dari Tanggal</label>
-                        <input 
-                            type="date" 
-                            className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                            value={filterStart}
-                            onChange={(e) => setFilterStart(e.target.value)}
-                        />
+                        <input type="date" className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} />
                     </div>
                     <div>
                         <label className="text-[10px] text-gray-400 block mb-1">Sampai Tanggal</label>
-                        <input 
-                            type="date" 
-                            className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                            value={filterEnd}
-                            onChange={(e) => setFilterEnd(e.target.value)}
-                        />
+                        <input type="date" className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} />
                     </div>
                 </div>
-
                 <div>
                     <label className="text-[10px] text-gray-400 block mb-1">Status / Keterangan</label>
-                    <select 
-                        className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                        value={filterStatus}
-                        onChange={(e) => setFilterStatus(e.target.value)}
-                    >
+                    <select className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                         <option value="All">-- Semua Status --</option>
                         {Object.entries(KETERANGAN_MAP).map(([key, label]) => (
-                            <option key={key} value={key}>
-                                {label} ({key})
-                            </option>
+                            <option key={key} value={key}>{label} ({key})</option>
                         ))}
                     </select>
                 </div>
             </div>
-
              <div className="mt-3 pt-2 border-t text-[10px] text-blue-600 font-medium text-right">
                 Ditemukan: <strong>{filteredList.length}</strong> Data
             </div>
@@ -2811,88 +2757,71 @@ function DbAbsenScreen({ user, setView }) {
                     {(filterStart || filterEnd || filterStatus !== 'All') && <p className="text-xs mt-1">Coba ubah filter pencarian Anda.</p>}
                 </div>
             )}
-{filteredList.map((item, idx) => {
-    const textKeterangan = KETERANGAN_MAP[item.symbol] ? `(${KETERANGAN_MAP[item.symbol]})` : '';
-    
-    // LOGIKA BARU: Cek apakah simbol mengandung "T" atau "TELAT"
-    const isLate = item.symbol && (
-        item.symbol.toUpperCase() === 'T' || 
-        item.symbol.toUpperCase().includes('TELAT') ||
-        item.symbol.toUpperCase().includes('TSO') ||
-        item.symbol.toUpperCase().includes('TSI')
-    );
+            {filteredList.map((item, idx) => {
+                const textKeterangan = KETERANGAN_MAP[item.symbol] ? `(${KETERANGAN_MAP[item.symbol]})` : '';
+                const isLate = item.symbol && (
+                    item.symbol.toUpperCase() === 'T' || 
+                    item.symbol.toUpperCase().includes('TELAT') ||
+                    item.symbol.toUpperCase().includes('TSO') ||
+                    item.symbol.toUpperCase().includes('TSI')
+                );
+                
+                // [BARU] Logika apakah tombol Ijin Disable
+                const isIjinDisabled = ijinCount >= 4;
 
-    return (
-        <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-2">
-                <div>
-                    <p className="text-xs text-gray-500 font-bold uppercase">
-                        {translateDay(item.week)}
-                    </p>
-                    <h4 className="font-bold text-gray-800">{item.tanggal}</h4>
-                </div>
-                <div className="text-right">
-                     <span className={`text-xs font-bold px-2 py-1 rounded ${getSymbolColor(item.symbol)} block`}>
-                          {item.symbol || '-'} <br/>
-                          <span className="text-[10px] opacity-80 font-normal">{textKeterangan}</span>
-                     </span>
-                </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-y-2 text-sm">
-                {/* ... (Konten Jam Masuk, Pulang, dsb tetap sama) ... */}
-                <div>
-                    <p className="text-[10px] text-gray-400">Jam Masuk</p>
-                    <p className="font-medium font-bold text-blue-600">{formatTimeOnly(item.masuk)}</p>
-                </div>
-                <div>
-                    <p className="text-[10px] text-gray-400">Jam Pulang</p>
-                    <p className="font-medium font-bold text-blue-600">{formatTimeOnly(item.pulang)}</p>
-                </div>
-                <div>
-                    <p className="text-[10px] text-gray-400">Jam Kerja</p>
-                     <p className="font-medium">{item.jamKerja}</p>
-                </div>
-                <div>
-                    <p className="text-[10px] text-gray-400">Telat</p>
-                    <p className={`font-medium ${item.telat ? 'text-red-600' : 'text-gray-600'}`}>
-                    {formatTimeOnly(item.telat)} 
-                    </p>
-              </div>
-            </div>
+                return (
+                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                        <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-2">
+                            <div>
+                                <p className="text-xs text-gray-500 font-bold uppercase">{translateDay(item.week)}</p>
+                                <h4 className="font-bold text-gray-800">{item.tanggal}</h4>
+                            </div>
+                            <div className="text-right">
+                                <span className={`text-xs font-bold px-2 py-1 rounded ${getSymbolColor(item.symbol)} block`}>
+                                    {item.symbol || '-'} <br/>
+                                    <span className="text-[10px] opacity-80 font-normal">{textKeterangan}</span>
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-y-2 text-sm">
+                            <div><p className="text-[10px] text-gray-400">Jam Masuk</p><p className="font-medium font-bold text-blue-600">{formatTimeOnly(item.masuk)}</p></div>
+                            <div><p className="text-[10px] text-gray-400">Jam Pulang</p><p className="font-medium font-bold text-blue-600">{formatTimeOnly(item.pulang)}</p></div>
+                            <div><p className="text-[10px] text-gray-400">Jam Kerja</p><p className="font-medium">{item.jamKerja}</p></div>
+                            <div><p className="text-[10px] text-gray-400">Telat</p><p className={`font-medium ${item.telat ? 'text-red-600' : 'text-gray-600'}`}>{formatTimeOnly(item.telat)}</p></div>
+                        </div>
 
- {/* --- [RESTORE] LOG WAKTU SCAN --- */}
-            <div className="mt-3">
-                <p className="text-[10px] text-gray-400 mb-1">Log Scan Mesin:</p>
-                <div className="bg-gray-50 p-2.5 rounded border border-gray-200 text-xs font-mono text-gray-600 break-words leading-relaxed">
-                    {item.waktuScan ? item.waktuScan.replace(/,/g, ', ') : '-'}
-                </div>
-            </div>
+                        <div className="mt-3">
+                            <p className="text-[10px] text-gray-400 mb-1">Log Scan Mesin:</p>
+                            <div className="bg-gray-50 p-2.5 rounded border border-gray-200 text-xs font-mono text-gray-600 break-words leading-relaxed">
+                                {item.waktuScan ? item.waktuScan.replace(/,/g, ', ') : '-'}
+                            </div>
+                        </div>
 
-            {/* --- TOMBOL TAMBAHAN UNTUK IJIN --- */}
-            {isLate && (
-                <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
-                    <button 
-                        onClick={() => {
-                            // Simpan tipe absen ke localStorage
-                            localStorage.setItem('absenType', 'Ijin');
-                            // SetView ke form
-                            setView('form');
-                            // Opsional: Anda bisa menambahkan logic untuk mengisi otomatis catatan
-                            // berdasarkan tanggal telat tersebut jika diperlukan.
-                        }}
-                        className="w-full flex items-center justify-center gap-2 py-2 bg-orange-50 text-orange-600 border border-orange-200 rounded-lg text-xs font-bold hover:bg-orange-100 transition-colors active:scale-95"
-                    >
-                        <FileText className="w-3.5 h-3.5" />
-                        Ajukan Form Ijin ({item.tanggal})
-                    </button>
-                </div>
-            )}
-
-            {/* ... (Bagian Log Waktu Scan tetap sama) ... */}
-        </div>
-        );
-        })}
+                        {/* [MODIFIKASI] TOMBOL PENGAJUAN IJIN */}
+                        {isLate && (
+                            <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+                                <button 
+                                    // NONAKTIFKAN JIKA LIMIT TERCAPAI
+                                    disabled={isIjinDisabled}
+                                    onClick={() => {
+                                        localStorage.setItem('absenType', 'Ijin');
+                                        setView('form');
+                                    }}
+                                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-colors active:scale-95 border
+                                        ${isIjinDisabled 
+                                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-70' // Style Disable
+                                            : 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100' // Style Aktif
+                                        }`}
+                                >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    {isIjinDisabled ? 'Form IJIN anda sudah 4x bulan ini' : `Ajukan Form Ijin (${item.tanggal})`}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
         </div>
       )}
     </div>
