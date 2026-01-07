@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-// Import Icons
-// Menghapus 'Printer' dari import karena tidak digunakan
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 import { 
   Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, 
   Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, 
@@ -8,6 +9,7 @@ import {
   File as FileIcon, Filter, CheckSquare, Users, Eye, 
   ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
   MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
+  Printer, Download, 
 } from 'lucide-react';
 
 import { SCRIPT_URL } from './config/constants';
@@ -36,7 +38,7 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.3";
+  const CLIENT_VERSION = "1.0.4";
 
  // --- LOGIKA CEK UPDATE (DIPERBAIKI DENGAN PENGAMAN LOOP) ---
   useEffect(() => {
@@ -1698,7 +1700,116 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sendingEmail, setSendingEmail] = useState(false);
-  
+  const generatePDF = () => {
+    // 1. Setup Dokumen A4 Landscape
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    
+    // --- KONFIGURASI LAYOUT ---
+    const marginLeft = 10;
+    const marginTop = 10;
+    const docWidth = doc.internal.pageSize.getWidth();
+    const docHeight = doc.internal.pageSize.getHeight();
+
+    // --- BAGIAN HEADER ---
+    doc.setFontSize(10); 
+    doc.setFont("helvetica", "bold");
+    doc.text("LAPORAN DATA ABSENSI", marginLeft, marginTop);
+    
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Periode Cetak: ${new Date().toLocaleDateString('id-ID')}`, marginLeft, marginTop + 4);
+
+    // --- PERSIAPAN DATA TABEL ---
+    // Header tabel disesuaikan dengan request sebelumnya (ID Akun)
+    const tableColumn = [
+      "No", "ID Akun", "Payroll", "Nama", "Form", 
+      "Waktu Input", "Periode / Jam", "Catatan", "Status", "Approval"
+    ];
+
+    const tableRows = [];
+
+    reportData.forEach((item, index) => {
+      let periodeInfo = '-';
+      if (item.tglMulai && item.tglMulai !== '-') {
+         // Format tanggal pendek agar hemat tempat
+         periodeInfo = `${formatDateShort(item.tglMulai)} - ${formatDateShort(item.tglSelesai)}`;
+      } else if (item.jamMulai && item.jamMulai !== '-') {
+         periodeInfo = `${formatTimeOnly(item.jamMulai)} - ${formatTimeOnly(item.jamSelesai)}`;
+      }
+
+      const rowData = [
+        index + 1,
+        item.idAkun || '-',           // Data ID AKUN (Pastikan Apps Script sudah diupdate)
+        item.noPayroll || '-',
+        item.nama,
+        item.tipe,
+        formatDateTimeFull(item.waktu),
+        periodeInfo,
+        item.catatan || '-',
+        item.status,
+        item.approvalTime && item.approvalTime !== '-' ? formatDateTimeFull(item.approvalTime) : '-'
+      ];
+      tableRows.push(rowData);
+    });
+
+    // --- GENERATE TABEL (OPTIMIZED LAYOUT) ---
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 18, // Jarak dari header judul
+      theme: 'grid', 
+      
+      // Margin dokumen
+      margin: { top: 15, right: 10, bottom: 10, left: 10 }, 
+      
+      // Style global untuk sel (LEBIH RAPAT)
+      styles: { 
+        fontSize: 5.5,           // Font sedikit lebih kecil agar muat banyak
+        font: "helvetica",
+        cellPadding: { top: 0.5, right: 1, bottom: 0.5, left: 1 }, // Padding vertikal tipis
+        valign: 'middle',        // Teks vertikal di tengah
+        overflow: 'linebreak',   // Teks panjang turun ke bawah (wrap)
+        lineWidth: 0.1,   
+        lineColor: [200, 200, 200]
+      },
+      
+      // Style khusus Header
+      headStyles: { 
+        fillColor: [50, 50, 50], 
+        textColor: [255, 255, 255],
+        fontSize: 6,     
+        fontStyle: 'bold',
+        halign: 'center',
+        valign: 'middle',
+        minCellHeight: 6 // Tinggi header minimal
+      },
+
+      // Pengaturan Lebar Kolom (DINAMIS & EFISIEN)
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },   // No (Kecil)
+        1: { cellWidth: 12, halign: 'left' },    // ID Akun (Dirapatkan)
+        2: { cellWidth: 18, halign: 'left' },    // Payroll
+        3: { cellWidth: 'auto' },                // Nama (Diberi ruang lebih)
+        4: { cellWidth: 'auto' },                // Form (Hadir/Cuti pendek)
+        5: { cellWidth: 'auto' },                // Waktu Input
+        6: { cellWidth: 'auto' },                // Periode
+        7: { cellWidth: 100, halign: 'left' },    // Catatan
+        8: { cellWidth: 15, halign: 'center' },  // Status
+        9: { cellWidth: 22, halign: 'center' }   // Approval Time
+      },
+
+      // Footer Halaman
+      didDrawPage: function (data) {
+          const str = 'Hal ' + doc.internal.getNumberOfPages();
+          doc.setFontSize(6);
+          doc.text(str, docWidth - 20, docHeight - 5);
+      }
+    });
+
+    doc.save(`Laporan_Absensi_${filterStart || 'All'}-${filterEnd || 'All'}.pdf`);
+  };
+
+
   // FILTER STATE
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
@@ -1852,20 +1963,47 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       
       {/* MODAL WEB REPORT (TETAP SAMA) */}
       {showWebReport && (
-        <div className="fixed inset-0 bg-white z-[60] overflow-auto flex flex-col font-sans">
-            <div className="bg-slate-800 p-4 text-white flex justify-between items-center shadow-md sticky top-0 z-10">
-                <h3 className="font-bold flex items-center gap-2"><FileIcon className="w-5 h-5"/> Laporan</h3>
-                <div className="flex items-center gap-2">
-                    <select value={reportStatusFilter} onChange={(e) => setReportStatusFilter(e.target.value)} className="text-xs text-black p-1 rounded border-none outline-none cursor-pointer">
-                        <option value="All">Semua Status</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Approved">Approved</option>
-                        <option value="Rejected">Rejected</option>
-                        <option value="Verified">Verified</option>
-                    </select>
-                    <button onClick={() => setShowWebReport(false)} className="bg-white/20 p-1.5 rounded-full hover:bg-white/30"><X className="w-5 h-5"/></button>
-                </div>
-            </div>
+  <div className="fixed inset-0 bg-white z-[60] overflow-auto flex flex-col font-sans">
+      
+      {/* HEADER MODAL DENGAN TOMBOL PDF */}
+      <div className="bg-slate-800 p-4 text-white flex justify-between items-center shadow-md sticky top-0 z-10">
+          <h3 className="font-bold flex items-center gap-2">
+              <FileIcon className="w-5 h-5"/> Laporan
+          </h3>
+          
+          <div className="flex items-center gap-2">
+              {/* FILTER STATUS (YANG SUDAH ADA) */}
+              <select 
+                  value={reportStatusFilter} 
+                  onChange={(e) => setReportStatusFilter(e.target.value)} 
+                  className="text-xs text-black p-1.5 rounded border-none outline-none cursor-pointer"
+              >
+                  <option value="All">Semua Status</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Approved">Approved</option>
+                  <option value="Rejected">Rejected</option>
+                  <option value="Verified">Verified</option>
+              </select>
+
+              {/* --- TOMBOL CETAK PDF BARU --- */}
+              <button 
+                  onClick={generatePDF}
+                  className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-sm"
+                  title="Download PDF"
+              >
+                  <Printer className="w-4 h-4" /> Download PDF
+              </button>
+              {/* ----------------------------- */}
+
+              {/* TOMBOL CLOSE (YANG SUDAH ADA) */}
+              <button 
+                  onClick={() => setShowWebReport(false)} 
+                  className="bg-white/20 p-1.5 rounded-full hover:bg-white/30 ml-2"
+              >
+                  <X className="w-5 h-5"/>
+              </button>
+          </div>
+      </div>
             <div className="p-6 flex-1">
                 <div className="mb-6 border-b pb-4">
                     <h2 className="text-2xl font-bold text-slate-800 uppercase mb-2 tracking-tight">Laporan Data Absensi</h2>
