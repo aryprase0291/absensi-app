@@ -2,7 +2,7 @@ import {
   CheckCircle, LogOut, FileText, AlertTriangle, Clock, Briefcase, Calendar 
 } from 'lucide-react';
 
-export const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwtIZ7wQG4fnN_KVKQZSH5If4L6V9Qh1XNCRz2ff0npJuZkMTXw6of_i8Ji4pF2VUnaYQ/exec';
+export const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyB4afMMdxPMhJB1KmECyLXsbuQKCTnk1qmtL-cYoDdxX0OWxiZvU_NGg0XjJG_UF_Vmg/exec';
 
 export const TIMEOUT_DURATION = 5 * 60 * 1000; 
 

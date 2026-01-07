@@ -36,7 +36,7 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.1";
+  const CLIENT_VERSION = "1.0.2";
 
   // [BARU] FUNGSI CEK UPDATE
   useEffect(() => {
