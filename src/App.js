@@ -36,13 +36,12 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.2";
+  const CLIENT_VERSION = "1.0.3";
 
-  // [BARU] FUNGSI CEK UPDATE
+ // --- LOGIKA CEK UPDATE (DIPERBAIKI DENGAN PENGAMAN LOOP) ---
   useEffect(() => {
     const checkUpdate = async () => {
       try {
-        // Kita kirim request simpel ke backend
         const res = await fetch(SCRIPT_URL, {
           method: 'POST',
           body: JSON.stringify({ action: 'check_version' })
@@ -51,16 +50,35 @@ export default function AppAbsensi() {
         
         if (data.result === 'success') {
           const serverVersion = data.version;
-          // Jika versi Client beda dengan Server
+          
+          // Jika versi Server berbeda dengan Client
           if (serverVersion !== CLIENT_VERSION) {
-             alert(`Update Baru Tersedia! (v${serverVersion})\nAplikasi akan dimuat ulang untuk menerapkan pembaruan.`);
              
-             // Hapus cache master data lama agar mengambil yang baru
+             // [PENGAMAN] Cek apakah kita barusan mencoba update ke versi ini?
+             // Jika ada di sessionStorage, berarti kita baru saja reload tapi versi client belum berubah.
+             // Artinya: Developer mungkin lupa ganti CLIENT_VERSION atau Cache browser sangat kuat.
+             const lastAttempt = sessionStorage.getItem('update_attempt_version');
+             
+             if (lastAttempt === serverVersion) {
+                 console.warn("Versi Client masih lama. Mencegah reload loop.");
+                 return; // BERHENTI DI SINI (Jangan alert/reload lagi)
+             }
+
+             // Jika belum pernah coba update ke versi ini, baru lakukan Alert & Reload
+             alert(`Update Baru Tersedia! (v${serverVersion})\nSistem akan memuat pembaruan...`);
+             
+             // 1. Simpan tanda bahwa kita sedang mencoba update ke versi server ini
+             sessionStorage.setItem('update_attempt_version', serverVersion);
+             
+             // 2. Hapus data master lama agar fresh
              localStorage.removeItem('app_master_data');
              
-             // Paksa Reload Halaman + Cache Busting (menambah parameter waktu agar browser tidak baca cache)
-             const newUrl = window.location.href.split('?')[0] + '?v=' + new Date().getTime();
+             // 3. Force Reload dengan parameter waktu (Cache Busting)
+             const newUrl = window.location.href.split('?')[0] + '?time=' + new Date().getTime();
              window.location.href = newUrl;
+          } else {
+             // Jika versi SUDAH SAMA, hapus tanda pengaman (artinya update sukses)
+             sessionStorage.removeItem('update_attempt_version');
           }
         }
       } catch (e) {
@@ -68,7 +86,7 @@ export default function AppAbsensi() {
       }
     };
 
-    checkUpdate(); // Jalankan saat aplikasi dibuka
+    checkUpdate();
   }, []);
 
   useEffect(() => {
@@ -284,16 +302,16 @@ function Dashboard({ user, setUser, setView, masterData }) {
                     <CreditCard className="w-3.5 h-3.5 text-blue-500 mb-1"/>
                     <p className="text-[8px] text-slate-400 font-bold uppercase">PAYROLL</p>
                     <p className="text-[10px] font-bold text-slate-700 truncate w-full">{user.noPayroll || '-'}</p>
+                     </div>
+                 <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+                    <Building className="w-3.5 h-3.5 text-indigo-500 mb-1"/>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase">PT</p>
+                    <p className="text-[10px] font-bold text-slate-700 truncate w-full">{user.perusahaan || '-'}</p>
                  </div>
                  <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
                     <PieChart className="w-3.5 h-3.5 text-amber-500 mb-1"/>
                     <p className="text-[8px] text-slate-400 font-bold uppercase">Sisa Cuti</p>
                     <p className="text-[10px] font-bold text-slate-700">{user.sisaCuti} Hari</p>
-                 </div>
-                 <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
-                    <Building className="w-3.5 h-3.5 text-indigo-500 mb-1"/>
-                    <p className="text-[8px] text-slate-400 font-bold uppercase">PT</p>
-                    <p className="text-[10px] font-bold text-slate-700 truncate w-full">{user.perusahaan || '-'}</p>
                  </div>
                  <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
                     <Briefcase className="w-3.5 h-3.5 text-emerald-500 mb-1"/>
