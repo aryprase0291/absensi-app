@@ -288,7 +288,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
           <div className="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-l-emerald-400 flex flex-col justify-between">
               <div className="flex justify-between items-start">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Hadir</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hadir</span>
                     <p className="text-3xl font-extrabold text-slate-800 mt-1">{stats.total_hadir || 0}</p>
                   </div>
                   <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
