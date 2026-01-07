@@ -339,7 +339,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
            {/* Kartu CSA (Cuti Sakit Alpa) */}
            <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-rose-400 flex items-center justify-between">
               <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cuti/Skt/Alpa</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cuti/Sakit/Alpa</span>
                   <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_csa || 0}</p>
               </div>
               <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
@@ -1444,7 +1444,7 @@ const handleSubmit = async () => {
             </div>
         )}
 
-        <textarea className="w-full border p-3 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Catatan tambahan..." rows="2" value={catatan} onChange={e => setCatatan(e.target.value)}></textarea>
+        <textarea className="w-full border p-3 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Alasan..." rows="2" value={catatan} onChange={e => setCatatan(e.target.value)}></textarea>
       </div>
       
       <button onClick={handleSubmit} disabled={isSubmitting} className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl font-bold mt-6 mb-10 shadow-lg active:scale-95 transition-all">
