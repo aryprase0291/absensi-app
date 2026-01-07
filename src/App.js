@@ -35,8 +35,41 @@ export default function AppAbsensi() {
   const [view, setView] = useState('login'); 
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
-
   const logoutTimerRef = useRef(null);
+  const CLIENT_VERSION = "1.0.1";
+
+  // [BARU] FUNGSI CEK UPDATE
+  useEffect(() => {
+    const checkUpdate = async () => {
+      try {
+        // Kita kirim request simpel ke backend
+        const res = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'check_version' })
+        });
+        const data = await res.json();
+        
+        if (data.result === 'success') {
+          const serverVersion = data.version;
+          // Jika versi Client beda dengan Server
+          if (serverVersion !== CLIENT_VERSION) {
+             alert(`Update Baru Tersedia! (v${serverVersion})\nAplikasi akan dimuat ulang untuk menerapkan pembaruan.`);
+             
+             // Hapus cache master data lama agar mengambil yang baru
+             localStorage.removeItem('app_master_data');
+             
+             // Paksa Reload Halaman + Cache Busting (menambah parameter waktu agar browser tidak baca cache)
+             const newUrl = window.location.href.split('?')[0] + '?v=' + new Date().getTime();
+             window.location.href = newUrl;
+          }
+        }
+      } catch (e) {
+        console.error("Gagal cek versi", e);
+      }
+    };
+
+    checkUpdate(); // Jalankan saat aplikasi dibuka
+  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('app_user');
