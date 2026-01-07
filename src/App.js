@@ -142,15 +142,16 @@ export default function AppAbsensi() {
   );
 }
 
-// --- 1. DASHBOARD SCREEN (PERIODE SESUAI DB ABSEN) ---
+// --- 1. DASHBOARD SCREEN (STATS LENGKAP: NO SCAN IN/OUT) ---
 function Dashboard({ user, setUser, setView, masterData }) { 
   const [time, setTime] = useState(new Date());
-  // Tambahkan periode_db di initial state
   const [stats, setStats] = useState({ 
     total_hadir: 0, total_ijin: 0, 
     total_telat_freq: 0, total_telat_menit: 0, 
     total_csa: 0,
-    periode_db: '-' // Default
+    total_no_scan_in: 0,   // State Baru
+    total_no_scan_out: 0,  // State Baru
+    periode_db: '-'
   }); 
   const [showNews, setShowNews] = useState(false);
   const [newsContent, setNewsContent] = useState(null);
@@ -283,15 +284,14 @@ function Dashboard({ user, setUser, setView, masterData }) {
         </div>
       </div> 
 
-      {/* --- STATISTIK DASHBOARD (FONT KECIL, ICON BESAR, PERIODE DB) --- */}
-     <div className="flex justify-between items-end mb-3 px-1">
+      {/* --- STATISTIK DASHBOARD --- */}
+      <div className="flex justify-between items-end mb-3 px-1">
           <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
               <Activity className="w-4 h-4 text-blue-500"/> Statistik
           </h3>
           <div className="flex flex-col items-end">
              <span className="text-[9px] text-slate-400 font-medium">Periode Data Absen:</span>
              <span className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded-full text-blue-600 font-bold shadow-sm">
-                 {/* MENAMPILKAN PERIODE DARI DATA MESIN */}
                  {stats.periode_db || 'Memuat Data...'}
              </span>
           </div>
@@ -346,10 +346,31 @@ function Dashboard({ user, setUser, setView, masterData }) {
                   <AlertTriangle className="w-6 h-6"/>
               </div>
           </div>
+
+          {/* [BARU] Kartu Tidak Absen Datang */}
+          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-purple-400 flex items-center justify-between">
+              <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Tdk Absen Masuk</span>
+                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_no_scan_in || 0}x</p>
+              </div>
+              <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
+                  <LogOut className="w-6 h-6 rotate-180"/> {/* Rotasi LogOut agar mirip LogIn */}
+              </div>
+          </div>
+
+          {/* [BARU] Kartu Tidak Absen Pulang */}
+          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-gray-400 flex items-center justify-between">
+              <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Tdk Absen Pulang</span>
+                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_no_scan_out || 0}x</p>
+              </div>
+              <div className="p-3 bg-gray-100 text-gray-600 rounded-xl">
+                  <LogOut className="w-6 h-6"/>
+              </div>
+          </div>
       </div>
 
-      {/* --- MENU SHORTCUT & KARYAWAN SHIFT & GRID MENU --- */}
-      {/* (Tidak ada perubahan, kode tetap sama seperti sebelumnya) */}
+      {/* --- MENU SHORTCUT --- */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide"> 
         <button onClick={() => setView('history')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition active:scale-95"><History className="w-5 h-5" /><span className="text-xs">Riwayat</span></button> 
         <button onClick={() => setView('db_absen')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
