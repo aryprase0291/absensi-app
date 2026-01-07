@@ -282,7 +282,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
             <div className="grid grid-cols-4 gap-2 mt-3">
                  <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
                     <CreditCard className="w-3.5 h-3.5 text-blue-500 mb-1"/>
-                    <p className="text-[8px] text-slate-400 font-bold uppercase">NIK</p>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase">PAYROLL</p>
                     <p className="text-[10px] font-bold text-slate-700 truncate w-full">{user.noPayroll || '-'}</p>
                  </div>
                  <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
@@ -310,7 +310,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
               <Activity className="w-4 h-4 text-blue-500"/> Statistik
           </h3>
           <span className="text-[9px] bg-white border border-gray-200 px-2 py-0.5 rounded-full text-blue-600 font-bold shadow-sm">
-             Period: {stats.periode_db || '...'}
+             Periode: {stats.periode_db || '...'}
           </span>
       </div>
       
@@ -442,7 +442,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
 
       {/* --- MENU ABSENSI GRID (TETAP SAMA) --- */}
       <h3 className="font-bold text-slate-700 mb-3 px-1 flex items-center gap-2 text-sm">
-          <ScanFace className="w-4 h-4 text-blue-500"/> Menu Absensi
+          <ScanFace className="w-4 h-4 text-blue-500"/> Menu e-Form
       </h3> 
 
       <div className="grid grid-cols-2 gap-3"> 
@@ -470,7 +470,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
                        <Icon className="w-4 h-4" />
                     </div> 
                     <h4 className="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition">{item.label}</h4> 
-                    <p className="text-[9px] text-gray-400 mt-0.5">{(isCutiEmpty ? 'Sisa CUTI Habis' : (isIjinFull ? 'Limit IJIN Tercapai' : 'Tap untuk Form'))}</p> 
+                    <p className="text-[9px] text-gray-400 mt-0.5">{(isCutiEmpty ? 'Sisa CUTI Habis' : (isIjinFull ? 'Limit IJIN Tercapai' : 'Pengajuan Form'))}</p> 
                  </button> 
             ) 
         })} 
