@@ -142,17 +142,18 @@ export default function AppAbsensi() {
   );
 }
 
-// --- 1. DASHBOARD SCREEN (STATS LENGKAP: NO SCAN IN/OUT) ---
+// --- 1. DASHBOARD SCREEN (UPDATED: SPLIT STATS & FIXED LAYOUT) ---
 function Dashboard({ user, setUser, setView, masterData }) { 
   const [time, setTime] = useState(new Date());
+  // [UPDATE] State Stats diperluas
   const [stats, setStats] = useState({ 
     total_hadir: 0, total_ijin: 0, 
     total_telat_freq: 0, total_telat_menit: 0, 
-    total_csa: 0,
-    total_no_scan_in: 0,   // State Baru
-    total_no_scan_out: 0,  // State Baru
+    total_cuti: 0, total_cuti_bersama: 0, // Baru
+    total_sakit: 0, total_alpa: 0,        // Baru
+    total_no_scan_in: 0, total_no_scan_out: 0,
     periode_db: '-'
-  }); 
+  });
   const [showNews, setShowNews] = useState(false);
   const [newsContent, setNewsContent] = useState(null);
 
@@ -176,6 +177,7 @@ function Dashboard({ user, setUser, setView, masterData }) {
     if (user) fetchStats(); 
   }, [user]);
 
+  // (Bagian fetchNews tetap sama...)
   useEffect(() => {
     const fetchNews = async () => {
       const hasBeenShown = sessionStorage.getItem('announcement_shown');
@@ -212,291 +214,256 @@ function Dashboard({ user, setUser, setView, masterData }) {
   else if (hour >= 18) { greeting = 'Selamat Malam'; greetingIcon = '🌙'; }
 
   return ( 
-    <div className="p-4 pb-20 bg-gray-50 min-h-screen"> 
+    <div className="p-4 pb-24 bg-gray-50 min-h-screen"> 
       
-      {/* --- KARTU PROFIL UTAMA --- */}
-      <div className="relative rounded-3xl p-6 shadow-xl shadow-blue-100 mb-6 overflow-hidden text-slate-800 bg-white border border-white">
+      {/* --- KARTU PROFIL (TETAP SAMA TAPI COMPACT MARGIN) --- */}
+      <div className="relative rounded-3xl p-5 shadow-xl shadow-blue-100 mb-5 overflow-hidden text-slate-800 bg-white border border-white">
         <div className="absolute inset-0 bg-gradient-to-r from-cyan-50 via-blue-50 to-white opacity-80"></div>
         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
         <div className="absolute bottom-0 left-0 w-32 h-32 bg-cyan-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
 
         <div className="relative z-10">
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex justify-between items-start mb-3">
                 <div>
-                    <p className="text-blue-600 text-sm font-bold mb-1 flex items-center gap-2">
+                    <p className="text-blue-600 text-xs font-bold mb-1 flex items-center gap-1">
                        {greetingIcon} {greeting}
                     </p>
-                    <h2 className="text-2xl font-extrabold tracking-tight text-slate-800">{user.nama}</h2>
-                    <p className="text-xs text-slate-500 font-medium bg-white/60 backdrop-blur px-2 py-1 rounded-lg w-fit mt-1 border border-slate-100 shadow-sm">
+                    <h2 className="text-xl font-extrabold tracking-tight text-slate-800">{user.nama}</h2>
+                    <p className="text-[10px] text-slate-500 font-medium bg-white/60 backdrop-blur px-2 py-0.5 rounded-lg w-fit mt-1 border border-slate-100">
                         {user.divisi} • {user.lokasi || 'Indonesia'}
                     </p>
                 </div>
                 <div className="text-right">
-                    <div className="text-4xl font-black font-mono tracking-widest flex items-center justify-end text-blue-600">
+                    <div className="text-3xl font-black font-mono tracking-widest flex items-center justify-end text-blue-600">
                         <span>{formatDigit(time.getHours())}</span>
-                        <span className="animate-pulse mx-1 text-slate-300">:</span>
+                        <span className="animate-pulse mx-0.5 text-slate-300">:</span>
                         <span>{formatDigit(time.getMinutes())}</span>
                     </div>
-                    <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
+                    <p className="text-[9px] font-bold text-slate-400 mt-0.5 uppercase tracking-widest">
                         {time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
                     </p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mt-4">
-                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
-                    <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
-                        <CreditCard className="w-4 h-4"/>
-                    </div>
-                    <div className="overflow-hidden">
-                        <p className="text-[9px] text-slate-400 uppercase font-bold">Payroll</p>
-                        <p className="text-xs font-bold text-slate-700 font-mono truncate">{user.noPayroll || '-'}</p>
-                    </div>
+            {/* INFO BARIS (PAYROLL DLL) */}
+            <div className="grid grid-cols-4 gap-2 mt-3">
+                 <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+                    <CreditCard className="w-3.5 h-3.5 text-blue-500 mb-1"/>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase">NIK</p>
+                    <p className="text-[10px] font-bold text-slate-700 truncate w-full">{user.noPayroll || '-'}</p>
                  </div>
-                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
-                    <div className="bg-amber-100 p-2 rounded-lg text-amber-600">
-                        <PieChart className="w-4 h-4"/>
-                    </div>
-                    <div>
-                        <p className="text-[9px] text-slate-400 uppercase font-bold">Sisa Cuti</p>
-                        <p className="text-xs font-bold text-slate-700">{user.sisaCuti} Hari</p>
-                    </div>
+                 <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+                    <PieChart className="w-3.5 h-3.5 text-amber-500 mb-1"/>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase">Sisa Cuti</p>
+                    <p className="text-[10px] font-bold text-slate-700">{user.sisaCuti} Hari</p>
                  </div>
-                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
-                    <div className="bg-indigo-100 p-2 rounded-lg text-indigo-600">
-                        <Building className="w-4 h-4"/>
-                    </div>
-                    <div className="overflow-hidden">
-                        <p className="text-[9px] text-slate-400 uppercase font-bold">Perusahaan</p>
-                        <p className="text-xs font-bold text-slate-700 truncate" title={user.perusahaan}>{user.perusahaan || '-'}</p>
-                    </div>
+                 <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+                    <Building className="w-3.5 h-3.5 text-indigo-500 mb-1"/>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase">PT</p>
+                    <p className="text-[10px] font-bold text-slate-700 truncate w-full">{user.perusahaan || '-'}</p>
                  </div>
-                 <div className="bg-white/80 p-2.5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-2">
-                    <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600">
-                        <Briefcase className="w-4 h-4"/>
-                    </div>
-                    <div>
-                        <p className="text-[9px] text-slate-400 uppercase font-bold">Status</p>
-                        <p className="text-xs font-bold text-slate-700">{user.statusKaryawan || '-'}</p>
-                    </div>
+                 <div className="bg-white/80 p-1.5 rounded-lg border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+                    <Briefcase className="w-3.5 h-3.5 text-emerald-500 mb-1"/>
+                    <p className="text-[8px] text-slate-400 font-bold uppercase">Status</p>
+                    <p className="text-[10px] font-bold text-slate-700 truncate w-full">{user.statusKaryawan || '-'}</p>
                  </div>
             </div>
         </div>
       </div> 
 
-      {/* --- STATISTIK DASHBOARD --- */}
-      <div className="flex justify-between items-end mb-3 px-1">
-          <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
+      {/* --- STATISTIK DASHBOARD (FIXED & ELEGANT LAYOUT) --- */}
+      <div className="flex justify-between items-end mb-2 px-1">
+          <h3 className="font-bold text-slate-700 flex items-center gap-1.5 text-sm">
               <Activity className="w-4 h-4 text-blue-500"/> Statistik
           </h3>
-          <div className="flex flex-col items-end">
-             <span className="text-[9px] text-slate-400 font-medium">Periode Data Absen:</span>
-             <span className="text-[10px] bg-white border border-gray-200 px-2 py-0.5 rounded-full text-blue-600 font-bold shadow-sm">
-                 {stats.periode_db || 'Memuat Data...'}
-             </span>
-          </div>
+          <span className="text-[9px] bg-white border border-gray-200 px-2 py-0.5 rounded-full text-blue-600 font-bold shadow-sm">
+             Period: {stats.periode_db || '...'}
+          </span>
       </div>
       
-      <div className="grid grid-cols-2 gap-3 mb-6">
-          {/* Kartu Hadir */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-emerald-400 flex items-center justify-between">
-              <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Hadir</span>
-                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_hadir || 0}</p>
-              </div>
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-                  <CheckCircle className="w-6 h-6"/> 
-              </div>
-          </div>
-
-          {/* Kartu Ijin */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-blue-400 flex items-center justify-between">
-              <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Ijin</span>
-                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_ijin || 0}</p>
-              </div>
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                  <FileText className="w-6 h-6"/>
-              </div>
-          </div>
-
-           {/* Kartu Terlambat */}
-           <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-orange-400 flex items-center justify-between relative overflow-hidden">
-              <div className="z-10">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Telat</span>
-                  <div className="flex items-baseline gap-1 mt-0.5">
-                    <p className="text-lg font-extrabold text-slate-700">{stats.total_telat_freq || 0}x</p>
-                    <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-1.5 rounded">
-                        {stats.total_telat_menit || 0}m
-                    </span>
+      {/* GRID LAYOUT UTAMA: 2 Kolom tapi Item Kanan dibagi lagi */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+          
+          {/* KOLOM KIRI: HADIR (Tinggi Full) */}
+          <div className="bg-white p-4 rounded-2xl shadow-sm border-l-4 border-l-emerald-400 flex flex-col justify-between">
+              <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Hadir</span>
+                    <p className="text-3xl font-extrabold text-slate-800 mt-1">{stats.total_hadir || 0}</p>
+                  </div>
+                  <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                      <CheckCircle className="w-5 h-5"/> 
                   </div>
               </div>
-              <div className="p-3 bg-orange-50 text-orange-600 rounded-xl z-10">
-                  <Clock className="w-6 h-6"/>
+              <div className="mt-3 pt-3 border-t border-dashed border-gray-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Terlambat</span>
+                  <div className="flex items-center justify-between mt-1">
+                      <p className="text-sm font-bold text-orange-600">{stats.total_telat_freq || 0}x</p>
+                      <span className="text-[9px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded font-medium">
+                        {stats.total_telat_menit || 0} m
+                      </span>
+                  </div>
               </div>
           </div>
 
-           {/* Kartu CSA (Cuti Sakit Alpa) */}
-           <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-rose-400 flex items-center justify-between">
-              <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cuti/Sakit/Alpa</span>
-                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_csa || 0}</p>
+          {/* KOLOM KANAN: Grid 2x2 untuk Breakdown Ketidakhadiran */}
+          <div className="grid grid-cols-2 gap-2">
+              
+              {/* IJIN */}
+              <div className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-center items-center text-center">
+                  <FileText className="w-4 h-4 text-blue-500 mb-1"/>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Ijin</span>
+                  <p className="text-lg font-bold text-slate-700 leading-none">{stats.total_ijin || 0}</p>
               </div>
-              <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
-                  <AlertTriangle className="w-6 h-6"/>
-              </div>
-          </div>
 
-          {/* [BARU] Kartu Tidak Absen Datang */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-purple-400 flex items-center justify-between">
-              <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Tdk Absen Masuk</span>
-                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_no_scan_in || 0}x</p>
+              {/* CUTI */}
+              <div className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-center items-center text-center">
+                  <Calendar className="w-4 h-4 text-pink-500 mb-1"/>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Cuti</span>
+                  <p className="text-lg font-bold text-slate-700 leading-none">{stats.total_cuti || 0}</p>
               </div>
-              <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
-                  <LogOut className="w-6 h-6 rotate-180"/> {/* Rotasi LogOut agar mirip LogIn */}
-              </div>
-          </div>
 
-          {/* [BARU] Kartu Tidak Absen Pulang */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border-l-4 border-l-gray-400 flex items-center justify-between">
-              <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Tdk Absen Pulang</span>
-                  <p className="text-lg font-extrabold text-slate-700 mt-0.5">{stats.total_no_scan_out || 0}x</p>
+              {/* SAKIT */}
+              <div className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-center items-center text-center">
+                  <AlertTriangle className="w-4 h-4 text-orange-500 mb-1"/>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Sakit</span>
+                  <p className="text-lg font-bold text-slate-700 leading-none">{stats.total_sakit || 0}</p>
               </div>
-              <div className="p-3 bg-gray-100 text-gray-600 rounded-xl">
-                  <LogOut className="w-6 h-6"/>
+
+               {/* ALPA */}
+               <div className="bg-white p-2.5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-center items-center text-center relative overflow-hidden">
+                   {stats.total_alpa > 0 && <div className="absolute inset-0 bg-red-50/50"></div>}
+                  <X className="w-4 h-4 text-red-600 mb-1 relative z-10"/>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase relative z-10">Alpa</span>
+                  <p className="text-lg font-bold text-red-600 leading-none relative z-10">{stats.total_alpa || 0}</p>
               </div>
+
           </div>
       </div>
 
-      {/* --- MENU SHORTCUT --- */}
+      {/* BARIS BAWAH: EXTRA STATS (Cuti Bersama & Scan Errors) */}
+      <div className="grid grid-cols-3 gap-2 mb-6">
+          <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between px-3">
+              <div>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase">Cuti Bersama</p>
+                  <p className="text-sm font-bold text-teal-600">{stats.total_cuti_bersama || 0}</p>
+              </div>
+              <CalendarCheck className="w-4 h-4 text-teal-500"/>
+          </div>
+          <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between px-3">
+              <div>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase">No Check-IN</p>
+                  <p className="text-sm font-bold text-purple-600">{stats.total_no_scan_in || 0}</p>
+              </div>
+              <LogOut className="w-4 h-4 text-purple-500 rotate-180"/>
+          </div>
+          <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between px-3">
+              <div>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase">No Check-OUT</p>
+                  <p className="text-sm font-bold text-gray-600">{stats.total_no_scan_out || 0}</p>
+              </div>
+              <LogOut className="w-4 h-4 text-gray-500"/>
+          </div>
+      </div>
+
+      {/* --- MENU SHORTCUT (TETAP SAMA) --- */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide"> 
-        <button onClick={() => setView('history')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition active:scale-95"><History className="w-5 h-5" /><span className="text-xs">Riwayat</span></button> 
-        <button onClick={() => setView('db_absen')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
-            <Fingerprint className="w-5 h-5" /> 
-            <span className="text-xs">Data Mesin</span>
-           </button>
-        <button 
-            onClick={() => setView('remark')} 
-            className={`flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 font-bold transition active:scale-95 ${isHRDOrAdmin ? 'text-purple-600 hover:bg-purple-50' : 'text-orange-600 hover:bg-orange-50'}`}
-        >
-            <MessageSquare className="w-5 h-5" />
-            <span className="text-xs">{isHRDOrAdmin ? 'Respon Laporan' : 'Lapor HRD'}</span>
+        <button onClick={() => setView('history')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition active:scale-95"><History className="w-5 h-5" /><span className="text-[10px]">Riwayat</span></button> 
+        <button onClick={() => setView('db_absen')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
+            <Fingerprint className="w-5 h-5" /> <span className="text-[10px]">Data Mesin</span>
         </button>
-
+        <button onClick={() => setView('remark')} className={`flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 font-bold transition active:scale-95 ${isHRDOrAdmin ? 'text-purple-600 hover:bg-purple-50' : 'text-orange-600 hover:bg-orange-50'}`}>
+            <MessageSquare className="w-5 h-5" />
+            <span className="text-[10px]">{isHRDOrAdmin ? 'Respon Laporan' : 'Lapor HRD'}</span>
+        </button>
         {canApprove && (
-            <button onClick={() => setView('approval')} className="flex-1 min-w-[100px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-green-600 font-bold hover:bg-green-50 transition active:scale-95">
-                <Users className="w-5 h-5" />
-                <span className="text-xs">Approval</span>
-           </button>
+            <button onClick={() => setView('approval')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-green-600 font-bold hover:bg-green-50 transition active:scale-95">
+                <Users className="w-5 h-5" /><span className="text-[10px]">Approval</span>
+            </button>
         )}
-
         {canAccessPanel && ( 
-            <button onClick={() => setView('admin')} className="flex-1 min-w-[100px] bg-slate-800 text-white p-3 rounded-xl shadow-sm flex flex-col items-center justify-center gap-1 font-bold hover:bg-slate-700 transition active:scale-95">
-                <Settings className="w-5 h-5" /><span className="text-xs">Panel</span>
+            <button onClick={() => setView('admin')} className="flex-1 min-w-[90px] bg-slate-800 text-white p-3 rounded-xl shadow-sm flex flex-col items-center justify-center gap-1 font-bold hover:bg-slate-700 transition active:scale-95">
+                <Settings className="w-5 h-5" /><span className="text-[10px]">Panel</span>
             </button> 
         )} 
       </div> 
 
+      {/* --- MENU INPUT SHIFT (TETAP SAMA) --- */}
       {isShiftWorker && (
-         <div className="mb-6">
+         <div className="mb-5">
             <h3 className="font-bold text-slate-700 mb-2 px-1 flex items-center gap-2 text-sm">
                  <CalendarCheck className="w-4 h-4 text-indigo-500"/> Menu Running Shift
              </h3>
-            <button 
-                onClick={() => setView('input_shift')}
-                className="w-full bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-center justify-between group active:scale-95 transition-all shadow-sm hover:shadow-md hover:bg-indigo-100"
-            >
+            <button onClick={() => setView('input_shift')} className="w-full bg-indigo-50 border border-indigo-200 p-3 rounded-xl flex items-center justify-between group active:scale-95 transition-all shadow-sm">
                 <div className="flex items-center gap-3">
-                      <div className="bg-indigo-600 text-white p-2.5 rounded-lg shadow-sm group-hover:rotate-12 transition-transform">
-                        <CalendarCheck className="w-6 h-6" />
-                    </div>
+                    <div className="bg-indigo-600 text-white p-2 rounded-lg shadow-sm"><CalendarCheck className="w-5 h-5" /></div>
                     <div className="text-left">
-                        <h4 className="font-bold text-indigo-900">Input Jadwal Shift</h4>
-                        <p className="text-xs text-indigo-600">Atur tanggal & jam kerja Shift Anda</p>
+                        <h4 className="font-bold text-indigo-900 text-sm">Input Jadwal Shift</h4>
+                        <p className="text-[10px] text-indigo-600">Atur tanggal & jam kerja Shift Anda</p>
                     </div>
                 </div>
-                 <div className="bg-white p-1.5 rounded-full text-indigo-400">
-                    <ChevronDown className="-rotate-90 w-4 h-4" />
-                </div>
+                 <div className="bg-white p-1 rounded-full text-indigo-400"><ChevronDown className="-rotate-90 w-3 h-3" /></div>
             </button>
          </div>
       )}
 
+      {/* --- MENU ABSENSI GRID (TETAP SAMA) --- */}
       <h3 className="font-bold text-slate-700 mb-3 px-1 flex items-center gap-2 text-sm">
           <ScanFace className="w-4 h-4 text-blue-500"/> Menu Absensi
       </h3> 
 
-      <div className="grid grid-cols-2 gap-4"> 
+      <div className="grid grid-cols-2 gap-3"> 
         {allowedMenus.map((item) => { 
             const Icon = ICON_MAP[item.value] || Star; 
             const colorClass = COLOR_MAP[item.value] || 'bg-blue-400'; 
             const isCutiEmpty = item.value === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1;
             const isIjinFull = item.value === 'Ijin' && (stats.ijin_count || 0) >= 4;
             const isDisabled = isCutiEmpty || isIjinFull;
-
             return ( 
                 <button 
                     key={item.value} 
                     disabled={isDisabled} 
                     onClick={() => { 
-                         if(isCutiEmpty) { alert('Sisa Cuti Anda Habis (0). Tidak dapat mengajukan cuti.'); return; }
-                        if(isIjinFull) { alert('Pengajuan IJIN sudah mencapai batas maksimal (4x per bulan).'); return; }
+                        if(isCutiEmpty) { alert('Sisa Cuti Anda Habis (0).'); return; }
+                        if(isIjinFull) { alert('Pengajuan IJIN Maksimal 4x.'); return; }
                         localStorage.setItem('absenType', item.value); 
                         setView('form'); 
                     }} 
-                    className={`bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transition-all duration-300 
-                    text-left group relative overflow-hidden transform 
-                    ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-lg'}`}
+                    className={`bg-white p-3 rounded-xl shadow-sm border border-gray-100 transition-all duration-300 text-left group relative overflow-hidden transform 
+                    ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-md'}`}
                  > 
-                    <div className={`absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:scale-150 transition duration-500 ${colorClass}`}></div>
-                    <div className={`${colorClass} w-10 h-10 rounded-xl flex items-center justify-center text-white mb-3 shadow-md group-hover:scale-110 group-hover:rotate-3 transition`}>
-                        <Icon className="w-5 h-5" />
+                    <div className={`absolute -right-4 -bottom-4 w-16 h-16 rounded-full opacity-10 group-hover:scale-150 transition duration-500 ${colorClass}`}></div>
+                    <div className={`${colorClass} w-9 h-9 rounded-lg flex items-center justify-center text-white mb-2 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition`}>
+                       <Icon className="w-4 h-4" />
                     </div> 
-                    <h4 className="font-bold text-slate-800 group-hover:text-blue-600 transition">{item.label}</h4> 
-                    <p className="text-[10px] text-gray-400 mt-1">
-                        {(isCutiEmpty ? 'Sisa CUTI Habis' : (isIjinFull ? 'IJIN Maksimal 4x /bulan' : 'Tap untuk Form'))}
-                    </p> 
+                    <h4 className="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition">{item.label}</h4> 
+                    <p className="text-[9px] text-gray-400 mt-0.5">{(isCutiEmpty ? 'Sisa CUTI Habis' : (isIjinFull ? 'Limit IJIN Tercapai' : 'Tap untuk Form'))}</p> 
                  </button> 
             ) 
         })} 
       </div>
 
+      {/* --- ANNOUNCEMENT POPUP (TETAP SAMA) --- */}
       {showNews && newsContent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden transform animate-in zoom-in-95 duration-300">
-             <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white relative">
-              <div className="absolute -top-4 -right-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
-              <div className="flex items-center gap-3 mb-1">
-                <div className="bg-white/20 p-2 rounded-lg">
-                  <MessageSquare className="w-6 h-6 text-white" />
-                 </div>
-                <h3 className="font-bold text-lg tracking-tight">INFORMASI</h3>
+             <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white relative">
+              <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
+              <div className="flex items-center gap-2 mb-1">
+                 <div className="bg-white/20 p-1.5 rounded-lg"><MessageSquare className="w-5 h-5 text-white" /></div>
+                <h3 className="font-bold text-base tracking-tight">INFORMASI</h3>
               </div>
-              <p className="text-blue-100 text-[10px] uppercase tracking-widest font-medium">
-                {newsContent.waktu}
-              </p>
+              <p className="text-blue-100 text-[10px] uppercase tracking-widest font-medium">{newsContent.waktu}</p>
             </div>
-            <div className="p-6">
-              <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 mb-6">
-                <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">
-                  "{newsContent.isi}"
-               </p>
+            <div className="p-5">
+              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-5 max-h-60 overflow-y-auto">
+                <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">"{newsContent.isi}"</p>
               </div>
-              <button 
-                onClick={() => {
-                  setShowNews(false);
-                  sessionStorage.setItem('announcement_shown', 'true');
-                }}
-                className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-lg"
-              >
-                Tutup
-              </button>
+              <button onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold shadow-lg text-sm">Tutup</button>
             </div>
           </div>
         </div>
-       )}
+      )}
 
       <style>{`
         @keyframes blob { 
@@ -1474,178 +1441,6 @@ const handleSubmit = async () => {
     </div>
   );
 }
-
-// --- 4. APPROVAL SCREEN ---
-// function ApprovalScreen({ user, setView }) {
-//   const [list, setList] = useState([]);
-//   const [loading, setLoading] = useState(true);
-
-//   // FIX WARNING: Wrap in useCallback
-//   const fetchApprovalList = useCallback(async () => {
-//     setLoading(true);
-//     try {
-//       const res = await fetch(SCRIPT_URL, { 
-//         method: 'POST', 
-//         body: JSON.stringify({ 
-//             action: 'get_approval_list', 
-//             userId: user.id, 
-//             divisi: user.divisi, 
-//             role: user.role,
-//             lokasi: user.lokasi || 'All' 
-//         }) 
-//       });
-//       const data = await res.json();
-//       if (data.result === 'success') setList(data.list);
-//     } catch (e) { alert('Gagal memuat data approval'); } finally { setLoading(false); }
-//   }, [user.id, user.divisi, user.role, user.lokasi]);
-
-//   useEffect(() => { fetchApprovalList(); }, [fetchApprovalList]);
-
-// const handleDecision = async (uuid, decision, namaUser) => {
-//     const isReject = decision === 'reject';
-//     const actionText = isReject ? 'Menolak' : 'Menyetujui';
-    
-//     // 1. Munculkan Prompt Alasan
-//     const pesanPrompt = isReject 
-//         ? `Alasan PENOLAKAN untuk ${namaUser} (Wajib diisi):` 
-//         : `Catatan PERSETUJUAN untuk ${namaUser} (Opsional):`;
-        
-//     const alasanInput = window.prompt(pesanPrompt, "");
-
-//     // 2. Validasi
-//     if (alasanInput === null) return; // Klik Batal di prompt
-//     if (isReject && alasanInput.trim() === "") {
-//         alert("Gagal! Anda wajib memberikan alasan jika menolak pengajuan.");
-//         return;
-//     }
-
-//     if (!window.confirm(`Yakin ingin ${actionText} pengajuan ini?`)) return;
-
-//     try {
-//         const res = await fetch(SCRIPT_URL, { 
-//             method: 'POST', 
-//             body: JSON.stringify({ 
-//                 action: 'process_approval', 
-//                 uuid, 
-//                 decision, 
-//                 approverName: user.nama,
-//                 alasan: alasanInput.trim() // Kirim alasan ke backend
-//             }) 
-//         }).then(r => r.json());
-
-//         if (res.result === 'success') { 
-//             alert(res.message);
-//             fetchApprovalList(); 
-//         } else {
-//             alert(res.message);
-//         }
-//     } catch (e) {
-//         alert('Terjadi kesalahan koneksi');
-//     }
-// };
-
-//   const formatDateIndo = (dateString) => { 
-//   if (!dateString || dateString === '-') return '-';
-//   try { 
-//     const date = new Date(dateString); 
-//     // Menggunakan Intl.DateTimeFormat untuk format DD-MM-YYYY
-//     const day = String(date.getDate()).padStart(2, '0');
-//     const month = String(date.getMonth() + 1).padStart(2, '0');
-//     const year = date.getFullYear();
-    
-//     return `${day}-${month}-${year}`;
-//   } catch (e) { 
-//     return dateString; 
-//   } 
-// };
-//   return (
-//     <div className="p-4 h-full overflow-y-auto pb-20">
-//       <div className="flex items-center gap-2 mb-4">
-//         <BackButton onClick={() => setView('dashboard')} />
-//         <h2 className="text-xl font-bold ml-2">Daftar Approval ({user.lokasi || 'All'})</h2>
-//       </div>
-
-//       <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4 text-xs text-blue-800">
-//         <p className="font-bold">Info:</p>
-//         <p>Halaman ini menampilkan pengajuan dari karyawan di <strong>{user.lokasi}</strong> yang berstatus <strong>Pending</strong>.</p>
-//       </div>
-
-//       {loading ? <p className="text-center text-gray-500 mt-10">Memuat data pengajuan...</p> : (
-//         <div className="space-y-4">
-//           {list.length === 0 && (
-//               <div className="text-center py-10 flex flex-col items-center">
-//                   <CheckCircle className="w-12 h-12 text-gray-300 mb-2" />
-//                    <p className="text-gray-400">Tidak ada pengajuan pending saat ini.</p>
-//               </div>
-//           )}
-          
-//           {list.map((item, idx) => (
-//             <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-orange-400 relative overflow-hidden">
-//               <div className="flex justify-between items-start mb-2">
-//                   <div>
-//                       <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-//                         <User className="w-4 h-4 text-gray-500"/> {item.nama}
-//                       </h4>
-//                       <div className="flex gap-1 mt-1">
-//                         <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold border border-gray-200">
-//                             {item.divisi}
-//                         </span>
-//                         <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-bold border border-blue-200">
-//                             {item.lokasi}
-//                         </span>
-//                       </div>
-//                   </div>
-//                   <div className="text-right">
-//                       <span className="text-xs font-bold px-2 py-1 bg-orange-100 text-orange-700 rounded border border-orange-200">
-//                             {item.tipe}
-//                       </span>
-//                   </div>
-//               </div>
-              
-//               <div className="text-sm text-gray-600 mb-3 bg-gray-50 p-2 rounded border border-gray-100 mt-2">
-//                 <div className="flex items-center gap-2 mb-1">
-//                     <Calendar className="w-3 h-3 text-gray-400"/> 
-//                     <span className="font-medium">{item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)} - ${formatDateIndo(item.tglSelesai)}` : formatDateIndo(item.waktu)}</span>
-//                 </div>
-//                 <p className="italic text-gray-500">"{item.catatan || 'Tidak ada catatan'}"</p>
-//               </div>
-
-// {/* --- [TAMBAHAN] TOMBOL LIHAT BUKTI --- */}
-// <div className="flex flex-wrap gap-2 mb-3">
-//     {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
-//         <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 transition">
-//             <Camera className="w-3 h-3"/> View Photo
-//         </a>
-//     )}
-//     {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
-//         <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-200 hover:bg-orange-100 transition">
-//             <FileIcon className="w-3 h-3"/> View Attachment
-//         </a>
-//     )}
-// </div>
-// {/* ------------------------------------- */}
-
-//               <div className="flex gap-2">
-//                   <button 
-//                     onClick={() => handleDecision(item.uuid, 'approve', item.nama)} 
-//                     className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center justify-center gap-2"
-//                   >
-//                     <CheckCircle className="w-4 h-4"/> Approve
-//                   </button>
-//                   <button 
-//                     onClick={() => handleDecision(item.uuid, 'reject', item.nama)} 
-//                     className="flex-1 bg-red-100 text-red-600 py-2 rounded-lg text-sm font-bold hover:bg-red-200 flex items-center justify-center gap-2 border border-red-200"
-//                   >
-//                     <X className="w-4 h-4"/> Reject
-//                   </button>
-//               </div>
-//             </div>
-//           ))}
-//         </div>
-//       )}
-//     </div>
-//   );
-// }
 
 // --- 4. APPROVAL SCREEN (UPDATED: DENGAN FILTER TIPE) ---
 function ApprovalScreen({ user, setView }) {
