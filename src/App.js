@@ -2635,93 +2635,74 @@ function ChangePasswordScreen({ user, setView }) {
   );
 }
 
-// --- 9. DB ABSEN SCREEN (DATA MESIN - FIX FILTER TANGGAL) ---
+// --- 9. DB ABSEN SCREEN (REDESIGN: MODERN & ELEGANT) ---
 function DbAbsenScreen({ user, setView }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // [BARU] State untuk menyimpan jumlah ijin user saat ini
   const [ijinCount, setIjinCount] = useState(0);
 
   // STATE FILTER
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
-  const [filterStatus, setFilterStatus] = useState('All'); 
+  const [filterStatus, setFilterStatus] = useState('All');
   const [showFilter, setShowFilter] = useState(false);
 
-  // MAP KETERANGAN
+  // MAP KETERANGAN (Sama seperti sebelumnya)
   const KETERANGAN_MAP = {
-      'H': 'Hadir', 'T': 'Telat', 'O': 'Off / Libur', 'CB': 'Cuti Bersama',
-      'PC': 'Pulang Cepat', 'Si': 'Tdk Absen Masuk', 'So': 'Tdk Absen Pulang',
+      'H': 'Hadir', 'T': 'Terlambat', 'O': 'Off / Libur', 'CB': 'Cuti Bersama',
+      'PC': 'Pulang Cepat', 'Si': 'Tdk Absen IN', 'So': 'Tdk Absen OUT',
       'I': 'Ijin', 'S': 'Sakit', 'C': 'Cuti', 'A': 'Alpa',
-      'DL': 'Dinas Luar', 'TPC': 'Telat, Pulang Cepat', 'TSo': 'Telat, Tdk Absen Pulang',
-      'TSi': 'Telat, Tdk Absen Masuk', 'SiSo': 'Tdk Absen Masuk & Pulang',
-      'SiPC': 'Tdk Absen Masuk, Pulang Cepat', 'AC': 'Alpa Lebih Cuti',
-      'EO': 'Extra Ordinary', 'NF': 'Tidak Absen Mesin'
+      'DL': 'Dinas Luar', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
+      'TSi': 'Telat & No Scan In', 'SiSo': 'Tdk Absen IN & OUT',
+      'SiPC': 'Tdk Absen IN & Pulang Cepat', 'AC': 'Alpa (Lebih Cuti)',
+      'EO': 'Extra Ordinary', 'NF': 'Tidak Absen'
   };
 
-  // [BARU] Effect untuk mengambil Stats (Limit Ijin) saat halaman dibuka
+  // FETCH STATS (Limit Ijin)
   useEffect(() => {
     const fetchStats = async () => {
         try {
             const res = await fetch(SCRIPT_URL, { 
-                method: 'POST', 
-                body: JSON.stringify({ action: 'get_stats', userId: user.id }) 
+                method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) 
             });
             const data = await res.json();
-            if (data.result === 'success') {
-                // Simpan jumlah ijin ke state
-                setIjinCount(data.stats.ijin_count || 0);
-            }
-        } catch (e) { console.error("Gagal load stats di DbAbsen"); }
+            if (data.result === 'success') setIjinCount(data.stats.ijin_count || 0);
+        } catch (e) { console.error("Gagal load stats"); }
     };
     if (user) fetchStats();
   }, [user]);
 
-  // Effect untuk mengambil Data Absen Mesin
+  // FETCH DATA MESIN
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
         const res = await fetch(SCRIPT_URL, { 
-            method: 'POST', 
-            body: JSON.stringify({ 
-                action: 'get_db_absen', 
-                userId: user.id,
-                noPayroll: user.noPayroll 
-            }) 
+            method: 'POST', body: JSON.stringify({ action: 'get_db_absen', userId: user.id, noPayroll: user.noPayroll }) 
         });
         const data = await res.json();
-        if (data.result === 'success') {
-            setList(data.list);
-        } else {
-            alert(data.message);
-        }
-      } catch (e) {
-        console.error(e);
-        alert("Gagal memuat data mesin.");
-      } finally {
-        setLoading(false);
-      }
+        if (data.result === 'success') setList(data.list);
+        else alert(data.message);
+      } catch (e) { alert("Gagal memuat data mesin."); } 
+      finally { setLoading(false); }
     };
-    
     if (user) fetchData();
   }, [user]);
 
-  // Helper Parsing Tanggal
+  // HELPER DATE PARSER
   const parseDate = (dateStr) => {
       if (!dateStr) return null;
       try {
+          // Deteksi format YYYY-MM-DD
           if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return new Date(dateStr);
+          // Deteksi format DD-MM-YYYY
           const parts = dateStr.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-          if (parts) {
-             return new Date(`${parts[3]}-${parts[2]}-${parts[1]}`);
-          }
+          if (parts) return new Date(`${parts[3]}-${parts[2]}-${parts[1]}`);
           return new Date(dateStr);
       } catch (e) { return null; }
   };
 
-  // Logic Filtering
+  // FILTER LOGIC
   const filteredList = list.filter(item => {
     let matchDate = true;
     if (filterStart || filterEnd) {
@@ -2738,150 +2719,192 @@ function DbAbsenScreen({ user, setView }) {
     return matchDate && matchStatus;
   });
 
-  const getSymbolColor = (sym) => {
-      if(!sym) return 'bg-gray-100 text-gray-600';
+  // STYLE HELPER
+  const getStatusStyle = (sym) => {
+      if(!sym) return { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' };
       const s = sym.toUpperCase();
-      if(s === 'H' || s === 'A') return 'bg-green-100 text-green-700'; 
-      if(s === 'T' || s.includes('T')) return 'bg-red-100 text-red-700';
-      return 'bg-blue-100 text-blue-700';
+      if(['H', 'A'].includes(s)) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' }; 
+      if(s.includes('T') || s.includes('SI') || s.includes('SO')) return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
+      return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
   };
 
-  const translateDay = (dayName) => {
-      if (!dayName) return '-';
-      const map = { 'SUN': 'MINGGU', 'MON': 'SENIN', 'TUE': 'SELASA', 'WED': 'RABU', 'THU': 'KAMIS', 'FRI': 'JUMAT', 'SAT': 'SABTU' };
-      const key = String(dayName).toUpperCase().substring(0, 3);
-      return map[key] || dayName;
+  // DATE FORMATTER (Memecah Tanggal)
+  const splitDate = (dateStr, weekName) => {
+      const d = parseDate(dateStr);
+      if(!d || isNaN(d.getTime())) return { day: '00', month: '---', year: '0000', dayName: weekName || '-' };
+      return {
+          day: String(d.getDate()).padStart(2, '0'),
+          month: d.toLocaleDateString('id-ID', { month: 'short' }).toUpperCase(),
+          year: d.getFullYear(),
+          dayName: d.toLocaleDateString('id-ID', { weekday: 'long' })
+      };
   };
 
   const clearFilter = () => { setFilterStart(''); setFilterEnd(''); setFilterStatus('All'); };
 
   return (
-    <div className="p-4 h-full overflow-y-auto pb-20">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-4 h-full overflow-y-auto pb-24 bg-gray-50">
+      {/* HEADER */}
+      <div className="flex items-center justify-between mb-6 sticky top-0 bg-gray-50 z-10 py-2">
         <div className="flex items-center gap-2">
             <BackButton onClick={() => setView('dashboard')} />
-            <h2 className="text-xl font-bold ml-2">Data Mesin</h2>
+            <div>
+                <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Data Mesin</h2>
+                <p className="text-[10px] text-slate-500 font-medium">Sinkronisasi ID: {user.noPayroll}</p>
+            </div>
         </div>
         <button 
             onClick={() => setShowFilter(!showFilter)} 
-            className={`p-2 rounded-lg border transition-colors ${showFilter ? 'bg-blue-100 text-blue-600 border-blue-300' : 'bg-white text-gray-500 border-gray-200'}`}
-            title="Filter Data"
+            className={`p-2.5 rounded-xl border transition-all shadow-sm ${showFilter ? 'bg-blue-600 text-white border-blue-600 shadow-blue-200' : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}
         >
             <Filter className="w-5 h-5" />
         </button>
       </div>
 
-      <div className="bg-indigo-50 border border-indigo-200 p-3 rounded-lg mb-4 text-xs text-indigo-800">
-        <p className="font-bold flex items-center gap-1"><Info className="w-3 h-3"/> Informasi:</p>
-        <p>Data ini sinkron langsung dari Mesin Fingerprint ID - <strong>{user.noPayroll}</strong>.</p>
-      </div>
-
+      {/* FILTER PANEL */}
       {showFilter && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 animate-in fade-in slide-in-from-top-2">
-            <div className="flex justify-between items-center mb-3">
-                <h4 className="text-xs font-bold text-gray-700 flex items-center gap-2"><Filter className="w-4 h-4"/> Filter Data</h4>
+        <div className="bg-white p-5 rounded-2xl shadow-lg shadow-blue-50/50 border border-blue-100 mb-6 animate-in slide-in-from-top-4 duration-300">
+            <div className="flex justify-between items-center mb-4">
+                <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Filter className="w-4 h-4 text-blue-500"/> Filter Data</h4>
                 {(filterStart || filterEnd || filterStatus !== 'All') && (
-                    <button onClick={clearFilter} className="text-[10px] text-red-500 font-bold hover:underline flex items-center gap-1">
-                        <Trash2 className="w-3 h-3"/> Reset Filter
+                    <button onClick={clearFilter} className="text-[10px] text-red-500 font-bold bg-red-50 px-2 py-1 rounded-md hover:bg-red-100 transition">
+                        Reset Filter
                     </button>
                 )}
             </div>
-            <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-[10px] text-gray-400 block mb-1">Dari Tanggal</label>
-                        <input type="date" className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} />
-                    </div>
-                    <div>
-                        <label className="text-[10px] text-gray-400 block mb-1">Sampai Tanggal</label>
-                        <input type="date" className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} />
-                    </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label className="text-[10px] font-bold text-slate-400 block mb-1">Mulai</label>
+                    <input type="date" className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} />
                 </div>
                 <div>
-                    <label className="text-[10px] text-gray-400 block mb-1">Status / Keterangan</label>
-                    <select className="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                        <option value="All">-- Semua Status --</option>
-                        {Object.entries(KETERANGAN_MAP).map(([key, label]) => (
-                            <option key={key} value={key}>{label} ({key})</option>
-                        ))}
-                    </select>
+                    <label className="text-[10px] font-bold text-slate-400 block mb-1">Sampai</label>
+                    <input type="date" className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} />
                 </div>
             </div>
-             <div className="mt-3 pt-2 border-t text-[10px] text-blue-600 font-medium text-right">
-                Ditemukan: <strong>{filteredList.length}</strong> Data
+            <div>
+                <label className="text-[10px] font-bold text-slate-400 block mb-1">Status Kehadiran</label>
+                <select className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                    <option value="All">Semua Status</option>
+                    {Object.entries(KETERANGAN_MAP).map(([key, label]) => (
+                        <option key={key} value={key}>{label} ({key})</option>
+                    ))}
+                </select>
+            </div>
+            <div className="mt-4 pt-3 border-t border-dashed border-gray-100 text-[10px] text-slate-400 text-center font-medium">
+                Menampilkan <strong>{filteredList.length}</strong> data presensi
             </div>
         </div>
       )}
 
       {loading ? (
-          <p className="text-center text-gray-500 mt-10 animate-pulse">Sedang sinkronisasi data mesin...</p>
+          <div className="flex flex-col items-center justify-center py-20">
+              <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-3"></div>
+              <p className="text-xs font-bold text-slate-400">Mengambil Data Mesin...</p>
+          </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
             {filteredList.length === 0 && (
-                <div className="text-center py-10 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-                    <p>Tidak ada data ditemukan.</p>
-                    {(filterStart || filterEnd || filterStatus !== 'All') && <p className="text-xs mt-1">Coba ubah filter pencarian Anda.</p>}
+                <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300 mx-2">
+                    <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Fingerprint className="w-8 h-8 text-gray-300" />
+                    </div>
+                    <p className="text-slate-500 font-bold text-sm">Tidak ada data ditemukan</p>
+                    <p className="text-xs text-slate-400 mt-1">Coba sesuaikan filter tanggal Anda</p>
                 </div>
             )}
+
             {filteredList.map((item, idx) => {
-                const textKeterangan = KETERANGAN_MAP[item.symbol] ? `(${KETERANGAN_MAP[item.symbol]})` : '';
-                const isLate = item.symbol && (
-                    item.symbol.toUpperCase() === 'T' || 
-                    item.symbol.toUpperCase().includes('TELAT') ||
-                    item.symbol.toUpperCase().includes('TSO') ||
-                    item.symbol.toUpperCase().includes('TSI')
-                );
-                
-                // [BARU] Logika apakah tombol Ijin Disable
+                const style = getStatusStyle(item.symbol);
+                const dateParts = splitDate(item.tanggal, item.week);
+                const keterangan = KETERANGAN_MAP[item.symbol] || '-';
+                const isLate = item.symbol && (item.symbol.toUpperCase().includes('T') || item.symbol.toUpperCase().includes('SI') || item.symbol.toUpperCase().includes('SO'));
                 const isIjinDisabled = ijinCount >= 4;
 
                 return (
-                    <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-                        <div className="flex justify-between items-start border-b border-gray-100 pb-2 mb-2">
-                            <div>
-                                <p className="text-xs text-gray-500 font-bold uppercase">{translateDay(item.week)}</p>
-                                <h4 className="font-bold text-gray-800">{item.tanggal}</h4>
-                            </div>
-                            <div className="text-right">
-                                <span className={`text-xs font-bold px-2 py-1 rounded ${getSymbolColor(item.symbol)} block`}>
-                                    {item.symbol || '-'} <br/>
-                                    <span className="text-[10px] opacity-80 font-normal">{textKeterangan}</span>
-                                </span>
-                            </div>
-                        </div>
+                    <div key={idx} className="bg-white rounded-2xl p-0 shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-all duration-300 group">
                         
-                        <div className="grid grid-cols-2 gap-y-2 text-sm">
-                            <div><p className="text-[10px] text-gray-400">Jam Masuk</p><p className="font-medium font-bold text-blue-600">{formatTimeOnly(item.masuk)}</p></div>
-                            <div><p className="text-[10px] text-gray-400">Jam Pulang</p><p className="font-medium font-bold text-blue-600">{formatTimeOnly(item.pulang)}</p></div>
-                            <div><p className="text-[10px] text-gray-400">Jam Kerja</p><p className="font-medium">{item.jamKerja}</p></div>
-                            <div><p className="text-[10px] text-gray-400">Telat</p><p className={`font-medium ${item.telat ? 'text-red-600' : 'text-gray-600'}`}>{formatTimeOnly(item.telat)}</p></div>
-                        </div>
+                        {/* --- TOP SECTION: DATE & STATUS --- */}
+                        <div className="flex">
+                            {/* KOTAK TANGGAL KIRI */}
+                            <div className="bg-slate-50 w-24 flex flex-col items-center justify-center border-r border-dashed border-slate-200 p-3 text-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{dateParts.month}</span>
+                                <span className="text-3xl font-black text-slate-700 leading-none my-0.5">{dateParts.day}</span>
+                                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{dateParts.year}</span>
+                            </div>
 
-                        <div className="mt-3">
-                            <p className="text-[10px] text-gray-400 mb-1">Log Scan Mesin:</p>
-                            <div className="bg-gray-50 p-2.5 rounded border border-gray-200 text-xs font-mono text-gray-600 break-words leading-relaxed">
-                                {item.waktuScan ? item.waktuScan.replace(/,/g, ', ') : '-'}
+                            {/* DETAIL KANAN */}
+                            <div className="flex-1 p-3">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{dateParts.dayName}</p>
+                                        <div className={`inline-flex items-center px-2.5 py-1 rounded-lg border ${style.bg} ${style.border} ${style.text}`}>
+                                            <span className="text-[10px] font-extrabold tracking-wide uppercase">{keterangan}</span>
+                                        </div>
+                                    </div>
+                                    {/* SIMBOL KODE (H, T, dll) */}
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black border-2 ${style.bg} ${style.border} ${style.text}`}>
+                                        {item.symbol}
+                                    </div>
+                                </div>
+
+                                {/* GRID JAM KERJA (TEGAS) */}
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                    <div className="relative pl-3 border-l-2 border-green-400">
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Masuk</p>
+                                        <p className="text-base font-black text-slate-800">{formatTimeOnly(item.masuk)}</p>
+                                    </div>
+                                    <div className="relative pl-3 border-l-2 border-red-400">
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Pulang</p>
+                                        <p className="text-base font-black text-slate-800">{formatTimeOnly(item.pulang)}</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        {/* [MODIFIKASI] TOMBOL PENGAJUAN IJIN */}
+                        {/* --- BOTTOM SECTION: DETAILS --- */}
+                        <div className="bg-slate-50/50 px-4 py-3 border-t border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div>
+                                    <p className="text-[9px] font-bold text-slate-400">Jam Kerja</p>
+                                    <p className="text-xs font-bold text-slate-600">{item.jamKerja || '-'}</p>
+                                </div>
+                                {item.telat && item.telat !== 'FALSE' && item.telat !== '00:00:00' && (
+                                    <div>
+                                        <p className="text-[9px] font-bold text-orange-400">Terlambat</p>
+                                        <p className="text-xs font-bold text-orange-600">{formatTimeOnly(item.telat)}</p>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            {/* LOG SCAN ICON (Expandable hint) */}
+                            <div className="relative group/tooltip">
+                                <Activity className="w-4 h-4 text-slate-300" />
+                                <div className="absolute right-0 bottom-6 w-48 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg opacity-0 group-hover/tooltip:opacity-100 transition pointer-events-none z-10 font-mono">
+                                    Scan: {item.waktuScan ? item.waktuScan.replace(/,/g, ', ') : '-'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* --- ACTION BUTTON IF LATE --- */}
                         {isLate && (
-                            <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+                            <div className="px-3 pb-3 pt-1">
                                 <button 
-                                    // NONAKTIFKAN JIKA LIMIT TERCAPAI
                                     disabled={isIjinDisabled}
                                     onClick={() => {
                                         localStorage.setItem('absenType', 'Ijin');
+                                        // Opsional: Simpan tanggal agar form otomatis terisi
+                                        // localStorage.setItem('absenDate', item.tanggal); 
                                         setView('form');
                                     }}
-                                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-colors active:scale-95 border
+                                    className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all border
                                         ${isIjinDisabled 
-                                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-70' // Style Disable
-                                            : 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100' // Style Aktif
+                                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
+                                            : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-50 shadow-sm' 
                                         }`}
                                 >
                                     <FileText className="w-3.5 h-3.5" />
-                                    {isIjinDisabled ? 'Form IJIN anda sudah 4x bulan ini' : `Ajukan Form Ijin (${item.tanggal})`}
+                                    {isIjinDisabled ? 'Form IJIN Sudah Terpakai 4X' : 'Ajukan Form IJIN untuk keterlambatan'}
                                 </button>
                             </div>
                         )}
@@ -2890,6 +2913,8 @@ function DbAbsenScreen({ user, setView }) {
             })}
         </div>
       )}
+      {/* Spacer agar konten paling bawah tidak tertutup navigasi jika ada */}
+      <div className="h-10"></div>
     </div>
   );
 }
