@@ -1973,6 +1973,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [reportStatusFilter, setReportStatusFilter] = useState('All');
   const [reportCategory, setReportCategory] = useState('General'); 
   const [isReportLoading, setIsReportLoading] = useState(false);
+  const [reportFormFilter, setReportFormFilter] = useState('All');
 
   // REPORT FILTER STATE
   const [reportStartDate, setReportStartDate] = useState('');
@@ -2072,6 +2073,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
   const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
   const formatTimeOnly = (val) => { if (!val || val === '-') return '-'; if (typeof val === 'string' && (val.includes('T') || val.length > 8)) { try { const d = new Date(val); if (!isNaN(d.getTime())) { return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':'); } } catch (e) { return val.substring(0, 5); } } return val.length >= 5 ? val.substring(0, 5) : val; };
+  const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
+  const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
   const formatDateTimeFull = (val) => { if (!val || val === '-') return '-'; try { const d = new Date(val); if(isNaN(d.getTime())) return val; const dd = String(d.getDate()).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const yy = String(d.getFullYear()).slice(-2); const hh = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${dd}-${mm}-${yy} ${hh}:${min}`; } catch(e) { return val; } };
   const getDurasiHari = (start, end) => {
     if (!start || start === '-' || !end || end === '-') return '';
@@ -2153,11 +2156,18 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
               const dateRef = reportCategory === 'RunningShift' ? item.tanggal : item.waktu;
               const itemDate = new Date(dateRef).setHours(0, 0, 0, 0);
               const matchDate = (!start && !end) || (itemDate >= start && itemDate <= end);
+              
               let matchStatus = true;
+              let matchForm = true; // [BARU]
+
               if (reportCategory === 'General') {
+                 // Filter Status
                  matchStatus = (reportStatusFilter === 'All' || item.status === reportStatusFilter);
+                 // [BARU]: Filter Form
+                 matchForm = (reportFormFilter === 'All' || item.tipe === reportFormFilter);
               }
-              return matchDate && matchStatus;
+              
+              return matchDate && matchStatus && matchForm; // [UPDATE RETURN]
           });
       }
 
@@ -2199,6 +2209,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const generateExcel = () => {
     let tableHead = [];
     let tableBody = [];
+
     if (reportCategory === 'RunningShift') {
         tableHead = ["No", "ID Akun", "Nama", "Posisi", "Tanggal Shift", "Kode Shift", "Jam Kerja", "Waktu Input"];
         tableBody = currentReportData.map((item, index) => [
@@ -2212,12 +2223,18 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
             formatDateIndo(item.tanggal), item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-'
         ]);
     } else {
+        // [BARU]: Logika Excel untuk Laporan Absensi (General)
         tableHead = ["No", "ID Akun", "Payroll", "Nama", "Form", "Waktu Input", "Periode", "Catatan", "Status", "Approval"];
         tableBody = currentReportData.map((item, index) => {
             let p = item.tglMulai && item.tglMulai !== '-' ? `${formatDateShort(item.tglMulai)} - ${formatDateShort(item.tglSelesai)}` : (item.jamMulai && item.jamMulai !== '-' ? `${formatTimeOnly(item.jamMulai)} - ${formatTimeOnly(item.jamSelesai)}` : '-');
-            return [index + 1, item.idAkun || '-', item.noPayroll || '-', item.nama, item.tipe, formatDateTimeFull(item.waktu), p, item.catatan || '-', item.status, item.approvalTime || '-'];
+            return [
+                index + 1, item.idAkun || '-', item.noPayroll || '-', item.nama, item.tipe, 
+                formatDateTimeFull(item.waktu), p, item.catatan || '-', item.status, 
+                item.approvalTime && item.approvalTime !== '-' ? formatDateTimeFull(item.approvalTime) : '-'
+            ];
         });
     }
+    
     const worksheet = XLSX.utils.aoa_to_sheet([tableHead, ...tableBody]);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan");
@@ -2343,15 +2360,33 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                         <ChevronDown className="w-3 h-3 text-indigo-400 absolute right-3 top-2 pointer-events-none"/>
                       </div>
 
-                      {/* Status Selector */}
+                      {/* [BARU] Filter FORM (Hanya muncul di General) */}
+                      {reportCategory === 'General' && (
+                          <div className="relative">
+                            <select value={reportFormFilter} onChange={(e) => setReportFormFilter(e.target.value)} className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-slate-300 rounded-full cursor-pointer outline-none transition-all shadow-sm">
+                                <option value="All">Semua Form</option>
+                                {uniqueForms.filter(t => t !== 'All').map((type, idx) => (
+                                    <option key={idx} value={type}>{type}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="w-3 h-3 text-slate-400 absolute right-3 top-2 pointer-events-none"/>
+                          </div>
+                      )}
+
+                      {/* Status Selector (DINAMIS) */}
                       {reportCategory !== 'RunningShift' && reportCategory !== 'Tally' && (
                           <div className="relative">
-                            <select value={reportStatusFilter} onChange={(e) => setReportStatusFilter(e.target.value)} className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-slate-300 rounded-full cursor-pointer outline-none transition-all shadow-sm">
-                                <option value="All">Semua Status</option>
-                                <option value="Pending">Pending</option>
-                                <option value="Approved">Approved</option>
-                                <option value="Rejected">Rejected</option>
-                                <option value="Verified">Verified</option>
+                            <select 
+                                value={reportStatusFilter} 
+                                onChange={(e) => setReportStatusFilter(e.target.value)} 
+                                className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-slate-300 rounded-full cursor-pointer outline-none transition-all shadow-sm"
+                            >
+                                {/* [PERUBAHAN DISINI]: Mapping dari uniqueStatuses */}
+                                {uniqueStatuses.map((status, idx) => (
+                                    <option key={idx} value={status}>
+                                        {status === 'All' ? 'Semua Status' : status}
+                                    </option>
+                                ))}
                             </select>
                             <ChevronDown className="w-3 h-3 text-slate-400 absolute right-3 top-2 pointer-events-none"/>
                           </div>
@@ -2372,7 +2407,10 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                           <button onClick={generatePDF} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 shadow-md shadow-rose-200 transition-all active:scale-95" title="PDF">
                               <Printer className="w-3.5 h-3.5" /> PDF
                           </button>
-                          {(reportCategory === 'RunningShift' || reportCategory === 'Tally') && (
+                         
+                          {/* [BARU] Tombol Excel dengan Logic Role */}
+                          {/* Muncul Jika: RunningShift/Tally ATAU (General DAN user adalah Admin/HRD) */}
+                          {(reportCategory === 'RunningShift' || reportCategory === 'Tally' || (reportCategory === 'General' && canViewAll)) && (
                               <button onClick={generateExcel} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all active:scale-95" title="Excel">
                                   <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
                               </button>
