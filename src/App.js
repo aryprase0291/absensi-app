@@ -2083,7 +2083,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         const d2 = new Date(end);
         const diffTime = Math.abs(d2 - d1);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
-        return `(${diffDays} Hari)`;
+        return `(${diffDays})`;
     } catch (e) { return ''; }
   };
 
@@ -2676,12 +2676,12 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                         {canViewAll && <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">({item.nama})</span>}
                     </h4>
                     
-                    {/* [PERBAIKAN 3]: Tambah Waktu Input */}
+                    {/* [UPDATE]: Timestamp */}
                     <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-1">
                         <Clock className="w-3 h-3"/> 
                         {formatDateIndo(item.waktu)} 
-                        <span className="text-slate-300">|</span> 
-                        <span className="text-blue-500 font-mono font-bold">({formatTimeOnly(item.waktu)})</span>
+                        <span className="opacity-50 mx-1">|</span> 
+                        {formatTimeOnly(item.waktu)}
                     </p>
                   </div>
 
