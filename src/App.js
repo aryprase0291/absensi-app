@@ -2703,6 +2703,25 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                     <p className="text-xs text-slate-600 italic leading-relaxed">"{item.catatan || '-'}"</p>
                 </div>
 
+                {/* --- TAMPILAN ALASAN REJECT (POSISI BARU) --- */}
+                {item.status === 'Rejected' && item.alasan && item.alasan !== '-' && (
+                    <div className="bg-red-50 border border-red-100 p-3 rounded-xl mb-2 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex items-start gap-2">
+                            <div className="mt-0.5 min-w-[16px]">
+                                <AlertTriangle className="w-4 h-4 text-red-500" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="text-[10px] font-bold text-red-700 uppercase tracking-wide leading-none mb-1">
+                                    (Ditolak):
+                                </p>
+                                <p className="text-xs text-red-600 italic leading-relaxed font-medium">
+                                    "{item.alasan}"
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* [PERBAIKAN 4]: Tampilkan Durasi Hari */}
                 {(item.tglMulai && item.tglMulai !== '-') && (
                     <div className="text-xs text-indigo-600 flex gap-1.5 mt-2 font-bold items-center bg-indigo-50 p-2 rounded-lg w-fit border border-indigo-100">
