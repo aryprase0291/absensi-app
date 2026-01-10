@@ -40,7 +40,7 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.4";
+  const CLIENT_VERSION = "1.0.5";
 
  // --- LOGIKA CEK UPDATE (DIPERBAIKI DENGAN PENGAMAN LOOP) ---
   useEffect(() => {
@@ -578,7 +578,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
       {/* --- FOOTER --- */}
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-             Version {masterData?.appVersion || '1.0.4'} | &copy; {new Date().getFullYear()}
+             Version {masterData?.appVersion || '1.0.5'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
