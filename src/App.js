@@ -10,7 +10,7 @@ import {
   File as FileIcon, Filter, CheckSquare, Users, Eye, 
   ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
   MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
-  Printer, Download, FileSpreadsheet, Loader2, Wifi, WifiOff, CalendarDays, UserX, DoorOpen, DoorClosed, 
+  Printer, FileSpreadsheet, Loader2, Wifi, WifiOff, CalendarDays, DoorOpen, DoorClosed, 
   CloudSun, KeyRound, ScanLine, 
 } from 'lucide-react';
 
@@ -245,11 +245,6 @@ const AnalogClock = ({ time }) => {
 // --- DASHBOARD SCREEN (LAYOUT BARU: FIXED GRID & HEADER ANIMASI) ---
 function Dashboard({ user, setUser, setView, handleLogout, masterData }) { 
   const [time, setTime] = useState(new Date());
-  // ... (State stats, loadingStats, execTime TETAP SAMA seperti sebelumnya) ...
-  // ... (Paste logic state dan useEffect di sini jika belum ada, sama persis script sebelumnya) ...
-  
-  // STATE DAN EFFECT UNTUK STATS HARUS ADA DISINI (Saya ringkas komentarnya)
-  // --- COPY DARI SCRIPT SEBELUMNYA: stats, loadingStats, checkExecutionTime, fetchStats, fetchNews ---
   const [stats, setStats] = useState({ 
     total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, 
     total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0,
@@ -257,8 +252,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
   });
   const [loadingStats, setLoadingStats] = useState(true);
   const [showNews, setShowNews] = useState(false);
-  const [newsContent, setNewsContent] = useState(null);
-  const [execTime, setExecTime] = useState('0.0000');
+  const [newsContent] = useState(null);
 
   useEffect(() => { const timer = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(timer); }, []);
   
@@ -3026,11 +3020,13 @@ function AdminPanel({ user, setView, masterData }) {
   );
 }
 
-// --- 7. LOGIN SCREEN (TIDAK BERUBAH) ---
+// --- 7. LOGIN SCREEN (MODERN & DYNAMIC LIGHT THEME) ---
 function LoginScreen({ onLogin }) { 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState(''); 
   const [loading, setLoading] = useState(false);
+  const [focused, setFocused] = useState(null); // Untuk efek fokus input
+
   const handleSubmit = async (e) => { 
     e.preventDefault(); 
     setLoading(true);
@@ -3051,95 +3047,132 @@ function LoginScreen({ onLogin }) {
       setLoading(false); 
     } 
   };
-  return ( 
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-indigo-700 to-purple-800 p-4 relative overflow-hidden">
-      
-      {/* Dekorasi Background */}
-      <div className="absolute top-10 left-10 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl animate-pulse"></div>
-      <div className="absolute bottom-10 right-10 w-48 h-48 bg-purple-400 opacity-10 rounded-full blur-3xl"></div>
 
-      <div className="bg-white/95 backdrop-blur-sm p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-white/50 relative z-10">
+  return ( 
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 relative overflow-hidden font-sans">
+      
+      {/* --- BACKGROUND ANIMATION (Modern Light Blobs) --- */}
+      {/* Blob Biru Muda - Bergerak lambat */}
+      <div className="absolute -top-20 -left-20 w-96 h-96 bg-blue-200/40 rounded-full blur-3xl animate-[pulse_8s_ease-in-out_infinite]"></div>
+      {/* Blob Cyan - Bergerak lambat */}
+      <div className="absolute top-40 right-0 w-72 h-72 bg-cyan-200/30 rounded-full blur-3xl animate-[bounce_10s_infinite]"></div>
+      {/* Blob Ungu Tipis - Bawah */}
+      <div className="absolute -bottom-20 left-20 w-80 h-80 bg-indigo-200/30 rounded-full blur-3xl animate-[pulse_6s_ease-in-out_infinite]"></div>
+
+      {/* --- CARD CONTAINER (Glassmorphism Light) --- */}
+      <div className="bg-white/80 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-2xl shadow-blue-100/50 w-full max-w-[380px] border border-white/60 relative z-10 transform transition-all duration-500 hover:shadow-blue-200/50">
         
-        {/* Ilustrasi Mesin Absensi */}
+        {/* HEADER & ANIMATED LOGO */}
         <div className="flex flex-col items-center mb-8">
-          <div className="relative group">
-            {/* Efek Glow */}
-            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+          <div className="relative group cursor-pointer">
+            {/* Lingkaran Luar Berputar */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-cyan-400 rounded-full blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
             
-            <div className="relative bg-white p-4 rounded-2xl border border-gray-100 shadow-lg flex items-center justify-center w-24 h-24">
-              {/* Animasi Garis Scan */}
-              <div className="absolute w-full h-1 bg-blue-500/50 top-4 animate-[bounce_2s_infinite]"></div>
-              <ScanFace className="w-12 h-12 text-blue-600" />
+            <div className="relative bg-white p-5 rounded-3xl shadow-lg border border-slate-50 flex items-center justify-center overflow-hidden w-24 h-24 group-hover:scale-105 transition-transform duration-300">
+               {/* Garis Scan Animasi */}
+               <div className="absolute w-full h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent top-0 animate-[scan_2.5s_linear_infinite]"></div>
+               <div className="absolute w-full h-full bg-blue-500/5 top-0 animate-[scan_2.5s_linear_infinite]"></div>
+               
+               <ScanFace className="w-10 h-10 text-slate-700 relative z-10" />
             </div>
-            
-            {/* Icon Fingerprint kecil */}
-            <div className="absolute -bottom-2 -right-2 bg-purple-600 text-white p-1.5 rounded-full border-2 border-white shadow-sm">
-              <Fingerprint className="w-4 h-4" />
+
+            {/* Status Badge Kecil */}
+            <div className="absolute -bottom-2 -right-2 bg-white p-1.5 rounded-full shadow-md border border-slate-100">
+              <div className="bg-emerald-500 w-3 h-3 rounded-full animate-pulse"></div>
             </div>
           </div>
           
-          <h2 className="text-2xl font-bold text-slate-800 mt-5 tracking-tight">Absensi Online</h2>
-          <p className="text-slate-500 text-xs mt-1 text-center px-4">
-            Silakan Anda masuk ke sistem.
-        </p>
+          <div className="text-center mt-6">
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight">Welcome Back</h2>
+            <p className="text-slate-500 text-xs font-medium mt-1">Sistem Absensi Terintegrasi</p>
+          </div>
         </div>
 
-        {/* Form Login */}
+        {/* FORM INPUT */}
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-gray-600 ml-1">ID FingerPrint</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Smartphone className="h-5 w-5 text-gray-400" />
-              </div>
-              <input 
-                type="text" 
-                value={username} 
-                onChange={e => setUsername(e.target.value)} 
-                className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors bg-gray-50/50" 
-                placeholder="Masukkan ID FingerPrint Anda" 
-                required 
-              />
+          
+          {/* Input ID Fingerprint */}
+          <div className={`group relative transition-all duration-300 rounded-2xl border bg-white ${focused === 'user' ? 'border-blue-500 ring-4 ring-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-slate-200 shadow-sm'}`}>
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+               <div className={`p-1.5 rounded-lg transition-colors duration-300 ${focused === 'user' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                 <Smartphone className="h-4 w-4" />
+               </div>
             </div>
+            <input 
+              type="text" 
+              value={username} 
+              onFocus={() => setFocused('user')}
+              onBlur={() => setFocused(null)}
+              onChange={e => setUsername(e.target.value)} 
+              className="block w-full pl-12 pr-4 py-4 bg-transparent rounded-2xl text-sm font-bold text-slate-700 placeholder-slate-400 focus:outline-none transition-colors" 
+              placeholder="ID Fingerprint" 
+              required 
+            />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-gray-600 ml-1">Password</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Key className="h-5 w-5 text-gray-400" />
-              </div>
-              <input 
-                type="password" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-                className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors bg-gray-50/50" 
-                placeholder="Masukkan Kata Sandi" 
-                required 
-              />
+          {/* Input Password */}
+          <div className={`group relative transition-all duration-300 rounded-2xl border bg-white ${focused === 'pass' ? 'border-blue-500 ring-4 ring-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-slate-200 shadow-sm'}`}>
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+               <div className={`p-1.5 rounded-lg transition-colors duration-300 ${focused === 'pass' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                 <Key className="h-4 w-4" />
+               </div>
             </div>
+            <input 
+              type="password" 
+              value={password} 
+              onFocus={() => setFocused('pass')}
+              onBlur={() => setFocused(null)}
+              onChange={e => setPassword(e.target.value)} 
+              className="block w-full pl-12 pr-4 py-4 bg-transparent rounded-2xl text-sm font-bold text-slate-700 placeholder-slate-400 focus:outline-none transition-colors" 
+              placeholder="Kata Sandi" 
+              required 
+            />
           </div>
 
+          {/* Tombol Login */}
           <button 
             type="submit" 
             disabled={loading} 
-            className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-lg shadow-blue-500/30 transform transition hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full py-4 px-4 rounded-2xl text-white font-bold text-sm bg-slate-900 hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-xl shadow-slate-200 transform transition-all duration-300 hover:-translate-y-1 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed group relative overflow-hidden"
           >
+            {/* Efek Kilap pada Button */}
+            <div className="absolute top-0 -left-full w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
+            
             {loading ? (
               <div className="flex items-center justify-center gap-2">
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                <span>Memproses...</span>
+                <Loader2 className="w-5 h-5 animate-spin text-blue-200" />
+                <span>Sedang Memproses...</span>
               </div>
-            ) : 'Masuk Sekarang'}
+            ) : (
+              <div className="flex items-center justify-center gap-2">
+                <span>Masuk Aplikasi</span>
+                <ChevronDown className="w-4 h-4 -rotate-90 group-hover:translate-x-1 transition-transform" />
+              </div>
+            )}
           </button>
         </form>
         
-        <div className="mt-6 text-center">
-          <p className="text-[11px] text-gray-400">
-            &copy; {new Date().getFullYear()} Absensi Online | by : IT SUPPORT
+        {/* Footer */}
+        <div className="mt-8 text-center">
+          <p className="text-[10px] text-slate-400 font-medium">
+            &copy; {new Date().getFullYear()} JPT Group &bull; IT Support Dept.
           </p>
+          <div className="w-10 h-1 bg-slate-100 rounded-full mx-auto mt-3"></div>
         </div>
       </div>
+      
+      {/* --- INJECT KEYFRAMES STYLE KHUSUS LOGIN --- */}
+      <style>{`
+        @keyframes scan {
+          0% { top: 0%; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; }
+        }
+        @keyframes shimmer {
+          100% { left: 100%; }
+        }
+      `}</style>
     </div> 
   );
 }
