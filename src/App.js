@@ -1296,13 +1296,30 @@ function RemarkScreen({ user, setView }) {
                             </div>
 
                             {item.respon && item.respon !== '' && (
-                                <div className="bg-blue-50 p-2 rounded text-xs text-blue-800 border border-blue-200 mt-2">
-                                    <div className="flex items-center gap-1 font-bold mb-1">
-                                        <Info className="w-3 h-3"/> Tanggapan HRD:
-                                    </div>
-                                    <p className="italic">"{item.respon}"</p>
-                                </div>
-                            )}
+    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3 relative overflow-hidden">
+        {/* Dekorasi background */}
+        <div className="absolute top-0 right-0 p-2 opacity-10">
+            <Info className="w-12 h-12 text-blue-500" />
+        </div>
+        
+        <div className="flex justify-between items-start relative z-10">
+            <div className="flex items-center gap-1.5 font-bold text-blue-800 text-xs mb-1">
+                <div className="bg-blue-200 p-1 rounded-full"><Info className="w-3 h-3"/></div>
+                <span>Tanggapan HRD:</span>
+            </div>
+            {/* [BARU] Tampilkan Timestamp Respon */}
+            {item.waktuRespon && item.waktuRespon !== '-' && (
+                <span className="text-[9px] text-blue-400 font-medium bg-white/50 px-2 py-0.5 rounded-full">
+                   {item.waktuRespon}
+                </span>
+            )}
+        </div>
+        
+        <p className="italic text-xs text-blue-900 mt-1 leading-relaxed pl-1 border-l-2 border-blue-300">
+            "{item.respon}"
+        </p>
+    </div>
+)}
 
                             <div className="flex justify-between items-center mt-2">
                                 {item.lampiran && item.lampiran !== '-' ? (
@@ -1749,14 +1766,14 @@ const handleSubmit = async () => {
   );
 }
 
-// --- 4. APPROVAL SCREEN (UPDATED: DENGAN FILTER TIPE) ---
+// --- 4. APPROVAL SCREEN (MODERN REDESIGN) ---
+// [SOURCE REFERENCE: 1724]
 function ApprovalScreen({ user, setView }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // 1. STATE BARU: Untuk menyimpan pilihan filter
   const [filterType, setFilterType] = useState('All');
 
+  // --- LOGIC FETCH (Sama seperti sebelumnya) ---
   const fetchApprovalList = useCallback(async () => {
     setLoading(true);
     try {
@@ -1777,10 +1794,10 @@ function ApprovalScreen({ user, setView }) {
 
   useEffect(() => { fetchApprovalList(); }, [fetchApprovalList]);
 
+  // --- LOGIC APPROVE/REJECT (Sama seperti sebelumnya) ---
   const handleDecision = async (uuid, decision, namaUser) => {
       const isReject = decision === 'reject';
       const actionText = isReject ? 'Menolak' : 'Menyetujui';
-      
       const pesanPrompt = isReject 
           ? `Alasan PENOLAKAN untuk ${namaUser} (Wajib diisi):` 
           : `Catatan PERSETUJUAN untuk ${namaUser} (Opsional):`;
@@ -1794,6 +1811,10 @@ function ApprovalScreen({ user, setView }) {
   
       if (!window.confirm(`Yakin ingin ${actionText} pengajuan ini?`)) return;
       
+      // Optimistic Update UI (Biar terasa cepat)
+      const newList = list.filter(item => item.uuid !== uuid);
+      setList(newList);
+
       try {
           const res = await fetch(SCRIPT_URL, { 
               method: 'POST', 
@@ -1805,15 +1826,17 @@ function ApprovalScreen({ user, setView }) {
                   alasan: alasanInput.trim() 
               }) 
           }).then(r => r.json());
-  
+          
           if (res.result === 'success') { 
               alert(res.message);
-              fetchApprovalList();
+              // fetchApprovalList(); // Tidak perlu fetch ulang jika optimistic update sukses
           } else {
               alert(res.message);
+              fetchApprovalList(); // Revert jika gagal
           }
       } catch (e) {
           alert('Terjadi kesalahan koneksi');
+          fetchApprovalList();
       }
   };
 
@@ -1821,133 +1844,160 @@ function ApprovalScreen({ user, setView }) {
     if (!dateString || dateString === '-') return '-';
     try { 
       const date = new Date(dateString);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
-      return `${day}-${month}-${year}`;
+      return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'});
     } catch (e) { return dateString; } 
   };
 
-  // 2. LOGIKA FILTER
-  // Ambil tipe unik dari list yang ada (misal: ['Cuti', 'Ijin', 'Sakit'])
   const uniqueTypes = ['All', ...new Set(list.map(item => item.tipe))];
+  const filteredList = list.filter(item => filterType === 'All' || item.tipe === filterType);
 
-  // Filter list berdasarkan pilihan user
-  const filteredList = list.filter(item => {
-      if (filterType === 'All') return true;
-      return item.tipe === filterType;
-  });
+  // --- COLORS HELPER ---
+  const getTypeColor = (tipe) => {
+      switch(tipe) {
+          case 'Cuti': return 'bg-pink-100 text-pink-700 border-pink-200';
+          case 'Sakit': return 'bg-orange-100 text-orange-700 border-orange-200';
+          case 'Ijin': return 'bg-blue-100 text-blue-700 border-blue-200';
+          case 'Dinas Luar': return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+          default: return 'bg-gray-100 text-gray-700 border-gray-200';
+      }
+  };
 
   return (
-      <div className="p-4 h-full overflow-y-auto pb-20">
-        <div className="flex items-center gap-2 mb-4">
+      <div className="p-4 h-full overflow-y-auto pb-24 bg-gray-50/50">
+        <div className="flex items-center gap-2 mb-6">
           <BackButton onClick={() => setView('dashboard')} />
-          <h2 className="text-xl font-bold ml-2">Daftar Approval ({user.lokasi || 'All'})</h2>
+          <div>
+              <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Approval</h2>
+              <p className="text-[10px] text-slate-500 font-medium">Menunggu persetujuan Anda</p>
+          </div>
         </div>
   
-        <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4 text-xs text-blue-800">
-          <p className="font-bold">Info:</p>
-          <p>Halaman ini menampilkan pengajuan dari karyawan di <strong>{user.lokasi}</strong> yang berstatus <strong>Pending</strong>.</p>
-        </div>
-
-        {/* 3. KOMPONEN FILTER UI */}
-        <div className="flex justify-between items-center mb-4">
-            <span className="text-xs font-bold text-gray-500">
-                Total Pending: {filteredList.length}
-            </span>
-            <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200">
-                <Filter className="w-4 h-4 text-gray-500" />
+        {/* --- FILTER SECTION --- */}
+        <div className="flex justify-between items-center mb-5 sticky top-0 bg-gray-50/95 py-2 z-10 backdrop-blur-sm">
+            <div className="flex items-center gap-2">
+                 <span className="bg-slate-800 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm shadow-slate-300">
+                    {filteredList.length} Pending
+                 </span>
+            </div>
+           
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
+                <Filter className="w-3.5 h-3.5 text-slate-400" />
                 <select 
                     value={filterType} 
                     onChange={(e) => setFilterType(e.target.value)} 
-                    className="text-sm bg-transparent border-none outline-none font-medium text-gray-700 cursor-pointer"
+                    className="text-xs bg-transparent border-none outline-none font-bold text-slate-600 cursor-pointer"
                 >
                     <option value="All">Semua Tipe</option>
                     {uniqueTypes.filter(t => t !== 'All').map((type, idx) => (
-                        <option key={idx} value={type}>{type}</option>
+                       <option key={idx} value={type}>{type}</option>
                     ))}
                 </select>
             </div>
         </div>
   
-        {loading ? <p className="text-center text-gray-500 mt-10">Memuat data pengajuan...</p> : (
+        {loading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-2"/>
+                <span className="text-xs font-bold text-slate-400">Memuat Pengajuan...</span>
+            </div>
+        ) : (
           <div className="space-y-4">
-            {/* Tampilkan pesan jika list kosong setelah difilter */}
             {filteredList.length === 0 && (
-                <div className="text-center py-10 flex flex-col items-center">
-                    <CheckCircle className="w-12 h-12 text-gray-300 mb-2" />
-                     <p className="text-gray-400">
-                        {list.length === 0 ? "Tidak ada pengajuan pending saat ini." : "Tidak ada data sesuai filter."}
-                     </p>
+                <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
+                     <CheckCircle className="w-12 h-12 text-gray-200 mx-auto mb-2" />
+                     <p className="text-slate-400 font-bold text-sm">Semua beres!</p>
+                     <p className="text-[10px] text-slate-300">Tidak ada pengajuan yang perlu diproses.</p>
                 </div>
             )}
             
-            {/* 4. RENDER FILTERED LIST */}
+            {/* --- CARD DESIGN BARU --- */}
             {filteredList.map((item, idx) => (
-              <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-l-4 border-l-orange-400 relative overflow-hidden">
-                <div className="flex justify-between items-start mb-2">
-                    <div>
-                        <h4 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-                          <User className="w-4 h-4 text-gray-500"/> {item.nama}
-                        </h4>
-                        <div className="flex gap-1 mt-1">
-                          <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-bold border border-gray-200">
-                              {item.divisi}
-                          </span>
-                          <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded font-bold border border-blue-200">
-                              {item.lokasi}
-                          </span>
-                       </div>
-                    </div>
-                    <div className="text-right">
-                        <span className="text-xs font-bold px-2 py-1 bg-orange-100 text-orange-700 rounded border border-orange-200">
-                              {item.tipe}
+              <div key={idx} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300 group">
+                
+                {/* HEADER STRIP */}
+                <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+
+                <div className="p-4">
+                    {/* TOP: USER INFO & TYPE */}
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 font-black text-sm shadow-sm">
+                                {item.nama.charAt(0)}
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-slate-800 text-sm leading-tight">{item.nama}</h4>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[10px] font-medium text-slate-500 bg-slate-50 px-1.5 rounded border border-slate-100">{item.divisi}</span>
+                                    <span className="text-[10px] text-slate-300">•</span>
+                                    <span className="text-[10px] font-medium text-slate-400">{item.lokasi}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full border shadow-sm ${getTypeColor(item.tipe)}`}>
+                              {item.tipe.toUpperCase()}
                         </span>
                     </div>
-                </div>
-                
-                <div className="text-sm text-gray-600 mb-3 bg-gray-50 p-2 rounded border border-gray-100 mt-2">
-                   <div className="flex items-center gap-2 mb-1">
-                      <Calendar className="w-3 h-3 text-gray-400"/> 
-                      <span className="font-medium">{item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)} - ${formatDateIndo(item.tglSelesai)}` : formatDateIndo(item.waktu)}</span>
-                  </div>
-                  <p className="italic text-gray-500">"{item.catatan || 'Tidak ada catatan'}"</p>
-                </div>
-  
-                <div className="flex flex-wrap gap-2 mb-3">
-                    {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
-                        <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 transition">
-                            <Camera className="w-3 h-3"/> View Photo
-                        </a>
-                    )}
-                    {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
-                        <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-200 hover:bg-orange-100 transition">
-                            <FileIcon className="w-3 h-3"/> View Attachment
-                        </a>
-                    )}
-                </div>
-  
-                <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleDecision(item.uuid, 'approve', item.nama)} 
-                      className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle className="w-4 h-4"/> Approve
-                    </button>
-                    <button 
-                      onClick={() => handleDecision(item.uuid, 'reject', item.nama)} 
-                      className="flex-1 bg-red-100 text-red-600 py-2 rounded-lg text-sm font-bold hover:bg-red-200 flex items-center justify-center gap-2 border border-red-200"
-                    >
-                      <X className="w-4 h-4"/> Reject
-                    </button>
+
+                    {/* MIDDLE: INFO GRID */}
+                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 mb-4">
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-2">
+                             {/* Tanggal */}
+                             <div className="col-span-2 flex items-start gap-2">
+                                <Calendar className="w-4 h-4 text-slate-400 mt-0.5"/>
+                                <div>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Periode Pengajuan</p>
+                                    <p className="text-sm font-bold text-slate-700">
+                                        {item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)} - ${formatDateIndo(item.tglSelesai)}` : formatDateIndo(item.waktu)}
+                                    </p>
+                                </div>
+                             </div>
+
+                             {/* Catatan / Alasan */}
+                             <div className="col-span-2 border-t border-dashed border-slate-200 pt-2 mt-1">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Keterangan / Alasan</p>
+                                <p className="text-xs text-slate-600 italic leading-relaxed">"{item.catatan || '-'}"</p>
+                             </div>
+                        </div>
+                    </div>
+                    
+                    {/* ATTACHMENTS (Jika Ada) */}
+                    <div className="flex gap-2 mb-4">
+                        {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
+                            <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-[10px] font-bold border border-blue-200 hover:bg-blue-100 transition shadow-sm no-underline">
+                                <Camera className="w-3 h-3"/> Foto Bukti
+                            </a>
+                        )}
+                        {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
+                            <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg text-[10px] font-bold border border-amber-200 hover:bg-amber-100 transition shadow-sm no-underline">
+                                <FileIcon className="w-3 h-3"/> Dokumen
+                            </a>
+                        )}
+                    </div>
+
+                    {/* ACTION BUTTONS (FIXED BOTTOM STYLE) */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <button 
+                            onClick={() => handleDecision(item.uuid, 'reject', item.nama)} 
+                            className="w-full py-2.5 rounded-xl border border-rose-200 text-rose-600 font-bold text-xs hover:bg-rose-50 active:scale-[0.98] transition flex items-center justify-center gap-2 group/btn"
+                        >
+                           <X className="w-4 h-4 group-hover/btn:scale-110 transition-transform"/> Tolak
+                        </button>
+                        <button 
+                            onClick={() => handleDecision(item.uuid, 'approve', item.nama)} 
+                            className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 shadow-md shadow-indigo-200 active:scale-[0.98] transition flex items-center justify-center gap-2 group/btn"
+                        >
+                           <CheckCircle className="w-4 h-4 group-hover/btn:scale-110 transition-transform"/> Setujui
+                        </button>
+                    </div>
+
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
-    );
-  }
+  );
+}
 
 // --- 5. HISTORY SCREEN (FINAL: SWEET UI, DYNAMIC FONTS & COLORS) ---
 function HistoryScreen({ user, setView, setEditItem, masterData }) {
