@@ -1295,26 +1295,36 @@ function RemarkScreen({ user, setView }) {
                                 )}
                             </div>
 
-                            {item.respon && item.respon !== '' && (
+{item.respon && item.respon !== '' && (
     <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3 relative overflow-hidden">
         {/* Dekorasi background */}
         <div className="absolute top-0 right-0 p-2 opacity-10">
             <Info className="w-12 h-12 text-blue-500" />
         </div>
         
-        <div className="flex justify-between items-start relative z-10">
-            <div className="flex items-center gap-1.5 font-bold text-blue-800 text-xs mb-1">
-                <div className="bg-blue-200 p-1 rounded-full"><Info className="w-3 h-3"/></div>
+        {/* HEADER RESPON + WAKTU RESPON */}
+        <div className="flex justify-between items-center relative z-10 mb-2">
+            
+            {/* Kiri: Label Tanggapan */}
+            <div className="flex items-center gap-1.5 font-bold text-blue-800 text-xs">
+                <div className="bg-blue-200 p-1 rounded-full">
+                    <Info className="w-3 h-3 text-blue-700"/>
+                </div>
                 <span>Tanggapan HRD:</span>
             </div>
-            {/* [BARU] Tampilkan Timestamp Respon */}
+
+            {/* Kanan: Tanggal & Jam Respon (UPDATE BARU) */}
             {item.waktuRespon && item.waktuRespon !== '-' && (
-                <span className="text-[9px] text-blue-400 font-medium bg-white/50 px-2 py-0.5 rounded-full">
-                   {item.waktuRespon}
-                </span>
+                <div className="flex items-center gap-1 bg-white/60 px-2 py-1 rounded-full border border-blue-100 shadow-sm">
+                    <Clock className="w-3 h-3 text-blue-400" />
+                    <span className="text-[10px] text-blue-600 font-bold font-mono">
+                       {item.waktuRespon}
+                    </span>
+                </div>
             )}
         </div>
         
+        {/* ISI PESAN RESPON */}
         <p className="italic text-xs text-blue-900 mt-1 leading-relaxed pl-1 border-l-2 border-blue-300">
             "{item.respon}"
         </p>
