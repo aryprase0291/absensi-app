@@ -11,7 +11,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
   MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
   Printer, FileSpreadsheet, Loader2, Wifi, WifiOff, CalendarDays, DoorOpen, DoorClosed, 
-  CloudSun, KeyRound, ScanLine, 
+  CloudSun, KeyRound, ScanLine,
 } from 'lucide-react';
 
 import { SCRIPT_URL } from './config/constants';
@@ -772,9 +772,9 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
 
     return (
         <div className="p-4 h-full overflow-y-auto pb-20">
-            <div className="flex items-center gap-2 mb-6">
-                <BackButton onClick={() => setView('dashboard')} />
+            <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold ml-2">Jadwal Shift</h2>
+                <BackButton onClick={() => setView('dashboard')} />
             </div>
 
             {/* --- FORM INPUT --- */}
@@ -1086,7 +1086,7 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
   );
 }
 
-// --- 2. REMARK SCREEN (LAPORAN & RESPON HRD) ---
+// --- 2. REMARK SCREEN (LAYOUT UPDATED) ---
 function RemarkScreen({ user, setView }) {
     const userRole = user.role ? String(user.role).toLowerCase() : '';
     const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
@@ -1159,7 +1159,6 @@ function RemarkScreen({ user, setView }) {
                 method: 'POST',
                 body: JSON.stringify({ action: 'update_remark_status', uuid, response: responseText })
             }).then(r => r.json());
-
             if (res.result === 'success') {
                 alert("Status diperbarui & Respon terkirim!");
                 setRefreshTrigger(prev => prev + 1);
@@ -1167,43 +1166,26 @@ function RemarkScreen({ user, setView }) {
         } catch (e) { alert("Gagal update"); }
     };
 
-
-
-    // --- LOGIC FILTERING MULTI-LOKASI ---
     const filteredRemarks = remarks.filter(item => {
-        // 1. Jika User Biasa (Bukan HRD/Admin), tampilkan semua (karena backend sdh filter data dia sendiri)
         if (!isHRDOrAdmin) return true;
-
-        // 2. Filter Berdasarkan Lokasi Admin (MULTI LOKASI SUPPORT)
-        // Jika user.lokasi ada isinya
         if (user.lokasi) {
-            // Pecah string lokasi user menjadi array. Contoh: "Jakarta, Surabaya" -> ['Jakarta', 'Surabaya']
-            // .map(l => l.trim()) berguna untuk membuang spasi di depan/belakang koma
             const allowedLocations = user.lokasi.split(',').map(l => l.trim());
-
-            // Jika User punya akses 'All', lewati filter ini (bisa lihat semua)
-            if (allowedLocations.includes('All')) {
-                // Lanjut ke filter status...
-            } 
-            // Cek apakah lokasi pelapor ada di dalam daftar akses user
+            if (allowedLocations.includes('All')) { } 
             else {
-                const laporanLokasi = item.lokasi || ''; // Antisipasi jika lokasi pelapor kosong
-                if (!allowedLocations.includes(laporanLokasi)) {
-                    return false; // Sembunyikan jika tidak cocok
-                }
+                const laporanLokasi = item.lokasi || '';
+                if (!allowedLocations.includes(laporanLokasi)) return false;
             }
         }
-
-        // 3. Filter Status (Existing)
         if (statusFilter === 'All') return true;
         return item.status === statusFilter;
     });
 
     return (
         <div className="p-4 h-full overflow-y-auto pb-20">
-            <div className="flex items-center gap-2 mb-6">
+            {/* HEADER: TOMBOL KEMBALI DI KANAN */}
+            <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold">{isHRDOrAdmin ? 'Respon Laporan Masuk' : 'Lapor & Riwayat'}</h2>
                 <BackButton onClick={() => setView('dashboard')} />
-                <h2 className="text-xl font-bold ml-2">{isHRDOrAdmin ? 'Respon Laporan Masuk' : 'Lapor & Riwayat'}</h2>
             </div>
 
             {!isHRDOrAdmin && (
@@ -1221,7 +1203,7 @@ function RemarkScreen({ user, setView }) {
                             <label className="text-xs font-bold text-gray-700 block mb-1">Jenis Koreksi/Laporan *</label>
                             <select className="w-full p-2.5 border rounded-lg text-sm bg-white" value={kategori} onChange={e => setKategori(e.target.value)}>
                                 <option>Koreksi Profil (Nama/Divisi/Lainnya)</option>
-                                <option>Koreksi Absensi (Lupa Absen Masuk/Pulang)</option>
+                                <option>Koreksi Absensi (Ijin, Lupa Absen Masuk/Pulang)</option>
                                 <option>Koreksi Cuti / Sisa Cuti</option>
                                 <option>Koreksi Shift / Jam Kerja</option>
                                 <option>Koreksi Lainnya</option>
@@ -1245,27 +1227,28 @@ function RemarkScreen({ user, setView }) {
                 </div>
             )}
 
-            {isHRDOrAdmin && (
-                <div className="flex justify-end mb-4">
-                    <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200">
-                        <Filter className="w-4 h-4 text-gray-500" />
-                        <select 
-                            value={statusFilter} 
-                            onChange={(e) => setStatusFilter(e.target.value)} 
-                            className="text-sm bg-transparent border-none outline-none font-medium text-gray-700 cursor-pointer"
-                        >
-                            <option value="All">Semua Status</option>
-                            <option value="Open">Open (Belum Diproses)</option>
-                            <option value="Done">Done (Selesai)</option>
-                        </select>
-                    </div>
-                </div>
-            )}
-
             <div>
-                <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                    <History className="w-4 h-4"/> {isHRDOrAdmin ? `Daftar Laporan (${statusFilter})` : 'Status Laporan Anda'}
-                </h3>
+                {/* SUB-HEADER: JUDUL DAN FILTER SEJAJAR */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                     <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                        <History className="w-4 h-4"/> {isHRDOrAdmin ? `Daftar Laporan (${statusFilter})` : 'Status Laporan Anda'}
+                    </h3>
+
+                    {isHRDOrAdmin && (
+                        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200 self-end sm:self-auto">
+                            <Filter className="w-4 h-4 text-gray-500" />
+                            <select 
+                                value={statusFilter} 
+                                onChange={(e) => setStatusFilter(e.target.value)} 
+                                className="text-sm bg-transparent border-none outline-none font-medium text-gray-700 cursor-pointer"
+                            >
+                                <option value="All">Semua Status</option>
+                                <option value="Open">Open</option>
+                                <option value="Done">Done</option>
+                            </select>
+                        </div>
+                    )}
+                </div>
                 
                 <div className="space-y-3">
                     {filteredRemarks.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Belum ada data laporan.</p>}
@@ -1295,41 +1278,24 @@ function RemarkScreen({ user, setView }) {
                                 )}
                             </div>
 
-{item.respon && item.respon !== '' && (
-    <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3 relative overflow-hidden">
-        {/* Dekorasi background */}
-        <div className="absolute top-0 right-0 p-2 opacity-10">
-            <Info className="w-12 h-12 text-blue-500" />
-        </div>
-        
-        {/* HEADER RESPON + WAKTU RESPON */}
-        <div className="flex justify-between items-center relative z-10 mb-2">
-            
-            {/* Kiri: Label Tanggapan */}
-            <div className="flex items-center gap-1.5 font-bold text-blue-800 text-xs">
-                <div className="bg-blue-200 p-1 rounded-full">
-                    <Info className="w-3 h-3 text-blue-700"/>
-                </div>
-                <span>Tanggapan HRD:</span>
-            </div>
-
-            {/* Kanan: Tanggal & Jam Respon (UPDATE BARU) */}
-            {item.waktuRespon && item.waktuRespon !== '-' && (
-                <div className="flex items-center gap-1 bg-white/60 px-2 py-1 rounded-full border border-blue-100 shadow-sm">
-                    <Clock className="w-3 h-3 text-blue-400" />
-                    <span className="text-[10px] text-blue-600 font-bold font-mono">
-                       {item.waktuRespon}
-                    </span>
-                </div>
-            )}
-        </div>
-        
-        {/* ISI PESAN RESPON */}
-        <p className="italic text-xs text-blue-900 mt-1 leading-relaxed pl-1 border-l-2 border-blue-300">
-            "{item.respon}"
-        </p>
-    </div>
-)}
+                            {item.respon && item.respon !== '' && (
+                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-2 opacity-10"><Info className="w-12 h-12 text-blue-500" /></div>
+                                    <div className="flex justify-between items-center relative z-10 mb-2">
+                                        <div className="flex items-center gap-1.5 font-bold text-blue-800 text-xs">
+                                            <div className="bg-blue-200 p-1 rounded-full"><Info className="w-3 h-3 text-blue-700"/></div>
+                                            <span>Tanggapan HRD:</span>
+                                        </div>
+                                        {item.waktuRespon && item.waktuRespon !== '-' && (
+                                            <div className="flex items-center gap-1 bg-white/60 px-2 py-1 rounded-full border border-blue-100 shadow-sm">
+                                                <Clock className="w-3 h-3 text-blue-400" />
+                                                <span className="text-[10px] text-blue-600 font-bold font-mono">{item.waktuRespon}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="italic text-xs text-blue-900 mt-1 leading-relaxed pl-1 border-l-2 border-blue-300">"{item.respon}"</p>
+                                </div>
+                            )}
 
                             <div className="flex justify-between items-center mt-2">
                                 {item.lampiran && item.lampiran !== '-' ? (
@@ -1617,9 +1583,9 @@ const handleSubmit = async () => {
   
   return (
     <div className="p-4 flex flex-col h-full overflow-y-auto">
-      <div className="flex items-center gap-2 mb-4">
-        <BackButton onClick={handleBack} />
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold ml-2">{isEditMode ? 'Edit Data' : `Form ${type}`}</h2>
+        <BackButton onClick={handleBack} />
       </div>
       
       {isH3Required && (
@@ -1874,12 +1840,12 @@ function ApprovalScreen({ user, setView }) {
 
   return (
       <div className="p-4 h-full overflow-y-auto pb-24 bg-gray-50/50">
-        <div className="flex items-center gap-2 mb-6">
-          <BackButton onClick={() => setView('dashboard')} />
+        <div className="flex items-center justify-between mb-6">
           <div>
               <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Approval</h2>
               <p className="text-[10px] text-slate-500 font-medium">Menunggu persetujuan Anda</p>
           </div>
+          <BackButton onClick={() => setView('dashboard')} />
         </div>
   
         {/* --- FILTER SECTION --- */}
@@ -2631,10 +2597,10 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         </div>
       )}
       
-      {/* --- UI UTAMA (DASHBOARD HISTORY) --- */}
-      <div className="flex items-center gap-2 mb-4">
-        <BackButton onClick={() => setView('dashboard')} />
+      {/* --- HEADER UI UTAMA (MODIFIED) --- */}
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold ml-2 text-slate-800">Riwayat & Laporan</h2>
+        <BackButton onClick={() => setView('dashboard')} />
       </div>
 
       {canViewAll && (
@@ -2934,9 +2900,9 @@ function AdminPanel({ user, setView, masterData }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-20">
-      <div className="flex items-center gap-2 mb-4">
-        <BackButton onClick={() => setView('dashboard')} />
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold ml-2">Admin Panel</h2>
+        <BackButton onClick={() => setView('dashboard')} />
       </div>
 
       {/* --- NAVIGASI TAB: Ditambahkan Tombol Update HRD --- */}
@@ -3264,9 +3230,9 @@ function ChangePasswordScreen({ user, setView }) {
   };
   return ( 
     <div className="p-4">
-      <div className="flex items-center gap-2 mb-6">
-        <BackButton onClick={() => setView('dashboard')} />
+      <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold ml-2">Ganti Password</h2>
+        <BackButton onClick={() => setView('dashboard')} />
       </div>
       
       <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
@@ -3280,19 +3246,18 @@ function ChangePasswordScreen({ user, setView }) {
   );
 }
 
-// --- 9. DB ABSEN SCREEN (REDESIGN: MODERN & ELEGANT) ---
+// --- 9. DB ABSEN SCREEN (4 DAYS LIMIT) ---
 function DbAbsenScreen({ user, setView }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [ijinCount, setIjinCount] = useState(0);
+  const [lastUpdate, setLastUpdate] = useState(null); 
 
-  // STATE FILTER
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [showFilter, setShowFilter] = useState(false);
 
-  // MAP KETERANGAN (Sama seperti sebelumnya)
   const KETERANGAN_MAP = {
       'H': 'Hadir', 'T': 'Terlambat', 'O': 'Off / Libur', 'CB': 'Cuti Bersama',
       'PC': 'Pulang Cepat', 'Si': 'Tdk Absen IN', 'So': 'Tdk Absen OUT',
@@ -3303,7 +3268,31 @@ function DbAbsenScreen({ user, setView }) {
       'EO': 'Extra Ordinary', 'NF': 'Tidak Absen'
   };
 
-  // FETCH STATS (Limit Ijin)
+  // Dynamic Filter Options
+  const availableStatusOptions = [...new Set(list.map(item => item.symbol))]
+      .filter(s => s && s.trim() !== '')
+      .sort();
+
+  const calculateTimeAgo = (isoDateString) => {
+    if (!isoDateString || isoDateString === '-') return '-';
+    try {
+        const now = new Date();
+        const past = new Date(isoDateString);
+        const diffMs = now - past; 
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+        if (diffMinutes < 1) return 'Baru saja update';
+        if (diffMinutes < 60) return `${diffMinutes} menit yang lalu`;
+        if (diffHours < 24) {
+            const sisaMenit = diffMinutes % 60;
+            if (sisaMenit === 0) return `${diffHours} jam yang lalu`;
+            return `${diffHours} jam ${sisaMenit} menit yang lalu`;
+        }
+        return past.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'});
+    } catch (e) { return '-'; }
+  };
+
   useEffect(() => {
     const fetchStats = async () => {
         try {
@@ -3317,37 +3306,36 @@ function DbAbsenScreen({ user, setView }) {
     if (user) fetchStats();
   }, [user]);
 
-  // FETCH DATA MESIN
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
         const res = await fetch(SCRIPT_URL, { 
-            method: 'POST', body: JSON.stringify({ action: 'get_db_absen', userId: user.id, noPayroll: user.noPayroll }) 
+            method: 'POST', 
+            body: JSON.stringify({ action: 'get_db_absen', userId: user.id, noPayroll: user.noPayroll }) 
         });
         const data = await res.json();
-        if (data.result === 'success') setList(data.list);
-        else alert(data.message);
-      } catch (e) { alert("Gagal memuat data mesin."); } 
-      finally { setLoading(false); }
+        if (data.result === 'success') {
+             setList(data.list);
+             setLastUpdate(data.lastUpdate); 
+        } else {
+             alert(data.message);
+        }
+      } catch (e) { console.error(e); alert("Gagal memuat data mesin."); } finally { setLoading(false); }
     };
     if (user) fetchData();
   }, [user]);
 
-  // HELPER DATE PARSER
   const parseDate = (dateStr) => {
       if (!dateStr) return null;
       try {
-          // Deteksi format YYYY-MM-DD
           if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return new Date(dateStr);
-          // Deteksi format DD-MM-YYYY
           const parts = dateStr.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
           if (parts) return new Date(`${parts[3]}-${parts[2]}-${parts[1]}`);
           return new Date(dateStr);
       } catch (e) { return null; }
   };
 
-  // FILTER LOGIC
   const filteredList = list.filter(item => {
     let matchDate = true;
     if (filterStart || filterEnd) {
@@ -3364,16 +3352,14 @@ function DbAbsenScreen({ user, setView }) {
     return matchDate && matchStatus;
   });
 
-  // STYLE HELPER
   const getStatusStyle = (sym) => {
       if(!sym) return { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' };
       const s = sym.toUpperCase();
-      if(['H', 'A'].includes(s)) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' }; 
+      if(['H', 'A'].includes(s)) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
       if(s.includes('T') || s.includes('SI') || s.includes('SO')) return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
       return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
   };
 
-  // DATE FORMATTER (Memecah Tanggal)
   const splitDate = (dateStr, weekName) => {
       const d = parseDate(dateStr);
       if(!d || isNaN(d.getTime())) return { day: '00', month: '---', year: '0000', dayName: weekName || '-' };
@@ -3389,24 +3375,29 @@ function DbAbsenScreen({ user, setView }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-24 bg-gray-50">
-      {/* HEADER */}
       <div className="flex items-center justify-between mb-6 sticky top-0 bg-gray-50 z-10 py-2">
-        <div className="flex items-center gap-2">
-            <BackButton onClick={() => setView('dashboard')} />
-            <div>
-                <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Data Mesin</h2>
-                <p className="text-[10px] text-slate-500 font-medium">Sinkronisasi ID: {user.noPayroll}</p>
-            </div>
+        <div>
+            <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Data Mesin</h2>
+            <p className="text-[10px] text-slate-500 font-medium">Sinkronisasi ID: {user.noPayroll}</p>
+            {lastUpdate && (
+                <div className="flex items-center gap-1 mt-1">
+                    <Clock className="w-4 h-4 text-slate-600"/>
+                    <p className="text-[12px] text-slate-600 font-medium">{calculateTimeAgo(lastUpdate)}</p>
+                </div>
+            )}
         </div>
-        <button 
-            onClick={() => setShowFilter(!showFilter)} 
-            className={`p-2.5 rounded-xl border transition-all shadow-sm ${showFilter ? 'bg-blue-600 text-white border-blue-600 shadow-blue-200' : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}
-        >
-            <Filter className="w-5 h-5" />
-        </button>
+        
+        <div className="flex items-center gap-2">
+            <button 
+                onClick={() => setShowFilter(!showFilter)} 
+                className={`p-2.5 rounded-xl border transition-all shadow-sm ${showFilter ? 'bg-blue-600 text-white border-blue-600 shadow-blue-200' : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}
+            >
+                <Filter className="w-5 h-5" />
+            </button>
+            <BackButton onClick={() => setView('dashboard')} />
+        </div>
       </div>
 
-      {/* FILTER PANEL */}
       {showFilter && (
         <div className="bg-white p-5 rounded-2xl shadow-lg shadow-blue-50/50 border border-blue-100 mb-6 animate-in slide-in-from-top-4 duration-300">
             <div className="flex justify-between items-center mb-4">
@@ -3431,9 +3422,14 @@ function DbAbsenScreen({ user, setView }) {
                 <label className="text-[10px] font-bold text-slate-400 block mb-1">Status Kehadiran</label>
                 <select className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                     <option value="All">Semua Status</option>
-                    {Object.entries(KETERANGAN_MAP).map(([key, label]) => (
-                        <option key={key} value={key}>{label} ({key})</option>
+                    {availableStatusOptions.map((sym) => (
+                        <option key={sym} value={sym}>
+                            {KETERANGAN_MAP[sym] || sym} ({sym})
+                        </option>
                     ))}
+                    {availableStatusOptions.length === 0 && (
+                        <option disabled>Tidak ada status tersedia</option>
+                    )}
                 </select>
             </div>
             <div className="mt-4 pt-3 border-t border-dashed border-gray-100 text-[10px] text-slate-400 text-center font-medium">
@@ -3463,22 +3459,39 @@ function DbAbsenScreen({ user, setView }) {
                 const style = getStatusStyle(item.symbol);
                 const dateParts = splitDate(item.tanggal, item.week);
                 const keterangan = KETERANGAN_MAP[item.symbol] || '-';
-                const isLate = item.symbol && (item.symbol.toUpperCase().includes('T') || item.symbol.toUpperCase().includes('SI') || item.symbol.toUpperCase().includes('SO'));
+                
+                const isLateStatus = item.symbol && (item.symbol.toUpperCase().includes('T') || item.symbol.toUpperCase().includes('SI') || item.symbol.toUpperCase().includes('SO'));
+                
+                // --- LOGIKA BATAS 4 HARI ---
+                let showButton = false;
+                if (isLateStatus) {
+                    const itemDate = parseDate(item.tanggal);
+                    if (itemDate) {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        itemDate.setHours(0, 0, 0, 0);
+                        
+                        const diffTime = today - itemDate;
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        
+                        // Perubahan di sini: diffDays <= 4
+                        if (diffDays >= 0 && diffDays <= 4) {
+                            showButton = true;
+                        }
+                    }
+                }
+                // ---------------------------
+
                 const isIjinDisabled = ijinCount >= 4;
 
                 return (
                     <div key={idx} className="bg-white rounded-2xl p-0 shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-all duration-300 group">
-                        
-                        {/* --- TOP SECTION: DATE & STATUS --- */}
                         <div className="flex">
-                            {/* KOTAK TANGGAL KIRI */}
                             <div className="bg-slate-50 w-24 flex flex-col items-center justify-center border-r border-dashed border-slate-200 p-3 text-center">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{dateParts.month}</span>
                                 <span className="text-3xl font-black text-slate-700 leading-none my-0.5">{dateParts.day}</span>
                                 <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{dateParts.year}</span>
                             </div>
-
-                            {/* DETAIL KANAN */}
                             <div className="flex-1 p-3">
                                 <div className="flex justify-between items-start mb-3">
                                     <div>
@@ -3487,13 +3500,10 @@ function DbAbsenScreen({ user, setView }) {
                                             <span className="text-[10px] font-extrabold tracking-wide uppercase">{keterangan}</span>
                                         </div>
                                     </div>
-                                    {/* SIMBOL KODE (H, T, dll) */}
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black border-2 ${style.bg} ${style.border} ${style.text}`}>
                                         {item.symbol}
                                     </div>
                                 </div>
-
-                                {/* GRID JAM KERJA (TEGAS) */}
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                                     <div className="relative pl-3 border-l-2 border-green-400">
                                         <p className="text-[9px] font-bold text-slate-400 uppercase">Masuk</p>
@@ -3506,8 +3516,6 @@ function DbAbsenScreen({ user, setView }) {
                                 </div>
                             </div>
                         </div>
-
-                        {/* --- BOTTOM SECTION: DETAILS --- */}
                         <div className="bg-slate-50/50 px-4 py-3 border-t border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-4">
                                 <div>
@@ -3521,8 +3529,6 @@ function DbAbsenScreen({ user, setView }) {
                                     </div>
                                 )}
                             </div>
-                            
-                            {/* LOG SCAN ICON (Expandable hint) */}
                             <div className="relative group/tooltip">
                                 <Activity className="w-4 h-4 text-slate-300" />
                                 <div className="absolute right-0 bottom-6 w-48 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg opacity-0 group-hover/tooltip:opacity-100 transition pointer-events-none z-10 font-mono">
@@ -3530,23 +3536,18 @@ function DbAbsenScreen({ user, setView }) {
                                 </div>
                             </div>
                         </div>
-
-                        {/* --- ACTION BUTTON IF LATE --- */}
-                        {isLate && (
+                        
+                        {/* HANYA TAMPIL JIKA TERLAMBAT & DALAM 4 HARI */}
+                        {showButton && (
                             <div className="px-3 pb-3 pt-1">
                                 <button 
                                     disabled={isIjinDisabled}
                                     onClick={() => {
                                         localStorage.setItem('absenType', 'Ijin');
-                                        // Opsional: Simpan tanggal agar form otomatis terisi
-                                        // localStorage.setItem('absenDate', item.tanggal); 
                                         setView('form');
                                     }}
                                     className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all border
-                                        ${isIjinDisabled 
-                                            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                                            : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-50 shadow-sm' 
-                                        }`}
+                                        ${isIjinDisabled ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-50 shadow-sm' }`}
                                 >
                                     <FileText className="w-3.5 h-3.5" />
                                     {isIjinDisabled ? 'Form IJIN Sudah Terpakai 4X' : 'Ajukan Form'}
@@ -3558,7 +3559,6 @@ function DbAbsenScreen({ user, setView }) {
             })}
         </div>
       )}
-      {/* Spacer agar konten paling bawah tidak tertutup navigasi jika ada */}
       <div className="h-10"></div>
     </div>
   );

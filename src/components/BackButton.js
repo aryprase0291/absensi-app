@@ -8,16 +8,19 @@ import {
   Venus
 } from 'lucide-react';
 
-function BackButton({ onClick }) {
+// --- MODERN BACK BUTTON COMPONENT ---
+function BackButton({ onClick, className }) {
   return (
-    <button 
-      onClick={onClick} 
-      className="group flex items-center gap-2 pl-1 pr-4 py-1.5 bg-white text-slate-600 rounded-full shadow-sm border border-slate-200 hover:bg-white hover:text-blue-600 hover:border-blue-200 hover:shadow-md transition-all duration-300 active:scale-95"
+    <button
+      onClick={onClick}
+      className={`group flex items-center justify-center p-2.5 rounded-xl bg-white border border-slate-200 shadow-sm 
+                  hover:bg-slate-50 hover:border-slate-300 hover:shadow-md 
+                  active:scale-95 active:bg-slate-100 
+                  transition-all duration-200 ease-out ${className || ''}`}
+      aria-label="Kembali"
     >
-      <div className="bg-slate-100 p-1.5 rounded-full group-hover:bg-blue-50 transition-colors">
-        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-      </div>
-      <span className="text-sm font-bold">Kembali</span>
+      {/* Ikon Panah Kiri Modern */}
+      <ChevronLeft className="w-5 h-5 text-slate-600 group-hover:text-slate-900 transition-colors" strokeWidth={2.5} />
     </button>
   );
 }
