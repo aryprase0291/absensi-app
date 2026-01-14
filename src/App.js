@@ -41,8 +41,10 @@ export default function AppAbsensi() {
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
   const CLIENT_VERSION = "1.0.6";
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [newVersion, setNewVersion] = useState('');
 
- // --- LOGIKA CEK UPDATE (DIPERBAIKI DENGAN PENGAMAN LOOP) ---
+ // --- LOGIKA CEK UPDATE (DIPERBAIKI: BLOCKING UI) ---
   useEffect(() => {
     const checkUpdate = async () => {
       try {
@@ -57,32 +59,11 @@ export default function AppAbsensi() {
           
           // Jika versi Server berbeda dengan Client
           if (serverVersion !== CLIENT_VERSION) {
+             console.log(`Update ditemukan: v${CLIENT_VERSION} -> v${serverVersion}`);
              
-             // [PENGAMAN] Cek apakah kita barusan mencoba update ke versi ini?
-             // Jika ada di sessionStorage, berarti kita baru saja reload tapi versi client belum berubah.
-             // Artinya: Developer mungkin lupa ganti CLIENT_VERSION atau Cache browser sangat kuat.
-             const lastAttempt = sessionStorage.getItem('update_attempt_version');
-             
-             if (lastAttempt === serverVersion) {
-                 console.warn("Versi Client masih lama. Mencegah reload loop.");
-                 return; // BERHENTI DI SINI (Jangan alert/reload lagi)
-             }
-
-             // Jika belum pernah coba update ke versi ini, baru lakukan Alert & Reload
-             alert(`Update Baru Tersedia! (v${serverVersion})\nSistem akan memuat pembaruan...`);
-             
-             // 1. Simpan tanda bahwa kita sedang mencoba update ke versi server ini
-             sessionStorage.setItem('update_attempt_version', serverVersion);
-             
-             // 2. Hapus data master lama agar fresh
-             localStorage.removeItem('app_master_data');
-             
-             // 3. Force Reload dengan parameter waktu (Cache Busting)
-             const newUrl = window.location.href.split('?')[0] + '?time=' + new Date().getTime();
-             window.location.href = newUrl;
-          } else {
-             // Jika versi SUDAH SAMA, hapus tanda pengaman (artinya update sukses)
-             sessionStorage.removeItem('update_attempt_version');
+             // Trigger Blocking UI
+             setNewVersion(serverVersion);
+             setUpdateAvailable(true); 
           }
         }
       } catch (e) {
@@ -92,6 +73,26 @@ export default function AppAbsensi() {
 
     checkUpdate();
   }, []);
+
+  // Fungsi Eksekusi Update (Membersihkan Cache)
+  const performUpdate = () => {
+      // 1. Hapus semua LocalStorage & SessionStorage agar bersih
+      localStorage.clear(); 
+      sessionStorage.clear();
+
+      // 2. Cache Busting yang agresif
+      if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+              for(let registration of registrations) {
+                  registration.unregister();
+              }
+          });
+      }
+
+      // 3. Reload Halaman dengan parameter waktu untuk memaksa browser mengambil file baru
+      const newUrl = window.location.href.split('?')[0] + '?v=' + newVersion + '&t=' + new Date().getTime();
+      window.location.href = newUrl;
+  };
 
   useEffect(() => {
     const storedUser = localStorage.getItem('app_user');
@@ -154,6 +155,33 @@ export default function AppAbsensi() {
     <div className="min-h-screen bg-gray-100 font-sans text-slate-800">
       <div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">
         
+        {/* --- FITUR FORCE UPDATE (BLOCKING SCREEN) --- */}
+        {updateAvailable && (
+            <div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
+                <div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full">
+                    <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                        <RefreshCcw className="w-10 h-10 text-blue-600" />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2>
+                    <p className="text-slate-500 text-sm mb-6">
+                        Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>
+                        Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.
+                    </p>
+                    
+                    <button 
+                        onClick={performUpdate}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                        <RefreshCcw className="w-5 h-5 animate-spin" />
+                        Update Sekarang
+                    </button>
+                    <p className="text-[10px] text-slate-400 mt-4">
+                        *Aplikasi akan dimuat ulang secara otomatis.
+                    </p>
+                </div>
+            </div>
+        )}
+
         {/* HEADER UTAMA: Hanya muncul jika BUKAN Login DAN BUKAN Dashboard (karena Dashboard punya header sendiri) */}
         {view !== 'login' && view !== 'dashboard' && (
             <div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative">
@@ -551,7 +579,8 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
 
       {/* --- FOOTER --- */}
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+          <p className="text-[10px] text-slate-400 font
+          -bold uppercase tracking-widest">
               Version {masterData?.appVersion || '1.0.6'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
