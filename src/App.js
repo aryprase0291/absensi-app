@@ -11,7 +11,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
   MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
   Printer, FileSpreadsheet, Loader2, Wifi, WifiOff, CalendarDays, DoorOpen, DoorClosed, 
-  CloudSun, KeyRound, ScanLine,
+  CloudSun, KeyRound, ScanLine, Lock, RefreshCcw,
 } from 'lucide-react';
 
 import { SCRIPT_URL } from './config/constants';
@@ -884,10 +884,10 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
 // Pastikan import Wifi dan WifiOff ada di bagian paling atas file App.js
 // import { ..., Wifi, WifiOff, ... } from 'lucide-react';
 
-// --- 2. DASHBOARD SCREEN (WITH PERCENTAGE STATS) ---
+// --- 2. DASHBOARD SCREEN (FIXED SHADOW ICONS) ---
 function DashboardScreen({ user, setView, handleLogout, masterData }) {
   const [currentTime, setCurrentTime] = useState(new Date());
-  // STATE STATS
+  // STATE STATS (Default 0)
   const [stats, setStats] = useState({ 
     total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, 
     total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0,
@@ -904,11 +904,13 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
     return () => clearInterval(timer);
   }, []);
 
+  // --- FUNGSI KLIK STATISTIK (PINDAH KE DB ABSEN) ---
   const handleStatClick = (filterCode) => {
       localStorage.setItem('dbAbsenFilter', filterCode);
       setView('db_absen');
   };
 
+  // FETCH STATS
   useEffect(() => { 
     const fetchStats = async () => { 
       setLoadingStats(true); 
@@ -967,38 +969,35 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
   
   const Skeleton = ({ className }) => ( <div className={`bg-gray-200 animate-pulse rounded ${className}`}></div> );
 
-  // --- STAT CARD COMPONENT ---
+  // Helper untuk Card Style agar rapi dan konsisten
   const StatCard = ({ onClick, colorClass, icon: Icon, title, value, subValue, bgClass, iconColor }) => (
-    <div onClick={onClick} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group cursor-pointer hover:shadow-md transition-all active:scale-95 min-h-[110px]">
-        <div className={`absolute -right-8 -bottom-8 opacity-40 group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 ${iconColor} pointer-events-none`}>
-            <Icon className="w-32 h-32" />
+    <div onClick={onClick} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group cursor-pointer hover:shadow-md transition-all active:scale-95 min-h-[100px]">
+        {/* --- ICON BAYANGAN BESAR (WATERMARK) --- */}
+        <div className={`absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-500 ${iconColor}`}>
+            <Icon className="w-16 h-16" />
         </div>
-        <div className={`${bgClass} ${iconColor} p-2.5 rounded-xl mb-2 relative z-10 shadow-sm border border-white/50 backdrop-blur-sm`}>
-            <Icon className="w-5 h-5"/>
+        {/* -------------------------------------- */}
+
+        <div className={`${bgClass} ${iconColor} p-2 rounded-xl mb-1 relative z-10 shadow-sm`}>
+            <Icon className="w-4 h-4"/>
         </div>
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight relative z-10 bg-white/80 px-2 py-0.5 rounded-full backdrop-blur-sm mb-1">{title}</span>
-        {loadingStats ? ( <Skeleton className="h-6 w-10 mt-1 relative z-10" /> ) : (
+        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight relative z-10">{title}</span>
+        {loadingStats ? (
+             <Skeleton className="h-5 w-8 mt-1 relative z-10" /> 
+        ) : (
              <div className="relative z-10">
                  {subValue ? (
-                    <div className="flex flex-col items-center bg-white/60 px-2 py-1 rounded-lg backdrop-blur-sm">
-                        <p className="text-xl font-black text-slate-800 leading-none">{value}</p>
-                        <span className={`text-[9px] font-extrabold ${iconColor}`}>{subValue}</span>
+                    <div className="flex flex-col items-center">
+                        <p className="text-lg font-black text-slate-800 leading-none">{value}</p>
+                        <span className={`text-[8px] font-bold ${iconColor}`}>{subValue}</span>
                     </div>
-                 ) : ( <p className="text-2xl font-black text-slate-800 drop-shadow-sm">{value}</p> )}
+                 ) : (
+                    <p className="text-lg font-black text-slate-800">{value}</p>
+                 )}
              </div>
         )}
     </div>
   );
-
-  // --- PERHITUNGAN PERSENTASE STATISTIK ---
-  // Total Tidak Hadir = Sakit + Alpa + Cuti + Cuti Bersama
-  const totalTidakHadir = (stats.total_sakit || 0) + (stats.total_alpa || 0) + (stats.total_cuti || 0) + (stats.total_cuti_bersama || 0);
-  // Total Hari Kerja = Total Hadir (Sudah termasuk Ijin/Telat) + Total Tidak Hadir
-  const totalHariKerja = (stats.total_hadir || 0) + totalTidakHadir;
-  
-  // Hitung Persen (hindari pembagian 0)
-  const persenHadir = totalHariKerja > 0 ? Math.round(((stats.total_hadir || 0) / totalHariKerja) * 100) : 0;
-  const persenTidakHadir = totalHariKerja > 0 ? Math.round((totalTidakHadir / totalHariKerja) * 100) : 0;
 
   return (
     <div className="flex flex-col h-full bg-slate-50 font-sans">
@@ -1049,7 +1048,7 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
       {/* --- KONTEN UTAMA --- */}
       <div className="flex-1 overflow-y-auto p-6">
         
-        {/* HEADER STATISTIK */}
+        {/* STATISTIK HEADER */}
         <div className="flex justify-between items-end mb-3">
             <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm"><Activity className="w-4 h-4 text-blue-500"/> Statistik</h3>
             <span className="text-[9px] bg-white border border-gray-200 px-3 py-1 rounded-full text-slate-500 font-medium shadow-sm">
@@ -1057,52 +1056,7 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
             </span>
         </div>
 
-        {/* --- [BARU] CARD PERSENTASE KEHADIRAN --- */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-5 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full blur-2xl -mr-10 -mt-10 opacity-60"></div>
-            
-            <div className="flex justify-between items-center mb-3 relative z-10">
-                <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Hari Kerja</p>
-                    <p className="text-2xl font-black text-slate-800">{loadingStats ? '...' : totalHariKerja} <span className="text-xs font-bold text-slate-400">Hari</span></p>
-                </div>
-                <div className="text-right">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Performance</p>
-                    <div className="flex items-center gap-1 justify-end">
-                        <span className={`text-lg font-black ${persenHadir >= 90 ? 'text-emerald-600' : (persenHadir >= 70 ? 'text-amber-500' : 'text-red-500')}`}>
-                            {loadingStats ? '...' : `${persenHadir}%`}
-                        </span>
-                        <PieChart className="w-4 h-4 text-slate-300"/>
-                    </div>
-                </div>
-            </div>
-
-            {/* PROGRESS BAR */}
-            <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden flex relative z-10">
-                <div 
-                    className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full transition-all duration-1000" 
-                    style={{ width: `${persenHadir}%` }}
-                ></div>
-                <div 
-                    className="bg-gradient-to-r from-red-400 to-red-600 h-full transition-all duration-1000" 
-                    style={{ width: `${persenTidakHadir}%` }}
-                ></div>
-            </div>
-            
-            <div className="flex justify-between mt-2 text-[10px] font-bold relative z-10">
-                <div className="flex items-center gap-1.5 text-emerald-700">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                    Hadir: {loadingStats ? '-' : stats.total_hadir} ({persenHadir}%)
-                </div>
-                <div className="flex items-center gap-1.5 text-red-700">
-                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                    Absen: {loadingStats ? '-' : totalTidakHadir} ({persenTidakHadir}%)
-                </div>
-            </div>
-        </div>
-        {/* ----------------------------------------- */}
-
-        {/* GRID STATISTIK DETAIL */}
+        {/* GRID STATISTIK */}
         <div className="grid grid-cols-3 gap-3 mb-5">
             <StatCard 
                 onClick={() => handleStatClick('HADIR_ALL')}
@@ -2880,116 +2834,70 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   );
 }
 
-// --- 6. ADMIN PANEL (DIPERBAIKI: TAMBAH MASTER SHIFT) ---
+// --- 6. ADMIN PANEL (DIPERBAIKI: TAMBAH MASTER USER & RESET PASSWORD) ---
 function AdminPanel({ user, setView, masterData }) {
-  const [activeTab, setActiveTab] = useState('user');
+  const [activeTab, setActiveTab] = useState('user'); // Tab aktif
   const [loading, setLoading] = useState(false);
   
-  // State Baru: Untuk menampung teks pengumuman HRD
-  const [newsInput, setNewsInput] = useState('');
+  // State untuk Fitur Reset Password
+  const [adminUserList, setAdminUserList] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loadingList, setLoadingList] = useState(false);
 
-  // State User Data (Tetap)
+  // State Pengumuman & Tambah User (Lama)
+  const [newsInput, setNewsInput] = useState('');
   const [userData, setUserData] = useState({ 
     username: '', password: '', nama: '', email: '', 
     divisi: 'Staff', role: 'karyawan', akses: [], 
     noPayroll: '', sisaCuti: '', perusahaan: '', 
-    statusKaryawan: '', emailAtasan: '',
-    lokasi: 'Surabaya' 
+    statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya' 
   });
-
   const [masterInput, setMasterInput] = useState({ kategori: 'Menu', value: '', label: '' });
 
-  const LIST_LOKASI = [
-      'Surabaya', 'Jakarta', 'Semarang', 'Cilegon', 'Citeureup', 
-      'Makassar', 'Balikpapan', 'Medan', 'All'
-  ];
+  const LIST_LOKASI = ['Surabaya', 'Jakarta', 'Semarang', 'Cilegon', 'Citeureup', 'Makassar', 'Balikpapan', 'Medan', 'All'];
 
-  const handleLocationChange = (loc) => {
-     let currentLocs = userData.lokasi ? userData.lokasi.split(',').map(l=>l.trim()).filter(l=>l!=='') : [];
-     if (currentLocs.includes(loc)) {
-         currentLocs = currentLocs.filter(l => l !== loc);
-     } else {
-         if(loc === 'All') {
-             currentLocs = ['All']; 
-         } else {
-            currentLocs = currentLocs.filter(l => l !== 'All');
-            currentLocs.push(loc);
-         }
-     }
-     setUserData({ ...userData, lokasi: currentLocs.join(', ') });
-  };
-
-  const handleCheckboxChange = (val) => { 
-    setUserData(prev => { 
-      const current = prev.akses; 
-      return current.includes(val) ? { ...prev, akses: current.filter(i => i !== val) } : { ...prev, akses: [...current, val] }; 
-    });
-  };
-
-  const handleAddUser = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  // --- LOGIC FETCH USER LIST (KHUSUS ADMIN) ---
+  const fetchAdminUserList = async () => {
+    setLoadingList(true);
     try {
-      const res = await fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        body: JSON.stringify({ 
-            action: 'tambah_user', 
-            roleRequester: user.role, 
-            ...userData 
-        }) 
-      }).then(r => r.json());
-      if(res.result === 'success') {
-        alert('User Berhasil Ditambahkan!');
-        setUserData({
-          username: '', password: '', nama: '', email: '', 
-          divisi: 'Staff', role: 'karyawan', akses: [], 
-          noPayroll: '', sisaCuti: '', perusahaan: '', 
-          statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya'
-        });
-      } else {
-        alert(res.message);
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'get_user_list_admin', roleRequester: user.role })
+      });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setAdminUserList(data.list);
       }
-    } catch(e) { alert('Error koneksi server'); } finally { setLoading(false); }
+    } catch (e) { console.error("Gagal load user list"); }
+    finally { setLoadingList(false); }
   };
 
-  const handleAddMaster = async (e) => { 
-    e.preventDefault(); 
-    setLoading(true);
-    try { 
-      const res = await fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        body: JSON.stringify({ 
-            action: 'tambah_master', 
-            roleRequester: user.role,
-            ...masterInput 
-        }) 
-      }).then(r=>r.json());
-      if(res.result === 'success') { 
-        alert('Data Ditambah!');
-        setMasterInput({ kategori: 'Menu', value: '', label: '' }); 
-      } else alert(res.message); 
-    } catch(e) { alert('Error'); } finally { setLoading(false); } 
-  };
+  // Panggil fetch saat tab 'master_user' aktif
+  useEffect(() => {
+    if (activeTab === 'master_user') {
+      fetchAdminUserList();
+    }
+  }, [activeTab]);
 
-  // --- HANDLER BARU: Untuk Mengirim Pengumuman HRD ---
-  const handleAddAnnouncement = async () => {
-    if (!newsInput.trim()) return alert("Isi informasi tidak boleh kosong!");
+  // --- LOGIC RESET PASSWORD ---
+  const handleResetPassword = async (uuid, namaUser) => {
+    if(!window.confirm(`Yakin ingin mereset password user "${namaUser}" menjadi "123"?`)) return;
+    
     setLoading(true);
     try {
       const res = await fetch(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({ 
-            action: 'tambah_announcement', // Sesuai dengan aksi di GAS 
-            roleRequester: user.role,       // Untuk validasi HRD/Admin 
-            isi: newsInput                 // Isi pesan pengumuman [cite: 1758]
+          action: 'reset_password_user', 
+          roleRequester: user.role,
+          targetUuid: uuid 
         })
-      }).then(r => r.json());
-      
-      if (res.result === 'success') {
-        alert("Pengumuman berhasil diterbitkan!");
-        setNewsInput(''); // Reset field input
+      });
+      const data = await res.json();
+      if (data.result === 'success') {
+        alert(data.message);
       } else {
-        alert(res.message);
+        alert(data.message);
       }
     } catch (e) {
       alert("Gagal koneksi ke server.");
@@ -2998,148 +2906,194 @@ function AdminPanel({ user, setView, masterData }) {
     }
   };
 
+  // --- LOGIC EXISTING (ADD USER, LOCATION, ETC) ---
+  const handleLocationChange = (loc) => {
+     let currentLocs = userData.lokasi ? userData.lokasi.split(',').map(l=>l.trim()).filter(l=>l!=='') : [];
+     if (currentLocs.includes(loc)) { currentLocs = currentLocs.filter(l => l !== loc); } 
+     else { if(loc === 'All') { currentLocs = ['All']; } else { currentLocs = currentLocs.filter(l => l !== 'All'); currentLocs.push(loc); } }
+     setUserData({ ...userData, lokasi: currentLocs.join(', ') });
+  };
+  const handleCheckboxChange = (val) => { 
+    setUserData(prev => { const current = prev.akses; return current.includes(val) ? { ...prev, akses: current.filter(i => i !== val) } : { ...prev, akses: [...current, val] }; });
+  };
+  const handleAddUser = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_user', roleRequester: user.role, ...userData }) }).then(r => r.json());
+      if(res.result === 'success') { alert('User Berhasil Ditambahkan!'); setUserData({ username: '', password: '', nama: '', email: '', divisi: 'Staff', role: 'karyawan', akses: [], noPayroll: '', sisaCuti: '', perusahaan: '', statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya' }); } 
+      else { alert(res.message); }
+    } catch(e) { alert('Error koneksi server'); } finally { setLoading(false); }
+  };
+  const handleAddMaster = async (e) => { 
+    e.preventDefault(); setLoading(true);
+    try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_master', roleRequester: user.role, ...masterInput }) }).then(r=>r.json());
+      if(res.result === 'success') { alert('Data Ditambah!'); setMasterInput({ kategori: 'Menu', value: '', label: '' }); } else alert(res.message); 
+    } catch(e) { alert('Error'); } finally { setLoading(false); } 
+  };
+  const handleAddAnnouncement = async () => {
+    if (!newsInput.trim()) return alert("Isi informasi tidak boleh kosong!");
+    setLoading(true);
+    try {
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_announcement', roleRequester: user.role, isi: newsInput }) }).then(r => r.json());
+      if (res.result === 'success') { alert("Pengumuman berhasil diterbitkan!"); setNewsInput(''); } else { alert(res.message); }
+    } catch (e) { alert("Gagal koneksi ke server."); } finally { setLoading(false); }
+  };
+
+  // Filter List User berdasarkan Search
+  const filteredUsers = adminUserList.filter(u => 
+    u.nama.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    String(u.username).toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="p-4 h-full overflow-y-auto pb-20">
+    <div className="p-4 h-full overflow-y-auto pb-20 bg-gray-50">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold ml-2">Admin Panel</h2>
+        <h2 className="text-xl font-bold ml-2 text-slate-800">Admin Panel</h2>
         <BackButton onClick={() => setView('dashboard')} />
       </div>
 
-      {/* --- NAVIGASI TAB: Ditambahkan Tombol Update HRD --- */}
-      <div className="flex gap-2 mb-6 bg-gray-200 p-1 rounded-lg">
-        <button onClick={() => setActiveTab('user')} className={`flex-1 py-2 text-sm font-bold rounded-md ${activeTab === 'user' ? 'bg-white shadow' : 'text-gray-500'}`}>Tambah User</button>
+      {/* --- NAVIGASI TAB --- */}
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
+        <button onClick={() => setActiveTab('user')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'user' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>+ User Baru</button>
+        
+        {/* TOMBOL TAB BARU */}
+        <button onClick={() => setActiveTab('master_user')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'master_user' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>Master User (Reset)</button>
+        
         {user.role === 'admin' && (
-            <button onClick={() => setActiveTab('master')} className={`flex-1 py-2 text-sm font-bold rounded-md ${activeTab === 'master' ? 'bg-white shadow' : 'text-gray-500'}`}>Tambah Master Data</button>
+            <button onClick={() => setActiveTab('master')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'master' ? 'bg-purple-600 text-white border-purple-600 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>+ Master Data</button>
         )}
-        {/* Tombol Tab Update HRD */}
-        <button onClick={() => setActiveTab('news')} className={`flex-1 py-2 text-sm font-bold rounded-md ${activeTab === 'news' ? 'bg-white shadow' : 'text-gray-500'}`}>Update HRD</button>
+        <button onClick={() => setActiveTab('news')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'news' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>Info HRD</button>
       </div>
 
-      {/* --- KONTEN TAB: TAMBAH USER (Tetap) --- */}
+      {/* --- KONTEN TAB: MASTER USER (RESET PASSWORD) --- */}
+      {activeTab === 'master_user' && (
+        <div className="animate-in fade-in duration-300">
+           {/* Search Bar */}
+           <div className="relative mb-4">
+              <input 
+                type="text" 
+                placeholder="Cari User (Nama / ID Fingerprint)..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+              />
+              <Search className="w-5 h-5 text-gray-400 absolute left-3 top-3" />
+           </div>
+
+           {loadingList ? (
+              <div className="text-center py-10"><Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto"/></div>
+           ) : (
+             <div className="space-y-3">
+               {filteredUsers.length === 0 && <p className="text-center text-gray-400 text-sm py-4">User tidak ditemukan.</p>}
+               
+               {filteredUsers.map((u, idx) => (
+                 <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                    <div>
+                       <h4 className="font-bold text-slate-800">{u.nama}</h4>
+                       <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 font-mono font-bold">{u.username}</span>
+                          <span className="text-[10px] text-gray-400">• {u.divisi}</span>
+                       </div>
+                    </div>
+                    
+                    <button 
+                      onClick={() => handleResetPassword(u.uuid, u.nama)}
+                      disabled={loading}
+                      className="flex items-center gap-1 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-xs font-bold border border-red-100 hover:bg-red-100 transition active:scale-95 shadow-sm"
+                      title="Reset Password ke '123'"
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCcw className="w-4 h-4" />}
+                      Reset Pass
+                    </button>
+                 </div>
+               ))}
+             </div>
+           )}
+        </div>
+      )}
+
+      {/* --- KONTEN TAB: TAMBAH USER (LAMA - UI UPDATED) --- */}
       {activeTab === 'user' && (
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
           <form onSubmit={handleAddUser} className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
-               <input required type="text" className="w-full p-2 border rounded" value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Nama Karyawan" />
-              <input required type="email" className="w-full p-2 border rounded" value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} placeholder="Email" />
+               <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Nama Karyawan" />
+               <input required type="email" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} placeholder="Email" />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <input required type="text" className="w-full p-2 border rounded" value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="Username" />
-              <input required type="text" className="w-full p-2 border rounded" value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Password" />
+              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="Username (ID Finger)" />
+              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Password" />
             </div>
-            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-              <label className="text-xs font-bold text-gray-700 block mb-1">Email Kepala Divisi (Untuk Approval)</label>
-              <input type="email" className="w-full p-2 border rounded bg-white text-sm" value={userData.emailAtasan} onChange={e => setUserData({...userData, emailAtasan: e.target.value})} placeholder="cth: manager@perusahaan.com" />
-              <p className="text-[10px] text-gray-500 mt-1 italic">*Wajib diisi agar user ini bisa mengajukan approval via email.</p>
+            <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+              <label className="text-xs font-bold text-gray-700 block mb-1">Email Kepala Divisi (Approval)</label>
+              <input type="email" className="w-full p-2 border rounded bg-white text-sm" value={userData.emailAtasan} onChange={e => setUserData({...userData, emailAtasan: e.target.value})} placeholder="manager@perusahaan.com" />
+            </div>
+            {/* ... Sisa input form tambah user (sama seperti sebelumnya, hanya styling dirapikan) ... */}
+            <div className="grid grid-cols-2 gap-2">
+              <input type="text" className="w-full p-2 border rounded" value={userData.perusahaan} onChange={e => setUserData({...userData, perusahaan: e.target.value})} placeholder="Perusahaan" />
+              <input type="text" className="w-full p-2 border rounded" value={userData.statusKaryawan} onChange={e => setUserData({...userData, statusKaryawan: e.target.value})} placeholder="Status Karyawan" />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <input type="text" className="w-full p-2 border rounded" value={userData.perusahaan} onChange={e => setUserData({...userData, perusahaan: e.target.value})} placeholder="Perusahaan (PT)" />
-              <input type="text" className="w-full p-2 border rounded" value={userData.statusKaryawan} onChange={e => setUserData({...userData, statusKaryawan: e.target.value})} placeholder="Status (Tetap/PKWT)" />
+               <input type="text" className="w-full p-2 border rounded" value={userData.noPayroll} onChange={e => setUserData({...userData, noPayroll: e.target.value})} placeholder="No Payroll" />
+               <input type="number" className="w-full p-2 border rounded" value={userData.sisaCuti} onChange={e => setUserData({...userData, sisaCuti: e.target.value})} placeholder="Sisa Cuti" />
             </div>
+            {/* Divisi & Role */}
             <div className="grid grid-cols-2 gap-2">
-              <input type="text" className="w-full p-2 border rounded" value={userData.noPayroll} onChange={e => setUserData({...userData, noPayroll: e.target.value})} placeholder="No Payroll" />
-              <input type="number" className="w-full p-2 border rounded" value={userData.sisaCuti} onChange={e => setUserData({...userData, sisaCuti: e.target.value})} placeholder="Sisa Cuti Awal" />
-            </div>
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Divisi</label>
-                <select className="w-full p-2 border rounded" value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>
+                <select className="w-full p-2 border rounded text-sm" value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>
                   {masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}
                   {masterData.divisions.length === 0 && <option>Staff</option>}
                 </select>
-              </div>
-              <div className="bg-gray-50 p-3 rounded border border-gray-200">
-                <label className="text-xs font-bold text-gray-700 block mb-2">Akses Lokasi (Bisa Pilih Lebih dari 1)</label>
+                <select className="w-full p-2 border rounded text-sm" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>
+                  {masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}
+                </select>
+            </div>
+            {/* Akses Lokasi */}
+            <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                <label className="text-xs font-bold text-gray-700 block mb-2">Akses Lokasi</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {LIST_LOKASI.map((loc) => {
-                    const isChecked = userData.lokasi && userData.lokasi.split(',').map(l=>l.trim()).includes(loc);
-                    return (
-                        <label key={loc} className="flex items-center gap-2 text-xs cursor-pointer bg-white p-2 rounded border hover:bg-blue-50 transition-colors">
-                            <input 
-                                type="checkbox" 
-                                checked={!!isChecked} 
-                                onChange={() => handleLocationChange(loc)}
-                                className="w-4 h-4 text-blue-600 rounded" 
-                            />
-                            {loc}
-                        </label>
-                    );
-                  })}
+                  {LIST_LOKASI.map((loc) => (
+                    <label key={loc} className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={userData.lokasi && userData.lokasi.includes(loc)} onChange={() => handleLocationChange(loc)} className="w-3 h-3 text-blue-600 rounded" />{loc}</label>
+                  ))}
                 </div>
-                <p className="text-[10px] text-gray-400 mt-2 bg-white px-2 py-1 border border-dashed rounded">
-                    Data tersimpan: <strong>{userData.lokasi || '-'}</strong>
-                </p>
-              </div>
             </div>
-             <div className="grid grid-cols-1 gap-2 mt-2">
-                 <div>
-                    <label className="text-xs text-gray-500">Role</label>
-                    <select className="w-full p-2 border rounded" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>
-                      {masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}
-                    </select>
-                 </div>
-            </div>
-            <div className="border p-3 rounded-lg bg-gray-50">
-              <label className="text-xs font-bold text-gray-700 block mb-2">Hak Akses Menu:</label>
+            {/* Akses Menu */}
+             <div className="border p-3 rounded-lg bg-gray-50">
+              <label className="text-xs font-bold text-gray-700 block mb-2">Akses Menu:</label>
               <div className="grid grid-cols-2 gap-2">
-                {masterData.menus.map(item => (
-                  <label key={item.value} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" checked={userData.akses.includes(item.value)} onChange={() => handleCheckboxChange(item.value)} className="w-4 h-4 text-blue-600 rounded" />
-                    {item.label}
-                  </label>
-                ))}
+                {masterData.menus.map(item => ( <label key={item.value} className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={userData.akses.includes(item.value)} onChange={() => handleCheckboxChange(item.value)} className="w-3 h-3 text-blue-600 rounded" />{item.label}</label> ))}
               </div>
             </div>
-            <button type="submit" disabled={loading} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-700 transition">
+
+            <button type="submit" disabled={loading} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-700 transition flex justify-center items-center gap-2">
               {loading ? 'Menyimpan...' : 'Simpan User Baru'}
             </button>
           </form>
         </div>
       )}
 
-      {/* --- KONTEN TAB: MASTER DATA (Tetap) --- */}
+      {/* --- KONTEN TAB: MASTER DATA (LAMA) --- */}
       {activeTab === 'master' && (
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
           <form onSubmit={handleAddMaster} className="space-y-4">
             <div>
               <label className="text-xs text-gray-500">Kategori</label>
               <select className="w-full p-2 border rounded" value={masterInput.kategori} onChange={e => setMasterInput({...masterInput, kategori: e.target.value})}>
-                <option value="Menu">Menu Absensi Baru</option>
-                <option value="Role">Role User Baru</option>
-                <option value="Divisi">Divisi Baru</option>
-                <option value="Shift">Jam Kerja Shift</option>
+                <option value="Menu">Menu Absensi</option><option value="Role">Role User</option><option value="Divisi">Divisi</option><option value="Shift">Jam Shift</option>
               </select>
             </div>
-            <input required type="text" className="w-full p-2 border rounded" value={masterInput.value} onChange={e => setMasterInput({...masterInput, value: e.target.value})} placeholder="Value (Contoh: 07:00-15:00)" />
-            <input required type="text" className="w-full p-2 border rounded" value={masterInput.label} onChange={e => setMasterInput({...masterInput, label: e.target.value})} placeholder="Label (Contoh: Shift 1 Pagi)" />
-            <button type="submit" disabled={loading} className="w-full bg-purple-700 text-white py-3 rounded-lg font-bold hover:bg-purple-800">
-              {loading ? 'Simpan...' : 'Tambah Master Data'}
-            </button>
+            <input required type="text" className="w-full p-2 border rounded" value={masterInput.value} onChange={e => setMasterInput({...masterInput, value: e.target.value})} placeholder="Value" />
+            <input required type="text" className="w-full p-2 border rounded" value={masterInput.label} onChange={e => setMasterInput({...masterInput, label: e.target.value})} placeholder="Label" />
+            <button type="submit" disabled={loading} className="w-full bg-purple-700 text-white py-3 rounded-lg font-bold hover:bg-purple-800">{loading ? 'Simpan...' : 'Tambah Master Data'}</button>
           </form>
         </div>
       )}
 
-      {/* --- KONTEN TAB BARU: UPDATE HRD --- */}
+      {/* --- KONTEN TAB: UPDATE HRD (LAMA) --- */}
       {activeTab === 'news' && (
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
           <label className="text-xs font-bold text-gray-700 block mb-2">Isi Informasi Pengumuman HRD:</label>
-          <textarea 
-            className="w-full border p-3 rounded-xl text-sm mb-4 focus:ring-2 focus:ring-blue-500 outline-none" 
-            rows="5" 
-            placeholder="Ketik informasi penting untuk semua karyawan di sini..."
-            value={newsInput}
-            onChange={(e) => setNewsInput(e.target.value)}
-          ></textarea>
-          <button 
-            onClick={handleAddAnnouncement}
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold shadow-lg shadow-blue-200 active:scale-95 transition-all"
-          >
-            {loading ? 'Mengirim...' : 'Terbitkan Informasi Sekarang'}
-          </button>
-          <p className="text-[10px] text-gray-400 mt-3 italic text-center">
-            Informasi yang diterbitkan akan muncul sebagai jendela melayang di Dashboard setiap user saat login.
-          </p>
+          <textarea className="w-full border p-3 rounded-xl text-sm mb-4 focus:ring-2 focus:ring-orange-500 outline-none" rows="5" placeholder="Ketik informasi..." value={newsInput} onChange={(e) => setNewsInput(e.target.value)}></textarea>
+          <button onClick={handleAddAnnouncement} disabled={loading} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold shadow-lg shadow-orange-200 active:scale-95 transition-all">{loading ? 'Mengirim...' : 'Terbitkan Informasi'}</button>
         </div>
       )}
     </div>
