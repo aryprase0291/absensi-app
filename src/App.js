@@ -40,7 +40,7 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.5";
+  const CLIENT_VERSION = "1.0.6";
 
  // --- LOGIKA CEK UPDATE (DIPERBAIKI DENGAN PENGAMAN LOOP) ---
   useEffect(() => {
@@ -552,7 +552,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
       {/* --- FOOTER --- */}
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-              Version {masterData?.appVersion || '1.0.5'} | &copy; {new Date().getFullYear()}
+              Version {masterData?.appVersion || '1.0.6'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
@@ -1487,13 +1487,62 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
+  // --- UPDATE: FUNGSI TAKE PHOTO (TIMESTAMP + GPS) ---
   const takePhoto = () => { 
-      const video = videoRef.current; 
+      const video = videoRef.current;
       const canvas = canvasRef.current;
+      
       if (video && canvas) { 
-          canvas.width = video.videoWidth; 
+          // 1. Set Ukuran Canvas
+          canvas.width = video.videoWidth;
           canvas.height = video.videoHeight; 
-          canvas.getContext('2d').drawImage(video, 0, 0); 
+          
+          const ctx = canvas.getContext('2d');
+
+          // 2. Gambar Frame Video
+          ctx.drawImage(video, 0, 0); 
+
+          // --- CONFIG FONT ---
+          // Ukuran font dinamis (1/25 dari lebar foto)
+          const fontSize = Math.floor(canvas.width / 25); 
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.textAlign = "right";
+          ctx.textBaseline = "bottom";
+          
+          const paddingX = 20;
+          const paddingY = 20;
+          const lineSpacing = fontSize + (fontSize * 0.2); // Jarak antar baris
+
+          // --- SIAPKAN TEKS ---
+          const now = new Date();
+          const dateStr = now.toLocaleDateString('id-ID');
+          const timeStr = now.toLocaleTimeString('id-ID', { hour12: false });
+          const timestampText = `${dateStr} ${timeStr}`;
+          
+          // Cek data lokasi dari State
+          let gpsText = "Lokasi Tidak Ditemukan";
+          if (location) {
+              // Ambil 6 angka belakang koma agar rapi
+              gpsText = `${location.lat}, ${location.lng}`;
+          }
+
+          // --- GAMBAR TEKS KE CANVAS ---
+          
+          // Style: Outline Hitam tebal + Isi Putih (Supaya terbaca di background apapun)
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'black';
+          ctx.fillStyle = "white";
+
+          // 1. Tulis Timestamp (Baris Paling Bawah)
+          ctx.strokeText(timestampText, canvas.width - paddingX, canvas.height - paddingY);
+          ctx.fillText(timestampText, canvas.width - paddingX, canvas.height - paddingY);
+
+          // 2. Tulis GPS (Baris di Atas Timestamp)
+          // Posisi Y dikurangi lineSpacing agar naik ke atas
+          ctx.strokeText(gpsText, canvas.width - paddingX, canvas.height - paddingY - lineSpacing);
+          ctx.fillText(gpsText, canvas.width - paddingX, canvas.height - paddingY - lineSpacing);
+
+          // 3. Simpan Hasil
           setPhoto(canvas.toDataURL('image/jpeg', 0.8)); 
           stopCamera();
       } 
@@ -1780,9 +1829,55 @@ const handleSubmit = async () => {
           </>
         )}
         
+        {/* --- FITUR GOOGLE MAPS EMBED --- */}
         {!isEditMode && isGpsRequired && (
-            <div className="flex items-center gap-3 bg-blue-50 p-3 rounded-lg text-blue-800 border border-blue-100">
-                <MapPin className="text-red-500"/><span className="text-sm font-medium">{location ? `${location.lat}, ${location.lng}` : 'Mencari Lokasi...'}</span>
+            <div className="space-y-2 mb-3">
+                <label className="text-xs font-bold text-gray-700 block mb-1">Lokasi Anda Saat Ini:</label>
+                
+                {/* Container Peta */}
+                <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm h-48 bg-gray-100 relative">
+                    {location ? (
+                        <iframe
+                            title="Lokasi User"
+                            width="100%"
+                            height="100%"
+                            frameBorder="0"
+                            style={{ border: 0 }}
+                            // Menggunakan Google Maps Embed Format
+                            src={`https://maps.google.com/maps?q=${location.lat},${location.lng}&z=17&output=embed`}
+                            allowFullScreen
+                        ></iframe>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400 animate-pulse bg-slate-100">
+                            <MapPin className="w-10 h-10 mb-2 text-slate-300" />
+                            <span className="text-xs font-bold">Sedang mencari titik GPS...</span>
+                            <span className="text-[10px] mt-1">(Pastikan izin lokasi aktif)</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Detail Koordinat Teks */}
+                <div className="flex items-center justify-between bg-blue-50 p-2.5 rounded-lg border border-blue-100">
+                    <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-red-500 animate-bounce" />
+                        <span className="text-xs font-bold text-blue-800 font-mono">
+                           {location ? `${location.lat}, ${location.lng}` : 'Menunggu...'}
+                        </span>
+                    </div>
+                    {/* Tombol Reload Lokasi (Opsional) */}
+                    <button 
+                        onClick={() => {
+                            setLocation(null);
+                            navigator.geolocation.getCurrentPosition(
+                                (p) => setLocation({ lat: p.coords.latitude, lng: p.coords.longitude }), 
+                                () => alert('Gagal memuat ulang lokasi.')
+                            );
+                        }}
+                        className="text-[10px] bg-white border border-blue-200 px-2 py-1 rounded shadow-sm text-blue-600 hover:bg-blue-100"
+                    >
+                        Refresh GPS
+                    </button>
+                </div>
             </div>
         )}
 
