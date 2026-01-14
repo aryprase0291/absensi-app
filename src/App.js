@@ -242,7 +242,7 @@ const AnalogClock = ({ time }) => {
   );
 };
 
-// --- DASHBOARD SCREEN (LAYOUT BARU: FIXED GRID & HEADER ANIMASI) ---
+// --- DASHBOARD SCREEN (CLICKABLE STATS) ---
 function Dashboard({ user, setUser, setView, handleLogout, masterData }) { 
   const [time, setTime] = useState(new Date());
   const [stats, setStats] = useState({ 
@@ -255,11 +255,8 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
   const [newsContent] = useState(null);
 
   useEffect(() => { const timer = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(timer); }, []);
-  
-  // (Pastikan fungsi checkExecutionTime, fetchStats, fetchNews ada di sini seperti script sebelumnya)
-  // ... [PASTE CODE LOGIC DISINI] ...
-  
-  // FETCH STATS (CONTOH SINGKAT AGAR TIDAK ERROR, PASTE YANG LENGKAP DARI SCRIPT LAMA)
+
+  // FETCH STATS
   useEffect(() => { 
     const fetchStats = async () => { 
       setLoadingStats(true); 
@@ -275,6 +272,12 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
     }; 
     if (user) fetchStats(); 
   }, [user]);
+
+  // --- FUNGSI KLIK STATISTIK ---
+  const handleStatClick = (filterCode) => {
+      localStorage.setItem('dbAbsenFilter', filterCode);
+      setView('db_absen');
+  };
 
   const checkExecutionTime = async () => { /* ... Logic Ping ... */ };
   useEffect(() => { checkExecutionTime(); }, []);
@@ -303,14 +306,12 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
   return ( 
     <div className="p-4 pb-24 bg-gray-50 min-h-screen font-sans flex flex-col"> 
       
-      {/* --- KARTU PROFIL HEADER (REVISI: POSISI/LOKASI DI BAWAH NAMA) --- */}
+      {/* --- KARTU PROFIL HEADER --- */}
       <div className="relative rounded-[2.5rem] p-6 shadow-xl shadow-slate-200 mb-6 overflow-hidden bg-white border border-white">
-        
-        {/* Background Decorations */}
         <div className="absolute top-0 left-0 w-full h-28 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
         <div className="absolute top-20 left-0 w-full h-10 bg-white rounded-t-[2.5rem]"></div>
  
-        {/* HEADER KIRI ATAS: PROFESSIONAL ANIMATED ICON */}
+        {/* HEADER KIRI ATAS */}
         <div className="absolute top-5 left-6 z-20 flex items-center gap-2">
             <div className="bg-white/10 backdrop-blur-md p-2 rounded-full border border-white/20 shadow-lg animate-[pulse_3s_infinite]">
                 <ScanLine className="w-5 h-5 text-blue-100" />
@@ -321,54 +322,36 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
             </div>
         </div>
 
-        {/* HEADER KANAN ATAS: TOMBOL ACTION (ANIMATED) */}
+        {/* HEADER KANAN ATAS */}
         <div className="absolute top-5 right-6 z-20 flex gap-2">
-             {/* Tombol Password */}
-             <button 
-                onClick={() => setView('ganti_password')} 
-                className="bg-white/20 hover:bg-white/40 p-2.5 rounded-full backdrop-blur-md transition-all duration-300 text-white border border-white/30 shadow-lg active:scale-90 hover:rotate-12 group"
-                title="Ubah Password"
-             >
+             <button onClick={() => setView('ganti_password')} className="bg-white/20 hover:bg-white/40 p-2.5 rounded-full backdrop-blur-md transition-all duration-300 text-white border border-white/30 shadow-lg active:scale-90 hover:rotate-12 group" title="Ubah Password">
                 <KeyRound className="w-5 h-5 group-hover:text-yellow-300 transition-colors" />
              </button>
-             {/* Tombol Logout (Animated Shake/Pulse on Hover) */}
-             <button 
-                onClick={handleLogout} 
-                className="bg-red-500/80 hover:bg-red-600 p-2.5 rounded-full backdrop-blur-md transition-all duration-300 text-white border border-red-400/50 shadow-lg active:scale-90 hover:animate-[tada_1s_ease-in-out]"
-                title="Keluar Aplikasi"
-             >
+             <button onClick={handleLogout} className="bg-red-500/80 hover:bg-red-600 p-2.5 rounded-full backdrop-blur-md transition-all duration-300 text-white border border-red-400/50 shadow-lg active:scale-90 hover:animate-[tada_1s_ease-in-out]" title="Keluar Aplikasi">
                 <LogOut className="w-5 h-5" />
              </button>
         </div>
 
         <div className="relative z-10 flex flex-col items-center mt-6">
-            {/* 1. JAM ANALOG (DENGAN ANGKA 1-12) */}
             <div className="mb-4 transform hover:scale-105 transition-transform duration-500 ease-out shadow-2xl rounded-full bg-white p-1">
                  <AnalogClock time={time} />
             </div>
 
-            {/* 2. NAMA, POSISI & LOKASI (REVISI) */}
             <div className="text-center mb-6 w-full">
                 <div className="flex items-center justify-center gap-2 mb-1">
                     <CloudSun className="w-4 h-4 text-orange-400 animate-bounce-slow" />
                     <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">{greeting}</p>
                 </div>
-                
                 <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-tight truncate px-2">{user.nama}</h2>
-                
-                {/* INFO POSISI • LOKASI (DITARUH DISINI SESUAI REQUEST) */}
                 <div className="flex items-center justify-center gap-2 mt-1 text-xs font-bold text-slate-500">
                     <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 border border-slate-200">{user.divisi}</span>
                     <span className="text-slate-300">•</span>
                     <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 border border-slate-200">{user.lokasi || 'All'}</span>
                 </div>
-
-                <p className="text-[10px] text-slate-400 font-medium mt-2">
-                    {dateString}
-                </p>
+                <p className="text-[10px] text-slate-400 font-medium mt-2">{dateString}</p>
             </div>
 
-            {/* 3. INFO CHIPS SISA (Perusahaan, ID, Status, Cuti) - POSISI & LOKASI DIHAPUS DARI SINI */}
+            {/* INFO CHIPS */}
             <div className="grid grid-cols-2 gap-3 w-full">
                  <div className="bg-blue-50/50 p-2.5 rounded-2xl border border-blue-100 flex items-center gap-3 hover:bg-blue-50 transition-colors">
                     <div className="bg-blue-500 p-2 rounded-xl text-white shadow-sm shadow-blue-200"><Building className="w-4 h-4"/></div>
@@ -377,35 +360,32 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
                         <p className="text-xs font-bold text-slate-700 truncate">{user.perusahaan || 'JPT Group'}</p>
                     </div>
                  </div>
-
                  <div className="bg-indigo-50/50 p-2.5 rounded-2xl border border-indigo-100 flex items-center gap-3 hover:bg-indigo-50 transition-colors">
                     <div className="bg-indigo-500 p-2 rounded-xl text-white shadow-sm shadow-indigo-200"><CreditCard className="w-4 h-4"/></div>
-                    <div>
+                     <div>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">ID Akun</p>
                         <p className="text-xs font-bold text-slate-700 font-mono">{user.noPayroll || '-'}</p>
                     </div>
                  </div>
-
                  <div className="bg-emerald-50/50 p-2.5 rounded-2xl border border-emerald-100 flex items-center gap-3 hover:bg-emerald-50 transition-colors">
                     <div className="bg-emerald-500 p-2 rounded-xl text-white shadow-sm shadow-emerald-200"><User className="w-4 h-4"/></div>
-                    <div>
+                     <div>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Status</p>
                         <p className="text-xs font-bold text-slate-700">{user.statusKaryawan || '-'}</p>
                     </div>
                  </div>
-
                  <div className="bg-amber-50/50 p-2.5 rounded-2xl border border-amber-100 flex items-center gap-3 hover:bg-amber-50 transition-colors">
                     <div className="bg-amber-500 p-2 rounded-xl text-white shadow-sm shadow-amber-200"><PieChart className="w-4 h-4"/></div>
-                    <div>
+                     <div>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Cuti Tersedia</p>
                         <p className="text-xs font-bold text-slate-700">{user.sisaCuti} </p>
                     </div>
-                 </div>
+                </div>
             </div>
         </div>
       </div> 
 
-      {/* --- STATISTIK (REVISI: SEMUA UKURAN KARTU SAMA) --- */}
+      {/* --- STATISTIK (CLICKABLE) --- */}
       <div className="flex justify-between items-end mb-3 px-2">
           <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
              {loadingStats ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin"/> : <Activity className="w-4 h-4 text-blue-500"/>}
@@ -416,77 +396,77 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
           </span>
       </div>
       
-      {/* GRID STATISTIK UNIFORM (3 KOLOM) - SEMUA UKURAN SAMA */}
+      {/* GRID STATISTIK UNIFORM (3 KOLOM) - CLICKABLE */}
       <div className="grid grid-cols-3 gap-3 mb-5">
           
-          {/* 1. TOTAL HADIR (Sekarang ukuran kecil) */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-2 opacity-5"><CheckCircle className="w-12 h-12 text-emerald-600"/></div>
-              <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl mb-1"><CheckCircle className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Hadir</span>
-              {loadingStats ? <Skeleton className="h-5 w-8 mt-1" /> : <p className="text-lg font-black text-slate-800">{stats.total_hadir || 0}</p>}
-          </div>
+          {/* 1. [KOREKSI] TOMBOL HADIR: Gunakan filterCode 'HADIR_ALL' */}
+            <div onClick={() => handleStatClick('HADIR_ALL')} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group cursor-pointer hover:shadow-md transition-all active:scale-95">
+                <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl mb-1"><CheckCircle className="w-4 h-4"/></div>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Hadir</span>
+                {/* Tampilkan stats.total_hadir */}
+                {loadingStats ? <div className="h-5 w-8 bg-gray-200 animate-pulse rounded mt-1"></div> : <p className="text-lg font-black text-slate-800">{stats.total_hadir || 0}</p>}
+            </div>
 
-          {/* 2. TERLAMBAT (Sekarang ukuran kecil) */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group">
+          {/* 2. TERLAMBAT -> Filter 'T' */}
+          <div onClick={() => handleStatClick('T')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
               <div className="absolute top-0 right-0 p-2 opacity-5"><Clock className="w-12 h-12 text-orange-600"/></div>
               <div className="bg-orange-50 text-orange-600 p-2 rounded-xl mb-1"><Clock className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Telat</span>
+               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Telat</span>
               {loadingStats ? <Skeleton className="h-5 w-8 mt-1" /> : (
                   <div className="flex flex-col items-center">
                     <p className="text-lg font-black text-slate-800 leading-none">{stats.total_telat_freq || 0}x</p>
                     <span className="text-[8px] font-bold text-orange-500">{stats.total_telat_menit || 0}m</span>
                   </div>
-              )}
+               )}
           </div>
 
-          {/* 3. IJIN */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+          {/* 3. IJIN -> Filter 'I' */}
+          <div onClick={() => handleStatClick('I')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
               <div className="bg-blue-50 text-blue-600 p-2 rounded-xl mb-1"><FileText className="w-4 h-4"/></div>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Ijin</span>
-              {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_ijin || 0}</p>}
+               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_ijin || 0}</p>}
           </div>
           
-          {/* 4. CUTI */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+          {/* 4. CUTI -> Filter 'C' */}
+          <div onClick={() => handleStatClick('C')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
               <div className="bg-pink-50 text-pink-600 p-2 rounded-xl mb-1"><Calendar className="w-4 h-4"/></div>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Cuti Diambil</span>
-              {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_cuti || 0}</p>}
+               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_cuti || 0}</p>}
           </div>
 
-          {/* 5. CUTI BERSAMA */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+          {/* 5. CUTI BERSAMA -> Filter 'CB' */}
+          <div onClick={() => handleStatClick('CB')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
               <div className="bg-purple-50 text-purple-600 p-2 rounded-xl mb-1"><CalendarDays className="w-4 h-4"/></div>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight leading-none">Cuti Bersama</span>
               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_cuti_bersama || 0}</p>}
           </div>
 
-          {/* 6. SAKIT */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+          {/* 6. SAKIT -> Filter 'S' */}
+          <div onClick={() => handleStatClick('S')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
               <div className="bg-orange-50 text-orange-600 p-2 rounded-xl mb-1"><AlertTriangle className="w-4 h-4"/></div>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Sakit</span>
               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_sakit || 0}</p>}
           </div>
 
-          {/* 7. ALPA */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+          {/* 7. ALPA -> Filter 'A' */}
+          <div onClick={() => handleStatClick('A')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
               <div className="bg-red-50 text-red-600 p-2 rounded-xl mb-1"><X className="w-4 h-4"/></div>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Alpa</span>
               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_alpa || 0}</p>}
           </div>
 
-          {/* 8. NO CHECK IN */}
-          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+          {/* 8. NO CHECK IN -> Filter 'Si' */}
+          <div onClick={() => handleStatClick('Si')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
               <div className="bg-yellow-50 text-yellow-600 p-2 rounded-xl mb-1"><DoorOpen className="w-4 h-4"/></div>
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight leading-none">Tdk Absen-IN</span>
-              {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_no_scan_in || 0}</p>}
+               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_no_scan_in || 0}</p>}
           </div>
 
-           {/* 9. NO CHECK OUT */}
-           <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center">
+           {/* 9. NO CHECK OUT -> Filter 'So' */}
+           <div onClick={() => handleStatClick('So')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
                 <div className="bg-rose-50 text-rose-600 p-2 rounded-xl mb-1"><DoorClosed className="w-4 h-4"/></div>
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight leading-none">Tdk Absen-OUT</span>
-                {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_no_scan_out || 0}</p>}
+                 {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_no_scan_out || 0}</p>}
            </div>
       </div>
 
@@ -495,7 +475,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
         <button onClick={() => setView('history')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition active:scale-95">
             <History className="w-5 h-5" /><span className="text-[10px]">Riwayat</span>
         </button> 
-        <button onClick={() => setView('db_absen')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
+         <button onClick={() => setView('db_absen')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
             <Fingerprint className="w-5 h-5" /> <span className="text-[10px]">Data Mesin</span>
         </button>
         <button onClick={() => setView('remark')} className={`flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 font-bold transition active:scale-95 ${isHRDOrAdmin ? 'text-purple-600 hover:bg-purple-50' : 'text-orange-600 hover:bg-orange-50'}`}>
@@ -507,7 +487,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
                 <Users className="w-5 h-5" /><span className="text-[10px]">Approval</span>
             </button>
         )}
-        {canAccessPanel && ( 
+         {canAccessPanel && ( 
             <button onClick={() => setView('admin')} className="flex-1 min-w-[90px] bg-slate-800 text-white p-3 rounded-xl shadow-sm flex flex-col items-center justify-center gap-1 font-bold hover:bg-slate-700 transition active:scale-95">
                 <Settings className="w-5 h-5" /><span className="text-[10px]">Panel</span>
             </button> 
@@ -525,7 +505,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
                     <div className="bg-indigo-600 text-white p-2 rounded-lg shadow-sm"><CalendarCheck className="w-5 h-5" /></div>
                     <div className="text-left">
                         <h4 className="font-bold text-indigo-900 text-sm">Input Jadwal Shift</h4>
-                        <p className="text-[10px] text-indigo-600">Atur tanggal & jam kerja Shift Anda</p>
+                         <p className="text-[10px] text-indigo-600">Atur tanggal & jam kerja Shift Anda</p>
                     </div>
                 </div>
                  <div className="bg-white p-1 rounded-full text-indigo-400"><ChevronDown className="-rotate-90 w-3 h-3" /></div>
@@ -554,14 +534,14 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
                         if(isIjinFull) { alert('Pengajuan IJIN Maksimal 4x.'); return; }
                         localStorage.setItem('absenType', item.value); 
                         setView('form'); 
-                    }} 
+                     }} 
                     className={`bg-white p-3 rounded-xl shadow-sm border border-gray-100 transition-all duration-300 text-left group relative overflow-hidden transform 
                     ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-md'}`}
                  > 
                     <div className={`absolute -right-4 -bottom-4 w-16 h-16 rounded-full opacity-10 group-hover:scale-150 transition duration-500 ${colorClass}`}></div>
                     <div className={`${colorClass} w-9 h-9 rounded-lg flex items-center justify-center text-white mb-2 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition`}>
                        <Icon className="w-4 h-4" />
-                    </div> 
+                     </div> 
                     <h4 className="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition">{item.label}</h4> 
                     <p className="text-[9px] text-gray-400 mt-0.5">{(isCutiEmpty ? 'Sisa CUTI Habis' : (isIjinFull ? 'Limit IJIN Tercapai' : 'Pengajuan Form'))}</p> 
                  </button> 
@@ -572,7 +552,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
       {/* --- FOOTER --- */}
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-             Version {masterData?.appVersion || '1.0.5'} | &copy; {new Date().getFullYear()}
+              Version {masterData?.appVersion || '1.0.5'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
@@ -581,18 +561,18 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden transform animate-in zoom-in-95 duration-300">
              <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white relative">
-              <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
+               <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
               <div className="flex items-center gap-2 mb-1">
                  <div className="bg-white/20 p-1.5 rounded-lg"><MessageSquare className="w-5 h-5 text-white" /></div>
                 <h3 className="font-bold text-base tracking-tight">INFORMASI</h3>
               </div>
-              <p className="text-blue-100 text-[10px] uppercase tracking-widest font-medium">{newsContent.waktu}</p>
+               <p className="text-blue-100 text-[10px] uppercase tracking-widest font-medium">{newsContent.waktu}</p>
             </div>
             <div className="p-5">
               <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-5 max-h-60 overflow-y-auto">
                 <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">"{newsContent.isi}"</p>
               </div>
-              <button onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold shadow-lg text-sm">Tutup</button>
+               <button onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold shadow-lg text-sm">Tutup</button>
             </div>
           </div>
         </div>
@@ -904,51 +884,60 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
 // Pastikan import Wifi dan WifiOff ada di bagian paling atas file App.js
 // import { ..., Wifi, WifiOff, ... } from 'lucide-react';
 
-// --- 2. DASHBOARD SCREEN (UPDATED: NETWORK SPEED) ---
+// --- 2. DASHBOARD SCREEN (WITH PERCENTAGE STATS) ---
 function DashboardScreen({ user, setView, handleLogout, masterData }) {
   const [currentTime, setCurrentTime] = useState(new Date());
+  // STATE STATS
+  const [stats, setStats] = useState({ 
+    total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, 
+    total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0,
+    total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-'
+  });
+  const [loadingStats, setLoadingStats] = useState(true);
   
   // STATE NETWORK SPEED
   const [pingMs, setPingMs] = useState(0);
-  const [networkQuality, setNetworkQuality] = useState('checking'); // checking, good, fair, poor, offline
+  const [networkQuality, setNetworkQuality] = useState('checking');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // --- LOGIC NETWORK CHECK ---
+  const handleStatClick = (filterCode) => {
+      localStorage.setItem('dbAbsenFilter', filterCode);
+      setView('db_absen');
+  };
+
+  useEffect(() => { 
+    const fetchStats = async () => { 
+      setLoadingStats(true); 
+      try { 
+        const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) }); 
+        const data = await res.json(); 
+        if (data.result === 'success') { 
+          const normalizedStats = {}; 
+          Object.keys(data.stats).forEach(key => { normalizedStats[key.toLowerCase()] = data.stats[key]; }); 
+          setStats({ ...data.stats, ...normalizedStats }); 
+        } 
+      } catch (e) { console.error("Gagal load stats"); } finally { setLoadingStats(false); }
+    }; 
+    if (user) fetchStats(); 
+  }, [user]);
+
   const checkNetworkSpeed = async () => {
       const startTime = Date.now();
       try {
-          // Kirim request ringan 'ping' ke server
-          await fetch(SCRIPT_URL, { 
-              method: 'POST', 
-              body: JSON.stringify({ action: 'ping' }) 
-          });
-          const endTime = Date.now();
-          const duration = endTime - startTime;
+          await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'ping' }) });
+          const duration = Date.now() - startTime;
           setPingMs(duration);
-
-          // Tentukan Kualitas Sinyal
-          if (duration < 500) setNetworkQuality('good');       // < 0.5 detik (Cepat)
-          else if (duration < 1500) setNetworkQuality('fair'); // < 1.5 detik (Sedang)
-          else setNetworkQuality('poor');                      // > 1.5 detik (Lambat)
-
-      } catch (error) {
-          setNetworkQuality('offline');
-          setPingMs(0);
-      }
+          if (duration < 500) setNetworkQuality('good');
+          else if (duration < 1500) setNetworkQuality('fair');
+          else setNetworkQuality('poor');
+      } catch (error) { setNetworkQuality('offline'); setPingMs(0); }
   };
+  useEffect(() => { checkNetworkSpeed(); const i = setInterval(checkNetworkSpeed, 10000); return () => clearInterval(i); }, []);
 
-  // Cek ping pertama kali load, lalu ulangi setiap 10 detik
-  useEffect(() => {
-      checkNetworkSpeed();
-      const intervalPing = setInterval(checkNetworkSpeed, 10000); 
-      return () => clearInterval(intervalPing);
-  }, []);
-
-  // Helper Warna & Text Sinyal
   const getNetworkUI = () => {
       switch(networkQuality) {
           case 'good': return { color: 'text-emerald-500 bg-emerald-50 border-emerald-200', text: 'Stabil', icon: Wifi };
@@ -958,7 +947,6 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
           default: return { color: 'text-blue-400 bg-blue-50 border-blue-200', text: 'Cek...', icon: Activity };
       }
   };
-
   const netUI = getNetworkUI();
   const NetIcon = netUI.icon;
 
@@ -976,17 +964,50 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
     { id: 'ijin_cuti', label: 'Form Ijin/Cuti/Sakit', icon: FileText, color: 'bg-blue-500', action: () => { localStorage.setItem('absenType', 'Ijin'); setView('form'); } },
     { id: 'riwayat', label: 'Riwayat & Laporan', icon: History, color: 'bg-amber-500', action: () => setView('history') },
   ];
+  
+  const Skeleton = ({ className }) => ( <div className={`bg-gray-200 animate-pulse rounded ${className}`}></div> );
+
+  // --- STAT CARD COMPONENT ---
+  const StatCard = ({ onClick, colorClass, icon: Icon, title, value, subValue, bgClass, iconColor }) => (
+    <div onClick={onClick} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group cursor-pointer hover:shadow-md transition-all active:scale-95 min-h-[110px]">
+        <div className={`absolute -right-8 -bottom-8 opacity-40 group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 ${iconColor} pointer-events-none`}>
+            <Icon className="w-32 h-32" />
+        </div>
+        <div className={`${bgClass} ${iconColor} p-2.5 rounded-xl mb-2 relative z-10 shadow-sm border border-white/50 backdrop-blur-sm`}>
+            <Icon className="w-5 h-5"/>
+        </div>
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight relative z-10 bg-white/80 px-2 py-0.5 rounded-full backdrop-blur-sm mb-1">{title}</span>
+        {loadingStats ? ( <Skeleton className="h-6 w-10 mt-1 relative z-10" /> ) : (
+             <div className="relative z-10">
+                 {subValue ? (
+                    <div className="flex flex-col items-center bg-white/60 px-2 py-1 rounded-lg backdrop-blur-sm">
+                        <p className="text-xl font-black text-slate-800 leading-none">{value}</p>
+                        <span className={`text-[9px] font-extrabold ${iconColor}`}>{subValue}</span>
+                    </div>
+                 ) : ( <p className="text-2xl font-black text-slate-800 drop-shadow-sm">{value}</p> )}
+             </div>
+        )}
+    </div>
+  );
+
+  // --- PERHITUNGAN PERSENTASE STATISTIK ---
+  // Total Tidak Hadir = Sakit + Alpa + Cuti + Cuti Bersama
+  const totalTidakHadir = (stats.total_sakit || 0) + (stats.total_alpa || 0) + (stats.total_cuti || 0) + (stats.total_cuti_bersama || 0);
+  // Total Hari Kerja = Total Hadir (Sudah termasuk Ijin/Telat) + Total Tidak Hadir
+  const totalHariKerja = (stats.total_hadir || 0) + totalTidakHadir;
+  
+  // Hitung Persen (hindari pembagian 0)
+  const persenHadir = totalHariKerja > 0 ? Math.round(((stats.total_hadir || 0) / totalHariKerja) * 100) : 0;
+  const persenTidakHadir = totalHariKerja > 0 ? Math.round((totalTidakHadir / totalHariKerja) * 100) : 0;
 
   return (
     <div className="flex flex-col h-full bg-slate-50 font-sans">
       
-      {/* HEADER DENGAN NETWORK INDICATOR */}
+      {/* HEADER */}
       <div className="bg-white p-5 rounded-b-3xl shadow-sm border-b border-gray-100 pb-6 relative overflow-hidden">
-        {/* Dekorasi Background Halus */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full blur-3xl -mr-10 -mt-10 opacity-50"></div>
-        
         <div className="flex justify-between items-start relative z-10">
-          <div>
+           <div>
              <h1 className="text-xl font-extrabold text-slate-800 tracking-tight">{getGreeting()},</h1>
              <p className="text-sm font-medium text-slate-500">{user.nama}</p>
              <div className="flex items-center gap-2 mt-1">
@@ -994,86 +1015,165 @@ function DashboardScreen({ user, setView, handleLogout, masterData }) {
                 <span className="text-[10px] bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full border border-indigo-100 font-bold">{user.lokasi || 'All'}</span>
              </div>
           </div>
-          
-          {/* INDIKATOR NETWORK SPEED (SWEET LOOK) */}
           <div className="flex flex-col items-end gap-1">
               <button onClick={handleLogout} className="bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors mb-1">
-                <LogOut className="w-4 h-4 text-slate-600" />
+                 <LogOut className="w-4 h-4 text-slate-600" />
               </button>
-              
-              <div 
-                onClick={checkNetworkSpeed} 
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${netUI.color} transition-all cursor-pointer active:scale-95 shadow-sm`}
-                title="Klik untuk refresh sinyal"
-              >
+              <div onClick={checkNetworkSpeed} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${netUI.color} transition-all cursor-pointer active:scale-95 shadow-sm`}>
                   <NetIcon className={`w-3 h-3 ${networkQuality === 'checking' ? 'animate-pulse' : ''}`} />
                   <div className="flex flex-col items-end leading-none">
                       <span className="text-[9px] font-bold uppercase">{netUI.text}</span>
-                      {networkQuality !== 'offline' && networkQuality !== 'checking' && (
-                          <span className="text-[8px] font-mono opacity-80">{pingMs}ms</span>
-                      )}
+                      {networkQuality !== 'offline' && networkQuality !== 'checking' && ( <span className="text-[8px] font-mono opacity-80">{pingMs}ms</span> )}
                   </div>
               </div>
           </div>
         </div>
       </div>
 
-      {/* JAM DIGITAL BESAR */}
+      {/* JAM DIGITAL */}
       <div className="px-6 -mt-4 relative z-10">
          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-5 rounded-2xl shadow-lg shadow-blue-200 flex items-center justify-between">
             <div>
                 <p className="text-xs font-medium text-blue-100 mb-0.5 opacity-80">Waktu Sekarang</p>
                 <div className="text-3xl font-black tracking-widest font-mono">
-                    {currentTime.toLocaleTimeString('id-ID', { hour12: false, hour: '2-digit', minute: '2-digit' })}
+                   {currentTime.toLocaleTimeString('id-ID', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                 </div>
                 <p className="text-[10px] font-medium text-blue-200 mt-1">
                     {currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                 </p>
-            </div>
-            <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm">
-                <Clock className="w-8 h-8 text-white opacity-90" />
-            </div>
+           </div>
+            <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm"><Clock className="w-8 h-8 text-white opacity-90" /></div>
          </div>
       </div>
 
-      {/* MENU GRID */}
+      {/* --- KONTEN UTAMA --- */}
       <div className="flex-1 overflow-y-auto p-6">
+        
+        {/* HEADER STATISTIK */}
+        <div className="flex justify-between items-end mb-3">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm"><Activity className="w-4 h-4 text-blue-500"/> Statistik</h3>
+            <span className="text-[9px] bg-white border border-gray-200 px-3 py-1 rounded-full text-slate-500 font-medium shadow-sm">
+                {loadingStats ? "Sinkronisasi..." : stats.periode_db}
+            </span>
+        </div>
+
+        {/* --- [BARU] CARD PERSENTASE KEHADIRAN --- */}
+        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-5 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full blur-2xl -mr-10 -mt-10 opacity-60"></div>
+            
+            <div className="flex justify-between items-center mb-3 relative z-10">
+                <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Hari Kerja</p>
+                    <p className="text-2xl font-black text-slate-800">{loadingStats ? '...' : totalHariKerja} <span className="text-xs font-bold text-slate-400">Hari</span></p>
+                </div>
+                <div className="text-right">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Performance</p>
+                    <div className="flex items-center gap-1 justify-end">
+                        <span className={`text-lg font-black ${persenHadir >= 90 ? 'text-emerald-600' : (persenHadir >= 70 ? 'text-amber-500' : 'text-red-500')}`}>
+                            {loadingStats ? '...' : `${persenHadir}%`}
+                        </span>
+                        <PieChart className="w-4 h-4 text-slate-300"/>
+                    </div>
+                </div>
+            </div>
+
+            {/* PROGRESS BAR */}
+            <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden flex relative z-10">
+                <div 
+                    className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full transition-all duration-1000" 
+                    style={{ width: `${persenHadir}%` }}
+                ></div>
+                <div 
+                    className="bg-gradient-to-r from-red-400 to-red-600 h-full transition-all duration-1000" 
+                    style={{ width: `${persenTidakHadir}%` }}
+                ></div>
+            </div>
+            
+            <div className="flex justify-between mt-2 text-[10px] font-bold relative z-10">
+                <div className="flex items-center gap-1.5 text-emerald-700">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    Hadir: {loadingStats ? '-' : stats.total_hadir} ({persenHadir}%)
+                </div>
+                <div className="flex items-center gap-1.5 text-red-700">
+                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                    Absen: {loadingStats ? '-' : totalTidakHadir} ({persenTidakHadir}%)
+                </div>
+            </div>
+        </div>
+        {/* ----------------------------------------- */}
+
+        {/* GRID STATISTIK DETAIL */}
+        <div className="grid grid-cols-3 gap-3 mb-5">
+            <StatCard 
+                onClick={() => handleStatClick('HADIR_ALL')}
+                icon={CheckCircle} title="Hadir" value={stats.total_hadir || 0}
+                bgClass="bg-emerald-50" iconColor="text-emerald-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('T')}
+                icon={Clock} title="Telat" 
+                value={`${stats.total_telat_freq || 0}x`} subValue={`${stats.total_telat_menit || 0}m`}
+                bgClass="bg-orange-50" iconColor="text-orange-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('I')}
+                icon={FileText} title="Ijin" value={stats.total_ijin || 0}
+                bgClass="bg-blue-50" iconColor="text-blue-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('C')}
+                icon={Calendar} title="Cuti" value={stats.total_cuti || 0}
+                bgClass="bg-pink-50" iconColor="text-pink-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('CB')}
+                icon={CalendarDays} title="Cuti Bersama" value={stats.total_cuti_bersama || 0}
+                bgClass="bg-purple-50" iconColor="text-purple-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('S')}
+                icon={AlertTriangle} title="Sakit" value={stats.total_sakit || 0}
+                bgClass="bg-orange-50" iconColor="text-orange-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('A')}
+                icon={X} title="Alpa" value={stats.total_alpa || 0}
+                bgClass="bg-red-50" iconColor="text-red-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('Si')}
+                icon={DoorOpen} title="No Scan IN" value={stats.total_no_scan_in || 0}
+                bgClass="bg-yellow-50" iconColor="text-yellow-600"
+            />
+            <StatCard 
+                onClick={() => handleStatClick('So')}
+                icon={DoorClosed} title="No Scan OUT" value={stats.total_no_scan_out || 0}
+                bgClass="bg-rose-50" iconColor="text-rose-600"
+            />
+        </div>
+
         <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider flex items-center gap-2">
             <Activity className="w-4 h-4 text-blue-500"/> Menu Utama
         </h3>
         <div className="grid grid-cols-2 gap-4">
           {MENU_ITEMS.map(item => (
-            <button
-              key={item.id}
-              onClick={item.action}
-              className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-3 hover:shadow-md hover:border-blue-200 transition-all group active:scale-[0.98]"
-            >
+            <button key={item.id} onClick={item.action} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-3 hover:shadow-md hover:border-blue-200 transition-all group active:scale-[0.98]">
               <div className={`${item.color} w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md group-hover:scale-110 transition-transform`}>
                 <item.icon className="w-6 h-6" />
               </div>
               <span className="text-xs font-bold text-slate-600 text-center group-hover:text-blue-600 leading-tight px-2">{item.label}</span>
             </button>
           ))}
-          
-          {/* Menu Khusus Admin: Input Running Shift (Contoh) */}
           {(user.role === 'admin' || user.role === 'hrd') && (
-               <button
-                  onClick={() => { localStorage.setItem('absenType', 'Running Shift'); setView('form'); }} 
-                  className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-3 hover:shadow-md hover:border-blue-200 transition-all group active:scale-[0.98]"
-               >
+               <button onClick={() => { localStorage.setItem('absenType', 'Running Shift'); setView('form'); }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-3 hover:shadow-md hover:border-blue-200 transition-all group active:scale-[0.98]">
                   <div className="bg-indigo-500 w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md group-hover:scale-110 transition-transform">
                     <CalendarCheck className="w-6 h-6" />
                   </div>
                   <span className="text-xs font-bold text-slate-600 text-center group-hover:text-blue-600 leading-tight px-2">Input Jadwal Shift</span>
-               </button>
+              </button>
           )}
-
-          {/* Menu Khusus Admin: Input Absen Manual Tally */}
           {(user.role === 'admin' || user.role === 'hrd') && (
-               <button
-                  onClick={() => { localStorage.setItem('absenType', 'Absen Manual'); setView('form'); }} 
-                  className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-3 hover:shadow-md hover:border-blue-200 transition-all group active:scale-[0.98]"
-               >
+               <button onClick={() => { localStorage.setItem('absenType', 'Absen Manual'); setView('form'); }} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center gap-3 hover:shadow-md hover:border-blue-200 transition-all group active:scale-[0.98]">
                   <div className="bg-pink-500 w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md group-hover:scale-110 transition-transform">
                     <Fingerprint className="w-6 h-6" />
                   </div>
@@ -3246,7 +3346,7 @@ function ChangePasswordScreen({ user, setView }) {
   );
 }
 
-// --- 9. DB ABSEN SCREEN (4 DAYS LIMIT) ---
+// --- 9. DB ABSEN SCREEN (FIXED FILTER HADIR GABUNGAN) ---
 function DbAbsenScreen({ user, setView }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3258,6 +3358,16 @@ function DbAbsenScreen({ user, setView }) {
   const [filterStatus, setFilterStatus] = useState('All');
   const [showFilter, setShowFilter] = useState(false);
 
+  // --- CEK AUTO FILTER DARI DASHBOARD ---
+  useEffect(() => {
+      const autoFilter = localStorage.getItem('dbAbsenFilter');
+      if (autoFilter) {
+          setFilterStatus(autoFilter); 
+          setShowFilter(true); // Buka panel filter otomatis
+          localStorage.removeItem('dbAbsenFilter');
+      }
+  }, []);
+
   const KETERANGAN_MAP = {
       'H': 'Hadir', 'T': 'Terlambat', 'O': 'Off / Libur', 'CB': 'Cuti Bersama',
       'PC': 'Pulang Cepat', 'Si': 'Tdk Absen IN', 'So': 'Tdk Absen OUT',
@@ -3267,8 +3377,7 @@ function DbAbsenScreen({ user, setView }) {
       'SiPC': 'Tdk Absen IN & Pulang Cepat', 'AC': 'Alpa (Lebih Cuti)',
       'EO': 'Extra Ordinary', 'NF': 'Tidak Absen'
   };
-
-  // Dynamic Filter Options
+  
   const availableStatusOptions = [...new Set(list.map(item => item.symbol))]
       .filter(s => s && s.trim() !== '')
       .sort();
@@ -3336,7 +3445,9 @@ function DbAbsenScreen({ user, setView }) {
       } catch (e) { return null; }
   };
 
+  // --- LOGIKA FILTER UTAMA ---
   const filteredList = list.filter(item => {
+    // 1. Filter Tanggal
     let matchDate = true;
     if (filterStart || filterEnd) {
         const itemDateObj = parseDate(item.tanggal); 
@@ -3347,8 +3458,21 @@ function DbAbsenScreen({ user, setView }) {
              matchDate = (!startTime || itemTime >= startTime) && (!endTime || itemTime <= endTime);
         } else { matchDate = false; }
     }
+
+    // 2. Filter Status (KOREKSI DISINI)
     let matchStatus = true;
-    if (filterStatus !== 'All') { matchStatus = item.symbol === filterStatus; }
+    if (filterStatus !== 'All') { 
+        if (filterStatus === 'HADIR_ALL') {
+             // [PENTING] List ini harus SAMA dengan Google Apps Script (handleGetStats)
+             const included = ['H', 'I', 'T', 'TSi', 'TSo', 'TPC', 'SiPC', 'So', 'Si', 'PC'];
+             
+             // Cek apakah symbol item ada di dalam list included
+             matchStatus = included.includes(item.symbol);
+        } else {
+             // Filter biasa (single symbol)
+             matchStatus = item.symbol === filterStatus; 
+        }
+    }
     return matchDate && matchStatus;
   });
 
@@ -3375,6 +3499,7 @@ function DbAbsenScreen({ user, setView }) {
 
   return (
     <div className="p-4 h-full overflow-y-auto pb-24 bg-gray-50">
+      {/* HEADER */}
       <div className="flex items-center justify-between mb-6 sticky top-0 bg-gray-50 z-10 py-2">
         <div>
             <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Data Mesin</h2>
@@ -3398,6 +3523,7 @@ function DbAbsenScreen({ user, setView }) {
         </div>
       </div>
 
+      {/* FILTER PANEL */}
       {showFilter && (
         <div className="bg-white p-5 rounded-2xl shadow-lg shadow-blue-50/50 border border-blue-100 mb-6 animate-in slide-in-from-top-4 duration-300">
             <div className="flex justify-between items-center mb-4">
@@ -3408,6 +3534,7 @@ function DbAbsenScreen({ user, setView }) {
                     </button>
                 )}
             </div>
+            
             <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                     <label className="text-[10px] font-bold text-slate-400 block mb-1">Mulai</label>
@@ -3418,20 +3545,24 @@ function DbAbsenScreen({ user, setView }) {
                     <input type="date" className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} />
                 </div>
             </div>
+
+            {/* DROPDOWN STATUS */}
             <div>
                 <label className="text-[10px] font-bold text-slate-400 block mb-1">Status Kehadiran</label>
                 <select className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
                     <option value="All">Semua Status</option>
+                    
+                    {/* OPSI SPESIAL UNTUK HADIR GABUNGAN */}
+                    <option value="HADIR_ALL" className="font-bold text-emerald-600">☑️ Hadir (Total)</option>
+
                     {availableStatusOptions.map((sym) => (
                         <option key={sym} value={sym}>
                             {KETERANGAN_MAP[sym] || sym} ({sym})
                         </option>
                     ))}
-                    {availableStatusOptions.length === 0 && (
-                        <option disabled>Tidak ada status tersedia</option>
-                    )}
                 </select>
             </div>
+            
             <div className="mt-4 pt-3 border-t border-dashed border-gray-100 text-[10px] text-slate-400 text-center font-medium">
                 Menampilkan <strong>{filteredList.length}</strong> data presensi
             </div>
@@ -3459,10 +3590,9 @@ function DbAbsenScreen({ user, setView }) {
                 const style = getStatusStyle(item.symbol);
                 const dateParts = splitDate(item.tanggal, item.week);
                 const keterangan = KETERANGAN_MAP[item.symbol] || '-';
-                
                 const isLateStatus = item.symbol && (item.symbol.toUpperCase().includes('T') || item.symbol.toUpperCase().includes('SI') || item.symbol.toUpperCase().includes('SO'));
                 
-                // --- LOGIKA BATAS 4 HARI ---
+                // LOGIKA TOMBOL FORM (MAX 4 HARI)
                 let showButton = false;
                 if (isLateStatus) {
                     const itemDate = parseDate(item.tanggal);
@@ -3470,17 +3600,13 @@ function DbAbsenScreen({ user, setView }) {
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
                         itemDate.setHours(0, 0, 0, 0);
-                        
                         const diffTime = today - itemDate;
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                        
-                        // Perubahan di sini: diffDays <= 4
                         if (diffDays >= 0 && diffDays <= 4) {
                             showButton = true;
                         }
                     }
                 }
-                // ---------------------------
 
                 const isIjinDisabled = ijinCount >= 4;
 
@@ -3537,7 +3663,6 @@ function DbAbsenScreen({ user, setView }) {
                             </div>
                         </div>
                         
-                        {/* HANYA TAMPIL JIKA TERLAMBAT & DALAM 4 HARI */}
                         {showButton && (
                             <div className="px-3 pb-3 pt-1">
                                 <button 
