@@ -11,7 +11,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
   MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
   Printer, FileSpreadsheet, Loader2, Wifi, WifiOff, CalendarDays, DoorOpen, DoorClosed, 
-  CloudSun, KeyRound, ScanLine, Lock, RefreshCcw,
+  CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone, 
 } from 'lucide-react';
 
 import { SCRIPT_URL } from './config/constants';
@@ -210,6 +210,7 @@ export default function AppAbsensi() {
           {view === 'ganti_password' && <ChangePasswordScreen user={user} setView={setView} />}
           {view === 'remark' && <RemarkScreen user={user} setView={setView} />}
           {view === 'input_shift' && <ShiftScheduleScreen user={user} setView={setView} masterData={masterData} />}
+          {view === 'analysis' && <AnalysisScreen user={user} setView={setView} />}
         </div>
       </div>
     </div>
@@ -912,6 +913,281 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
 
 // Pastikan import Wifi dan WifiOff ada di bagian paling atas file App.js
 // import { ..., Wifi, WifiOff, ... } from 'lucide-react';
+
+// --- SCREEN ANALISA DATA (UPDATE V10: ACTION DELETE & EDIT) ---
+function AnalysisScreen({ user, setView }) {
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    const [dataList, setDataList] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [hasSearched, setHasSearched] = useState(false);
+
+    // STATE FILTER
+    const [filterNama, setFilterNama] = useState('');
+    const [filterDivisi, setFilterDivisi] = useState('');
+    const [filterManual, setFilterManual] = useState('');
+    const [filterStatus, setFilterStatus] = useState(''); 
+
+    // STATE EDIT MODAL
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editTarget, setEditTarget] = useState(null); // Data yg mau diedit
+    const [newTypeInput, setNewTypeInput] = useState('');
+    const [loadingAction, setLoadingAction] = useState(false);
+
+    useEffect(() => {
+        if (user.role !== 'admin') { alert("Akses Ditolak!"); setView('dashboard'); }
+    }, [user, setView]);
+
+    // --- FETCH DATA ---
+    const handleAnalyze = async () => {
+        if (!startDate || !endDate) return alert("Pilih Tanggal dulu.");
+        setLoading(true); setHasSearched(true);
+        try {
+            const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_analysis_data', startDate, endDate, roleRequester: user.role }) });
+            const result = await res.json();
+            if (result.result === 'success') setDataList(result.list);
+            else alert(result.message);
+        } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
+    };
+
+    // --- ACTION: DELETE ---
+    const handleDelete = async (uuid, nama) => {
+        if (!window.confirm(`Hapus data manual milik "${nama}"?\n\nPERINGATAN: Data ini akan hilang permanen dari database.`)) return;
+        
+        setLoadingAction(true);
+        try {
+            const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absensi', uuid, roleRequester: user.role }) });
+            const data = await res.json();
+            if (data.result === 'success') {
+                alert(data.message);
+                handleAnalyze(); // Refresh Data
+            } else { alert(data.message); }
+        } catch (e) { alert("Error Hapus."); } finally { setLoadingAction(false); }
+    };
+
+    // --- ACTION: PREPARE EDIT ---
+    const openEditModal = (item) => {
+        setEditTarget(item);
+        setNewTypeInput(item.tipeManual); // Isi default dengan tipe saat ini
+        setIsEditModalOpen(true);
+    };
+
+    // --- ACTION: SUBMIT EDIT ---
+    const handleSaveEdit = async () => {
+        if (!editTarget) return;
+        setLoadingAction(true);
+        try {
+            const res = await fetch(SCRIPT_URL, { 
+                method: 'POST', 
+                body: JSON.stringify({ 
+                    action: 'update_absensi', 
+                    uuid: editTarget.uuid, 
+                    newType: newTypeInput, 
+                    roleRequester: user.role 
+                }) 
+            });
+            const data = await res.json();
+            if (data.result === 'success') {
+                alert(data.message);
+                setIsEditModalOpen(false);
+                handleAnalyze(); // Refresh Data
+            } else { alert(data.message); }
+        } catch (e) { alert("Error Update."); } finally { setLoadingAction(false); }
+    };
+
+    // --- FILTER LOGIC ---
+    const checkMultiFilter = (itemValue, filterInput) => {
+        if (!filterInput) return true;
+        if (!itemValue) return false;
+        const keywords = filterInput.toLowerCase().split(',').map(k => k.trim()).filter(k => k !== '');
+        return keywords.some(keyword => itemValue.toLowerCase().includes(keyword));
+    };
+
+    const filteredList = dataList.filter(item => {
+        return checkMultiFilter(item.nama, filterNama) && checkMultiFilter(item.divisi, filterDivisi) &&
+               checkMultiFilter(item.tipeManual, filterManual) && checkMultiFilter(item.status, filterStatus);
+    });
+
+    const getStatusColor = (status) => {
+        const s = String(status).toLowerCase();
+        if (s.includes('approve')) return 'bg-green-100 text-green-700 border-green-200';
+        if (s.includes('reject')) return 'bg-red-100 text-red-700 border-red-200';
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+    };
+
+    // --- EXPORT FUNCTION ---
+    const handleExportExcel = () => {
+        if (filteredList.length === 0) return alert("Kosong.");
+        const dataToExport = filteredList.map((item, index) => ({
+            "No": index + 1, "Nama": item.nama, "Dept": item.divisi, "Tgl": item.tanggal,
+            "Manual": item.tipeManual, "Mesin": item.simbolMesin, "Scan": item.waktuMesin, "Status": item.status
+        }));
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Analisa");
+        XLSX.writeFile(wb, `Analisa_${startDate}.xlsx`);
+    };
+
+    const handleExportPDF = () => {
+        if (filteredList.length === 0) return alert("Kosong.");
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        doc.text(`Analisa Data: ${startDate} s/d ${endDate}`, 14, 15);
+        autoTable(doc, {
+            head: [["No", "Nama", "Dept", "Tgl", "Manual", "Mesin", "Scan", "Status"]],
+            body: filteredList.map((i, idx) => [idx+1, i.nama, i.divisi, i.tanggal, i.tipeManual, i.simbolMesin, i.waktuMesin, i.status]),
+            startY: 20, theme: 'grid'
+        });
+        doc.save(`Analisa_${startDate}.pdf`);
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col font-sans">
+            {/* HEADER */}
+            <div className="bg-white border-b border-gray-300 px-6 py-4 shadow-sm flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                    <div className="bg-rose-100 p-2 rounded-lg"><FileSpreadsheet className="w-6 h-6 text-rose-600" /></div>
+                    <div><h2 className="text-xl font-extrabold text-slate-800">Analisa Data Absensi</h2><p className="text-xs text-slate-500 font-medium">Monitoring & Koreksi Data</p></div>
+                </div>
+                <button onClick={() => setView('dashboard')} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition"><LogOut className="w-4 h-4 rotate-180" /> Tutup</button>
+            </div>
+
+            {/* CONTROL BAR */}
+            <div className="bg-white border-b border-gray-200 px-6 py-4 flex flex-wrap gap-4 items-end shrink-0">
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Mulai</label><input type="date" className="border p-2 rounded-lg text-sm font-bold" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
+                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sampai</label><input type="date" className="border p-2 rounded-lg text-sm font-bold" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+                <button onClick={handleAnalyze} disabled={loading} className="bg-slate-800 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition flex items-center gap-2 shadow-lg shadow-slate-200">
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>} Analisa
+                </button>
+            </div>
+
+            {/* MAIN CONTENT */}
+            <div className="flex-1 overflow-hidden flex flex-col px-6 py-4 max-w-7xl mx-auto w-full">
+                {hasSearched && (
+                    <div className="flex-1 bg-white rounded-xl shadow-md border border-gray-300 flex flex-col overflow-hidden">
+                        {/* FILTER */}
+                        <div className="bg-slate-50 p-3 border-b border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-3 shrink-0">
+                            <input type="text" placeholder="Filter Nama..." className="text-xs p-2 border rounded" value={filterNama} onChange={e => setFilterNama(e.target.value)}/>
+                            <input type="text" placeholder="Filter Divisi..." className="text-xs p-2 border rounded" value={filterDivisi} onChange={e => setFilterDivisi(e.target.value)}/>
+                            <input type="text" placeholder="Filter Manual..." className="text-xs p-2 border rounded" value={filterManual} onChange={e => setFilterManual(e.target.value)}/>
+                            <input type="text" placeholder="Filter Status..." className="text-xs p-2 border rounded" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}/>
+                        </div>
+
+                        {/* EXPORT BAR */}
+                        <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center shrink-0">
+                            <span className="text-xs font-bold text-gray-600">Hasil: {filteredList.length} Rows</span>
+                            <div className="flex gap-2">
+                                <button onClick={handleExportExcel} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm">Excel</button>
+                                <button onClick={handleExportPDF} className="flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm">PDF</button>
+                            </div>
+                        </div>
+
+                        {/* TABLE */}
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left border-collapse table-fixed">
+                                <thead className="sticky top-0 z-10 shadow-sm">
+                                    <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
+                                        <th className="p-3 border-b font-bold w-10 text-center">No</th>
+                                        <th className="p-3 border-b font-bold w-1/4">Nama</th>
+                                        <th className="p-3 border-b font-bold w-24">Tanggal</th>
+                                        <th className="p-3 border-b font-bold text-center w-20 bg-blue-50">Manual</th>
+                                        <th className="p-3 border-b font-bold text-center w-20 bg-orange-50">Mesin</th>
+                                        <th className="p-3 border-b font-bold w-32 text-center">Scan</th>
+                                        <th className="p-3 border-b font-bold w-24">Status</th>
+                                        <th className="p-3 border-b font-bold w-24 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-sm divide-y divide-gray-100 bg-white">
+                                    {filteredList.map((item, idx) => (
+                                        <tr key={idx} className="hover:bg-gray-50 group">
+                                            <td className="p-3 text-center font-mono text-gray-500 border-r">{idx + 1}</td>
+                                            <td className="p-3 font-bold text-slate-700 border-r truncate">{item.nama}</td>
+                                            <td className="p-3 font-medium border-r">{item.tanggal}</td>
+                                            <td className="p-3 text-center bg-blue-50/20 border-r font-bold text-blue-700 text-xs">{item.tipeManual}</td>
+                                            <td className="p-3 text-center bg-orange-50/20 border-r font-bold text-orange-700 text-xs">{item.simbolMesin}</td>
+                                            <td className="p-3 text-center border-r font-mono text-[10px]">{item.waktuMesin}</td>
+                                            <td className="p-3 border-r"><span className={`text-[10px] font-bold px-2 py-1 rounded-md border ${getStatusColor(item.status)}`}>{item.status}</span></td>
+                                            
+                                            {/* TOMBOL AKSI */}
+                                            <td className="p-3 text-center">
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <button 
+                                                        onClick={() => openEditModal(item)}
+                                                        className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition border border-blue-200" 
+                                                        title="Edit Data Manual"
+                                                    >
+                                                        <Edit className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDelete(item.uuid, item.nama)}
+                                                        className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 transition border border-red-200" 
+                                                        title="Hapus Data Manual"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* --- MODAL EDIT --- */}
+            {isEditModalOpen && (
+                <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95">
+                        <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <Edit className="w-5 h-5 text-blue-600" /> Edit Data Manual
+                        </h3>
+                        
+                        <div className="space-y-4">
+                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                <p className="text-xs text-slate-500 mb-1">Karyawan</p>
+                                <p className="font-bold text-slate-800">{editTarget?.nama}</p>
+                                <p className="text-xs text-slate-500 mt-2 mb-1">Tanggal</p>
+                                <p className="font-bold text-slate-800">{editTarget?.tanggal}</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 mb-2">Ubah Tipe Absen Menjadi:</label>
+                                <select 
+                                    className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                    value={newTypeInput}
+                                    onChange={(e) => setNewTypeInput(e.target.value)}
+                                >
+                                    {['Hadir', 'Sakit', 'Ijin', 'Cuti', 'Dinas', 'Lembur', 'Off', 'Tukar Shift', 'Standby', 'Cuti EO', 'Off (Tukar Shift)'].map(opt => (
+                                        <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button 
+                                    onClick={() => setIsEditModalOpen(false)}
+                                    className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-xs hover:bg-gray-200 transition"
+                                >
+                                    Batal
+                                </button>
+                                <button 
+                                    onClick={handleSaveEdit}
+                                    disabled={loadingAction}
+                                    className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-bold text-xs hover:bg-blue-700 transition flex justify-center items-center gap-2 shadow-lg shadow-blue-200"
+                                >
+                                    {loadingAction ? <Loader2 className="w-4 h-4 animate-spin"/> : <Check className="w-4 h-4"/>}
+                                    Simpan Perubahan
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 
 // --- 2. DASHBOARD SCREEN (FIXED SHADOW ICONS) ---
 function DashboardScreen({ user, setView, handleLogout, masterData }) {
@@ -2958,17 +3234,18 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   );
 }
 
-// --- 6. ADMIN PANEL (DIPERBAIKI: TAMBAH MASTER USER & RESET PASSWORD) ---
+// --- 6. ADMIN PANEL (FIX: MENAMBAHKAN MENU ANALISA DATA) ---
 function AdminPanel({ user, setView, masterData }) {
-  const [activeTab, setActiveTab] = useState('user'); // Tab aktif
+  const [activeTab, setActiveTab] = useState('user'); 
   const [loading, setLoading] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false); 
   
-  // State untuk Fitur Reset Password
+  // State Reset Password
   const [adminUserList, setAdminUserList] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingList, setLoadingList] = useState(false);
 
-  // State Pengumuman & Tambah User (Lama)
+  // State Lainnya
   const [newsInput, setNewsInput] = useState('');
   const [userData, setUserData] = useState({ 
     username: '', password: '', nama: '', email: '', 
@@ -2980,7 +3257,7 @@ function AdminPanel({ user, setView, masterData }) {
 
   const LIST_LOKASI = ['Surabaya', 'Jakarta', 'Semarang', 'Cilegon', 'Citeureup', 'Makassar', 'Balikpapan', 'Medan', 'All'];
 
-  // --- LOGIC FETCH USER LIST (KHUSUS ADMIN) ---
+  // Logic Fetch User
   const fetchAdminUserList = async () => {
     setLoadingList(true);
     try {
@@ -2989,48 +3266,25 @@ function AdminPanel({ user, setView, masterData }) {
         body: JSON.stringify({ action: 'get_user_list_admin', roleRequester: user.role })
       });
       const data = await res.json();
-      if (data.result === 'success') {
-        setAdminUserList(data.list);
-      }
-    } catch (e) { console.error("Gagal load user list"); }
+      if (data.result === 'success') { setAdminUserList(data.list); }
+    } catch (e) { console.error("Gagal load user"); }
     finally { setLoadingList(false); }
   };
 
-  // Panggil fetch saat tab 'master_user' aktif
   useEffect(() => {
-    if (activeTab === 'master_user') {
-      fetchAdminUserList();
-    }
+    if (activeTab === 'master_user') fetchAdminUserList();
   }, [activeTab]);
 
-  // --- LOGIC RESET PASSWORD ---
   const handleResetPassword = async (uuid, namaUser) => {
-    if(!window.confirm(`Yakin ingin mereset password user "${namaUser}" menjadi "123"?`)) return;
-    
+    if(!window.confirm(`Reset password "${namaUser}" jadi "123"?`)) return;
     setLoading(true);
     try {
-      const res = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ 
-          action: 'reset_password_user', 
-          roleRequester: user.role,
-          targetUuid: uuid 
-        })
-      });
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'reset_password_user', roleRequester: user.role, targetUuid: uuid }) });
       const data = await res.json();
-      if (data.result === 'success') {
-        alert(data.message);
-      } else {
-        alert(data.message);
-      }
-    } catch (e) {
-      alert("Gagal koneksi ke server.");
-    } finally {
-      setLoading(false);
-    }
+      alert(data.message);
+    } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
   };
 
-  // --- LOGIC EXISTING (ADD USER, LOCATION, ETC) ---
   const handleLocationChange = (loc) => {
      let currentLocs = userData.lokasi ? userData.lokasi.split(',').map(l=>l.trim()).filter(l=>l!=='') : [];
      if (currentLocs.includes(loc)) { currentLocs = currentLocs.filter(l => l !== loc); } 
@@ -3044,9 +3298,9 @@ function AdminPanel({ user, setView, masterData }) {
     e.preventDefault(); setLoading(true);
     try {
       const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_user', roleRequester: user.role, ...userData }) }).then(r => r.json());
-      if(res.result === 'success') { alert('User Berhasil Ditambahkan!'); setUserData({ username: '', password: '', nama: '', email: '', divisi: 'Staff', role: 'karyawan', akses: [], noPayroll: '', sisaCuti: '', perusahaan: '', statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya' }); } 
+      if(res.result === 'success') { alert('User Ditambahkan!'); setUserData({ username: '', password: '', nama: '', email: '', divisi: 'Staff', role: 'karyawan', akses: [], noPayroll: '', sisaCuti: '', perusahaan: '', statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya' }); } 
       else { alert(res.message); }
-    } catch(e) { alert('Error koneksi server'); } finally { setLoading(false); }
+    } catch(e) { alert('Error koneksi'); } finally { setLoading(false); }
   };
   const handleAddMaster = async (e) => { 
     e.preventDefault(); setLoading(true);
@@ -3055,79 +3309,117 @@ function AdminPanel({ user, setView, masterData }) {
     } catch(e) { alert('Error'); } finally { setLoading(false); } 
   };
   const handleAddAnnouncement = async () => {
-    if (!newsInput.trim()) return alert("Isi informasi tidak boleh kosong!");
+    if (!newsInput.trim()) return alert("Isi kosong!");
     setLoading(true);
     try {
       const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_announcement', roleRequester: user.role, isi: newsInput }) }).then(r => r.json());
-      if (res.result === 'success') { alert("Pengumuman berhasil diterbitkan!"); setNewsInput(''); } else { alert(res.message); }
-    } catch (e) { alert("Gagal koneksi ke server."); } finally { setLoading(false); }
+      if (res.result === 'success') { alert("Terbit!"); setNewsInput(''); } else { alert(res.message); }
+    } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
   };
 
-  // Filter List User berdasarkan Search
   const filteredUsers = adminUserList.filter(u => 
     u.nama.toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(u.username).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const switchTab = (tabName) => { setActiveTab(tabName); setIsMenuOpen(false); };
+  
+  const getPageTitle = () => {
+      switch(activeTab) {
+          case 'user': return 'Tambah User Baru';
+          case 'master_user': return 'Master User (Reset)';
+          case 'master': return 'Master Data';
+          case 'news': return 'Broadcast Info HRD';
+          default: return 'Admin Panel';
+      }
+  };
+
   return (
-    <div className="p-4 h-full overflow-y-auto pb-20 bg-gray-50">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold ml-2 text-slate-800">Admin Panel</h2>
-        <BackButton onClick={() => setView('dashboard')} />
-      </div>
+    <div className="p-4 h-full overflow-y-auto pb-20 bg-gray-50 min-h-screen">
+      
+      {/* HEADER */}
+      <div className="flex items-center justify-between mb-6 relative z-40">
+        <div>
+            <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Admin Panel</h2>
+            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide mt-1">{getPageTitle()}</p>
+        </div>
 
-      {/* --- NAVIGASI TAB --- */}
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
-        <button onClick={() => setActiveTab('user')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'user' ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>+ User Baru</button>
-        
-        {/* TOMBOL TAB BARU */}
-        <button onClick={() => setActiveTab('master_user')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'master_user' ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>Master User (Reset)</button>
-        
-        {user.role === 'admin' && (
-            <button onClick={() => setActiveTab('master')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'master' ? 'bg-purple-600 text-white border-purple-600 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>+ Master Data</button>
-        )}
-        <button onClick={() => setActiveTab('news')} className={`flex-none px-4 py-2 text-xs font-bold rounded-full border transition-all ${activeTab === 'news' ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-slate-500 border-gray-200'}`}>Info HRD</button>
-      </div>
+        <div className="flex items-center gap-2">
+            <BackButton onClick={() => setView('dashboard')} />
 
-      {/* --- KONTEN TAB: MASTER USER (RESET PASSWORD) --- */}
+            {/* DROPDOWN MENU */}
+            <div className="relative">
+                <button 
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className="flex items-center gap-2 bg-slate-800 text-white pl-4 pr-3 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-slate-200 active:scale-95 transition-all hover:bg-slate-700"
+                >
+                    <Menu className="w-4 h-4" /> Menu
+                    <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                        <div className="p-1 bg-white">
+                            
+                            {/* 1. Tambah User */}
+                            <button onClick={() => switchTab('user')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'user' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-gray-50'}`}>
+                                <div className={`p-2 rounded-lg ${activeTab === 'user' ? 'bg-blue-100' : 'bg-gray-100'}`}><UserPlus className="w-4 h-4"/></div>
+                                Tambah User Baru
+                            </button>
+                            
+                            {/* 2. Master User (Reset) */}
+                            <button onClick={() => switchTab('master_user')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'master_user' ? 'bg-rose-50 text-rose-600' : 'text-slate-600 hover:bg-gray-50'}`}>
+                                <div className={`p-2 rounded-lg ${activeTab === 'master_user' ? 'bg-rose-100' : 'bg-gray-100'}`}><ShieldCheck className="w-4 h-4"/></div>
+                                Master User (Reset)
+                            </button>
+
+                            {/* 3. Analisa Data (LINK KE SCREEN LAIN) - INI YANG HILANG KEMARIN */}
+                            {user.role === 'admin' && (
+                                <button onClick={() => setView('analysis')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-gray-50 rounded-xl transition-all">
+                                    <div className="p-2 rounded-lg bg-gray-100 text-rose-600"><FileSpreadsheet className="w-4 h-4"/></div>
+                                    Analisa Data
+                                </button>
+                            )}
+
+                            {/* 4. Master Data */}
+                            {user.role === 'admin' && (
+                                <button onClick={() => switchTab('master')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'master' ? 'bg-purple-50 text-purple-600' : 'text-slate-600 hover:bg-gray-50'}`}>
+                                    <div className={`p-2 rounded-lg ${activeTab === 'master' ? 'bg-purple-100' : 'bg-gray-100'}`}><Database className="w-4 h-4"/></div>
+                                    Master Data
+                                </button>
+                            )}
+                            
+                            {/* 5. Info HRD */}
+                            <button onClick={() => switchTab('news')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'news' ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-gray-50'}`}>
+                                <div className={`p-2 rounded-lg ${activeTab === 'news' ? 'bg-orange-100' : 'bg-gray-100'}`}><Megaphone className="w-4 h-4"/></div>
+                                Info HRD
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+      </div>
+      
+      {isMenuOpen && <div className="fixed inset-0 z-30 bg-transparent" onClick={() => setIsMenuOpen(false)} />}
+
+      {/* KONTEN TAB: MASTER USER */}
       {activeTab === 'master_user' && (
         <div className="animate-in fade-in duration-300">
-           {/* Search Bar */}
            <div className="relative mb-4">
-              <input 
-                type="text" 
-                placeholder="Cari User (Nama / ID Fingerprint)..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-              />
+              <input type="text" placeholder="Cari User..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
               <Search className="w-5 h-5 text-gray-400 absolute left-3 top-3" />
            </div>
-
-           {loadingList ? (
-              <div className="text-center py-10"><Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto"/></div>
-           ) : (
+           {loadingList ? ( <div className="text-center py-10"><Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto"/></div> ) : (
              <div className="space-y-3">
-               {filteredUsers.length === 0 && <p className="text-center text-gray-400 text-sm py-4">User tidak ditemukan.</p>}
-               
                {filteredUsers.map((u, idx) => (
                  <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
                     <div>
                        <h4 className="font-bold text-slate-800">{u.nama}</h4>
-                       <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 font-mono font-bold">{u.username}</span>
-                          <span className="text-[10px] text-gray-400">• {u.divisi}</span>
-                       </div>
+                       <div className="flex items-center gap-2 mt-1"><span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 font-bold">{u.username}</span></div>
                     </div>
-                    
-                    <button 
-                      onClick={() => handleResetPassword(u.uuid, u.nama)}
-                      disabled={loading}
-                      className="flex items-center gap-1 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-xs font-bold border border-red-100 hover:bg-red-100 transition active:scale-95 shadow-sm"
-                      title="Reset Password ke '123'"
-                    >
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCcw className="w-4 h-4" />}
-                      Reset Pass
+                    <button onClick={() => handleResetPassword(u.uuid, u.nama)} disabled={loading} className="flex items-center gap-1 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-xs font-bold border border-red-100 hover:bg-red-100 active:scale-95 shadow-sm">
+                      <RefreshCcw className="w-4 h-4" /> Reset
                     </button>
                  </div>
                ))}
@@ -3136,88 +3428,62 @@ function AdminPanel({ user, setView, masterData }) {
         </div>
       )}
 
-      {/* --- KONTEN TAB: TAMBAH USER (LAMA - UI UPDATED) --- */}
+      {/* KONTEN TAB: TAMBAH USER */}
       {activeTab === 'user' && (
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
           <form onSubmit={handleAddUser} className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
-               <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Nama Karyawan" />
-               <input required type="email" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} placeholder="Email" />
+               <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Nama Karyawan" />
+               <input required type="email" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} placeholder="Email" />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="Username (ID Finger)" />
-              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white transition" value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Password" />
+              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="ID Finger" />
+              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Password" />
             </div>
             <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-              <label className="text-xs font-bold text-gray-700 block mb-1">Email Kepala Divisi (Approval)</label>
-              <input type="email" className="w-full p-2 border rounded bg-white text-sm" value={userData.emailAtasan} onChange={e => setUserData({...userData, emailAtasan: e.target.value})} placeholder="manager@perusahaan.com" />
-            </div>
-            {/* ... Sisa input form tambah user (sama seperti sebelumnya, hanya styling dirapikan) ... */}
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" className="w-full p-2 border rounded" value={userData.perusahaan} onChange={e => setUserData({...userData, perusahaan: e.target.value})} placeholder="Perusahaan" />
-              <input type="text" className="w-full p-2 border rounded" value={userData.statusKaryawan} onChange={e => setUserData({...userData, statusKaryawan: e.target.value})} placeholder="Status Karyawan" />
+              <label className="text-xs font-bold text-gray-700 block mb-1">Email Approval</label>
+              <input type="email" className="w-full p-2 border rounded bg-white text-sm" value={userData.emailAtasan} onChange={e => setUserData({...userData, emailAtasan: e.target.value})} placeholder="manager@email.com" />
             </div>
             <div className="grid grid-cols-2 gap-2">
-               <input type="text" className="w-full p-2 border rounded" value={userData.noPayroll} onChange={e => setUserData({...userData, noPayroll: e.target.value})} placeholder="No Payroll" />
-               <input type="number" className="w-full p-2 border rounded" value={userData.sisaCuti} onChange={e => setUserData({...userData, sisaCuti: e.target.value})} placeholder="Sisa Cuti" />
+                <select className="w-full p-2 border rounded text-sm" value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>{masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}</select>
+                <select className="w-full p-2 border rounded text-sm" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>{masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}</select>
             </div>
-            {/* Divisi & Role */}
-            <div className="grid grid-cols-2 gap-2">
-                <select className="w-full p-2 border rounded text-sm" value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>
-                  {masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}
-                  {masterData.divisions.length === 0 && <option>Staff</option>}
-                </select>
-                <select className="w-full p-2 border rounded text-sm" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>
-                  {masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}
-                </select>
-            </div>
-            {/* Akses Lokasi */}
             <div className="bg-gray-50 p-3 rounded border border-gray-200">
                 <label className="text-xs font-bold text-gray-700 block mb-2">Akses Lokasi</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {LIST_LOKASI.map((loc) => (
-                    <label key={loc} className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={userData.lokasi && userData.lokasi.includes(loc)} onChange={() => handleLocationChange(loc)} className="w-3 h-3 text-blue-600 rounded" />{loc}</label>
-                  ))}
+                  {LIST_LOKASI.map((loc) => ( <label key={loc} className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={userData.lokasi && userData.lokasi.includes(loc)} onChange={() => handleLocationChange(loc)} className="w-3 h-3 text-blue-600 rounded" />{loc}</label> ))}
                 </div>
             </div>
-            {/* Akses Menu */}
-             <div className="border p-3 rounded-lg bg-gray-50">
+            <div className="border p-3 rounded-lg bg-gray-50">
               <label className="text-xs font-bold text-gray-700 block mb-2">Akses Menu:</label>
               <div className="grid grid-cols-2 gap-2">
                 {masterData.menus.map(item => ( <label key={item.value} className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={userData.akses.includes(item.value)} onChange={() => handleCheckboxChange(item.value)} className="w-3 h-3 text-blue-600 rounded" />{item.label}</label> ))}
               </div>
             </div>
-
-            <button type="submit" disabled={loading} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-700 transition flex justify-center items-center gap-2">
-              {loading ? 'Menyimpan...' : 'Simpan User Baru'}
-            </button>
+            <button type="submit" disabled={loading} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-700 transition">{loading ? 'Menyimpan...' : 'Simpan User Baru'}</button>
           </form>
         </div>
       )}
 
-      {/* --- KONTEN TAB: MASTER DATA (LAMA) --- */}
+      {/* KONTEN TAB: MASTER DATA */}
       {activeTab === 'master' && (
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
           <form onSubmit={handleAddMaster} className="space-y-4">
-            <div>
-              <label className="text-xs text-gray-500">Kategori</label>
-              <select className="w-full p-2 border rounded" value={masterInput.kategori} onChange={e => setMasterInput({...masterInput, kategori: e.target.value})}>
+            <select className="w-full p-2 border rounded" value={masterInput.kategori} onChange={e => setMasterInput({...masterInput, kategori: e.target.value})}>
                 <option value="Menu">Menu Absensi</option><option value="Role">Role User</option><option value="Divisi">Divisi</option><option value="Shift">Jam Shift</option>
-              </select>
-            </div>
+            </select>
             <input required type="text" className="w-full p-2 border rounded" value={masterInput.value} onChange={e => setMasterInput({...masterInput, value: e.target.value})} placeholder="Value" />
             <input required type="text" className="w-full p-2 border rounded" value={masterInput.label} onChange={e => setMasterInput({...masterInput, label: e.target.value})} placeholder="Label" />
-            <button type="submit" disabled={loading} className="w-full bg-purple-700 text-white py-3 rounded-lg font-bold hover:bg-purple-800">{loading ? 'Simpan...' : 'Tambah Master Data'}</button>
+            <button type="submit" disabled={loading} className="w-full bg-purple-700 text-white py-3 rounded-lg font-bold hover:bg-purple-800">{loading ? 'Simpan...' : 'Tambah'}</button>
           </form>
         </div>
       )}
 
-      {/* --- KONTEN TAB: UPDATE HRD (LAMA) --- */}
+      {/* KONTEN TAB: INFO HRD */}
       {activeTab === 'news' && (
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
-          <label className="text-xs font-bold text-gray-700 block mb-2">Isi Informasi Pengumuman HRD:</label>
-          <textarea className="w-full border p-3 rounded-xl text-sm mb-4 focus:ring-2 focus:ring-orange-500 outline-none" rows="5" placeholder="Ketik informasi..." value={newsInput} onChange={(e) => setNewsInput(e.target.value)}></textarea>
-          <button onClick={handleAddAnnouncement} disabled={loading} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold shadow-lg shadow-orange-200 active:scale-95 transition-all">{loading ? 'Mengirim...' : 'Terbitkan Informasi'}</button>
+          <textarea className="w-full border p-3 rounded-xl text-sm mb-4" rows="5" placeholder="Info HRD..." value={newsInput} onChange={(e) => setNewsInput(e.target.value)}></textarea>
+          <button onClick={handleAddAnnouncement} disabled={loading} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold shadow-lg">{loading ? 'Mengirim...' : 'Terbitkan'}</button>
         </div>
       )}
     </div>
