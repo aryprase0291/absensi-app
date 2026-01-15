@@ -2571,94 +2571,25 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       }
   }, [showWebReport, reportCategory]);
 
-// --- HELPER FORMAT (FIX IOS/SAFARI DATE ISSUE V3 - FINAL) ---
-  
-  // Fungsi parsing tanggal "Anti-Gagal" untuk iPhone
-  const parseDateSafe = (dateVal) => {
-      if (!dateVal || dateVal === '-' || dateVal === '') return null;
-      if (dateVal instanceof Date) return dateVal;
-      
-      let s = String(dateVal).trim();
-      
-      // 1. DETEKSI FORMAT INDONESIA: DD-MM-YYYY (atau DD/MM/YYYY)
-      // Regex ini menangkap: (Tanggal)-(Bulan)-(Tahun) (Sisa Waktu)
-      // Contoh: "16-01-2026 08:30" -> Group 1=16, Group 2=01, Group 3=2026, Group 4=" 08:30"
-      const dmyRegex = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(.*)$/;
-      
-      if (dmyRegex.test(s)) {
-          // TUKAR POSISI JADI: YYYY/MM/DD (Format Universal)
-          // Hasil: "2026/01/16 08:30"
-          s = s.replace(dmyRegex, "$3/$2/$1$4");
-      } else {
-          // 2. JIKA FORMAT SUDAH ISO (YYYY-MM-DD), Ganti strip jadi slash
-          // iPhone lebih suka "2026/01/16" daripada "2026-01-16"
-          s = s.replace(/-/g, '/'); 
-      }
-      
-      const d = new Date(s);
-      return isNaN(d.getTime()) ? null : d;
-  };
-
-  // --- IMPLEMENTASI KE FUNGSI LAIN ---
-
-  const formatDateIndo = (d) => { 
-      const dateObj = parseDateSafe(d);
-      if (!dateObj) return '-'; 
-      try { 
-          return dateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); 
-      } catch (e) { return '-'; } 
-  };
-
-  const formatDateShort = (d) => { 
-      const dateObj = parseDateSafe(d);
-      if (!dateObj) return '-'; 
-      try { 
-          return dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); 
-      } catch (e) { return '-'; } 
-  };
-
-  const formatTimeOnly = (val) => { 
-      if (!val || val === '-') return '-'; 
-      // Coba parse sebagai tanggal lengkap dulu
-      const dateObj = parseDateSafe(val);
-      if (dateObj && !isNaN(dateObj.getTime())) {
-          try { 
-              // Ambil jam dari objek tanggal yang sudah valid
-              return dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':'); 
-          } catch (e) { }
-      }
-      // Fallback: Ambil 5 karakter pertama string (misal "08:00")
-      return String(val).substring(0, 5); 
-  };
-  
-  const formatDateTimeFull = (val) => { 
-      const d = parseDateSafe(val);
-      if (!d) return '-'; 
-      try { 
-          const dd = String(d.getDate()).padStart(2, '0'); 
-          const mm = String(d.getMonth() + 1).padStart(2, '0'); 
-          const yy = String(d.getFullYear()).slice(-2); 
-          const hh = String(d.getHours()).padStart(2, '0'); 
-          const min = String(d.getMinutes()).padStart(2, '0'); 
-          return `${dd}-${mm}-${yy} ${hh}:${min}`; 
-      } catch(e) { return val; } 
-  };
-
+  // --- HELPER FORMAT ---
+  const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
+  const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
+  const formatTimeOnly = (val) => { if (!val || val === '-') return '-'; if (typeof val === 'string' && (val.includes('T') || val.length > 8)) { try { const d = new Date(val); if (!isNaN(d.getTime())) { return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':'); } } catch (e) { return val.substring(0, 5); } } return val.length >= 5 ? val.substring(0, 5) : val; };
+  const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
+  const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
+  const formatDateTimeFull = (val) => { if (!val || val === '-') return '-'; try { const d = new Date(val); if(isNaN(d.getTime())) return val; const dd = String(d.getDate()).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const yy = String(d.getFullYear()).slice(-2); const hh = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${dd}-${mm}-${yy} ${hh}:${min}`; } catch(e) { return val; } };
   const getDurasiHari = (start, end) => {
-    const d1 = parseDateSafe(start);
-    const d2 = parseDateSafe(end);
-    if (!d1 || !d2) return '';
+    if (!start || start === '-' || !end || end === '-') return '';
     try {
+        const d1 = new Date(start);
+        const d2 = new Date(end);
         const diffTime = Math.abs(d2 - d1);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
         return `(${diffDays})`;
     } catch (e) { return ''; }
   };
 
-  const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
-  const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
 
-  
   // --- FILTERS ---
   const toggleReportUserSelection = (id) => {
     if(reportUserIds.includes(id)) setReportUserIds(reportUserIds.filter(x => x !== id));
