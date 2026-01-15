@@ -2795,13 +2795,34 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
   // --- ACTIONS ---
   const handleRequestApproval = async (item) => {
-    const detailTanggal = item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)} s/d ${formatDateIndo(item.tglSelesai)}` : formatDateIndo(item.waktu);
+    // Format tanggal untuk konfirmasi
+    const detailTanggal = item.tglMulai && item.tglMulai !== '-' 
+        ? `${formatDateIndo(item.tglMulai)} s/d ${formatDateIndo(item.tglSelesai)}` 
+        : formatDateIndo(item.waktu);
+
     if (!window.confirm(`Kirim ulang email approval untuk ${item.tipe} (${detailTanggal})?`)) return;
+    
     setSendingEmail(true);
     try {
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'request_approval_email', uuid: item.uuid }) });
-      const data = await res.json(); alert(data.message);
-    } catch (e) { alert("Gagal kirim email"); } finally { setSendingEmail(false); }
+      const res = await fetch(SCRIPT_URL, { 
+        method: 'POST', 
+        body: JSON.stringify({ 
+            action: 'request_approval_email', 
+            uuid: item.uuid,
+            scriptUrl: SCRIPT_URL // <--- TAMBAHAN PENTING: KIRIM URL DARI SINI
+        }) 
+      });
+      const data = await res.json(); 
+      if (data.result === 'success') {
+          alert("Sukses! " + data.message);
+      } else {
+          alert("Gagal: " + data.message);
+      }
+    } catch (e) { 
+        alert("Gagal kirim email: " + e.message); 
+    } finally { 
+        setSendingEmail(false); 
+    }
   };
   const handleDelete = async (uuid) => { 
       if (!window.confirm('Yakin hapus data ini?')) return;
