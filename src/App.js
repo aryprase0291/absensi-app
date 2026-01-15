@@ -11,7 +11,7 @@ import {
   ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
   MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
   Printer, FileSpreadsheet, Loader2, Wifi, WifiOff, CalendarDays, DoorOpen, DoorClosed, 
-  CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone, 
+  CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone,
 } from 'lucide-react';
 
 import { SCRIPT_URL } from './config/constants';
@@ -914,7 +914,7 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
 // Pastikan import Wifi dan WifiOff ada di bagian paling atas file App.js
 // import { ..., Wifi, WifiOff, ... } from 'lucide-react';
 
-// --- SCREEN ANALISA DATA (UPDATE V10: ACTION DELETE & EDIT) ---
+// --- SCREEN ANALISA DATA (UPDATE V7: STATUS APPROVAL REAL) ---
 function AnalysisScreen({ user, setView }) {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -928,262 +928,290 @@ function AnalysisScreen({ user, setView }) {
     const [filterManual, setFilterManual] = useState('');
     const [filterStatus, setFilterStatus] = useState(''); 
 
-    // STATE EDIT MODAL
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [editTarget, setEditTarget] = useState(null); // Data yg mau diedit
-    const [newTypeInput, setNewTypeInput] = useState('');
-    const [loadingAction, setLoadingAction] = useState(false);
-
     useEffect(() => {
-        if (user.role !== 'admin') { alert("Akses Ditolak!"); setView('dashboard'); }
+        if (user.role !== 'admin') {
+            alert("Akses Ditolak!");
+            setView('dashboard');
+        }
     }, [user, setView]);
 
-    // --- FETCH DATA ---
     const handleAnalyze = async () => {
-        if (!startDate || !endDate) return alert("Pilih Tanggal dulu.");
-        setLoading(true); setHasSearched(true);
-        try {
-            const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_analysis_data', startDate, endDate, roleRequester: user.role }) });
-            const result = await res.json();
-            if (result.result === 'success') setDataList(result.list);
-            else alert(result.message);
-        } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
-    };
+        if (!startDate || !endDate) {
+            alert("Mohon pilih Tanggal Mulai dan Sampai.");
+            return;
+        }
+        setLoading(true);
+        setHasSearched(true);
+        // Reset Filter
+        setFilterNama(''); setFilterDivisi(''); setFilterManual(''); setFilterStatus('');
 
-    // --- ACTION: DELETE ---
-    const handleDelete = async (uuid, nama) => {
-        if (!window.confirm(`Hapus data manual milik "${nama}"?\n\nPERINGATAN: Data ini akan hilang permanen dari database.`)) return;
-        
-        setLoadingAction(true);
         try {
-            const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absensi', uuid, roleRequester: user.role }) });
-            const data = await res.json();
-            if (data.result === 'success') {
-                alert(data.message);
-                handleAnalyze(); // Refresh Data
-            } else { alert(data.message); }
-        } catch (e) { alert("Error Hapus."); } finally { setLoadingAction(false); }
-    };
-
-    // --- ACTION: PREPARE EDIT ---
-    const openEditModal = (item) => {
-        setEditTarget(item);
-        setNewTypeInput(item.tipeManual); // Isi default dengan tipe saat ini
-        setIsEditModalOpen(true);
-    };
-
-    // --- ACTION: SUBMIT EDIT ---
-    const handleSaveEdit = async () => {
-        if (!editTarget) return;
-        setLoadingAction(true);
-        try {
-            const res = await fetch(SCRIPT_URL, { 
-                method: 'POST', 
-                body: JSON.stringify({ 
-                    action: 'update_absensi', 
-                    uuid: editTarget.uuid, 
-                    newType: newTypeInput, 
-                    roleRequester: user.role 
-                }) 
+            const res = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'get_analysis_data',
+                    startDate,
+                    endDate,
+                    roleRequester: user.role
+                })
             });
-            const data = await res.json();
-            if (data.result === 'success') {
-                alert(data.message);
-                setIsEditModalOpen(false);
-                handleAnalyze(); // Refresh Data
-            } else { alert(data.message); }
-        } catch (e) { alert("Error Update."); } finally { setLoadingAction(false); }
+            const result = await res.json();
+            if (result.result === 'success') {
+                setDataList(result.list);
+            } else {
+                alert(result.message);
+            }
+        } catch (e) {
+            alert("Gagal mengambil data analisa.");
+        } finally {
+            setLoading(false);
+        }
     };
 
-    // --- FILTER LOGIC ---
+    // Helper Filter Multi
     const checkMultiFilter = (itemValue, filterInput) => {
         if (!filterInput) return true;
         if (!itemValue) return false;
         const keywords = filterInput.toLowerCase().split(',').map(k => k.trim()).filter(k => k !== '');
-        return keywords.some(keyword => itemValue.toLowerCase().includes(keyword));
+        const itemLower = itemValue.toLowerCase();
+        return keywords.some(keyword => itemLower.includes(keyword));
     };
 
     const filteredList = dataList.filter(item => {
-        return checkMultiFilter(item.nama, filterNama) && checkMultiFilter(item.divisi, filterDivisi) &&
-               checkMultiFilter(item.tipeManual, filterManual) && checkMultiFilter(item.status, filterStatus);
+        return checkMultiFilter(item.nama, filterNama) &&
+               checkMultiFilter(item.divisi, filterDivisi) &&
+               checkMultiFilter(item.tipeManual, filterManual) &&
+               checkMultiFilter(item.status, filterStatus);
     });
 
+    // --- Helper Warna Status ---
     const getStatusColor = (status) => {
         const s = String(status).toLowerCase();
-        if (s.includes('approve')) return 'bg-green-100 text-green-700 border-green-200';
+        if (s.includes('approve') || s.includes('verified')) return 'bg-green-100 text-green-700 border-green-200';
         if (s.includes('reject')) return 'bg-red-100 text-red-700 border-red-200';
-        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200'; // Default Pending
     };
 
-    // --- EXPORT FUNCTION ---
+    // --- EXPORT EXCEL ---
     const handleExportExcel = () => {
-        if (filteredList.length === 0) return alert("Kosong.");
+        if (filteredList.length === 0) return alert("Tidak ada data untuk diexport.");
+        
         const dataToExport = filteredList.map((item, index) => ({
-            "No": index + 1, "Nama": item.nama, "Dept": item.divisi, "Tgl": item.tanggal,
-            "Manual": item.tipeManual, "Mesin": item.simbolMesin, "Scan": item.waktuMesin, "Status": item.status
+            "No": index + 1,
+            "Nama Karyawan": item.nama,
+            "Departemen": item.divisi,
+            "Tanggal": item.tanggal,
+            "Data Manual": item.tipeManual,
+            "Data Mesin": item.simbolMesin,
+            "Status Approval": item.status // STATUS ASLI
         }));
+
         const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Analisa");
-        XLSX.writeFile(wb, `Analisa_${startDate}.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, "Analisa_Mismatch");
+        
+        const wscols = [{wch:5}, {wch:30}, {wch:20}, {wch:15}, {wch:20}, {wch:15}, {wch:20}];
+        ws['!cols'] = wscols;
+
+        XLSX.writeFile(wb, `Analisa_Absensi_${startDate}_${endDate}.xlsx`);
     };
 
+    // --- EXPORT PDF ---
     const handleExportPDF = () => {
-        if (filteredList.length === 0) return alert("Kosong.");
+        if (filteredList.length === 0) return alert("Tidak ada data untuk dicetak.");
+
         const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-        doc.text(`Analisa Data: ${startDate} s/d ${endDate}`, 14, 15);
-        autoTable(doc, {
-            head: [["No", "Nama", "Dept", "Tgl", "Manual", "Mesin", "Scan", "Status"]],
-            body: filteredList.map((i, idx) => [idx+1, i.nama, i.divisi, i.tanggal, i.tipeManual, i.simbolMesin, i.waktuMesin, i.status]),
-            startY: 20, theme: 'grid'
+
+        doc.setFontSize(14);
+        doc.text("Laporan Analisa Ketidakcocokan Absensi", 14, 15);
+        doc.setFontSize(10);
+        doc.text(`Periode: ${startDate} s/d ${endDate}`, 14, 21);
+        doc.text(`Dicetak Oleh: Admin | Tgl: ${new Date().toLocaleDateString('id-ID')}`, 14, 26);
+
+        const tableColumn = ["No", "Nama Karyawan", "Dept", "Tanggal", "Manual", "Mesin", "Status Approval"];
+        const tableRows = [];
+
+        filteredList.forEach((item, index) => {
+            tableRows.push([
+                index + 1,
+                item.nama,
+                item.divisi,
+                item.tanggal,
+                item.tipeManual,
+                item.simbolMesin,
+                item.status
+            ]);
         });
-        doc.save(`Analisa_${startDate}.pdf`);
+
+        autoTable(doc, {
+            head: [tableColumn],
+            body: tableRows,
+            startY: 30,
+            theme: 'grid',
+            headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: 'bold' },
+            styles: { fontSize: 9, cellPadding: 2 },
+            columnStyles: {
+                0: { cellWidth: 10, halign: 'center' },
+                3: { cellWidth: 25, halign: 'center' },
+                4: { cellWidth: 30, halign: 'center' },
+                5: { cellWidth: 25, halign: 'center' },
+                6: { cellWidth: 'auto', fontStyle: 'bold' } 
+            },
+            // Custom styling baris berdasarkan status (opsional)
+            didParseCell: function(data) {
+                if (data.section === 'body' && data.column.index === 6) {
+                    const text = data.cell.raw.toString().toLowerCase();
+                    if (text.includes('reject')) {
+                        data.cell.styles.textColor = [220, 38, 38]; // Merah
+                    } else if (text.includes('approve')) {
+                        data.cell.styles.textColor = [21, 128, 61]; // Hijau
+                    } else {
+                        data.cell.styles.textColor = [202, 138, 4]; // Kuning
+                    }
+                }
+            }
+        });
+
+        doc.save(`Laporan_Analisa_${startDate}_${endDate}.pdf`);
     };
 
     return (
         <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col font-sans">
+            
             {/* HEADER */}
             <div className="bg-white border-b border-gray-300 px-6 py-4 shadow-sm flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
-                    <div className="bg-rose-100 p-2 rounded-lg"><FileSpreadsheet className="w-6 h-6 text-rose-600" /></div>
-                    <div><h2 className="text-xl font-extrabold text-slate-800">Analisa Data Absensi</h2><p className="text-xs text-slate-500 font-medium">Monitoring & Koreksi Data</p></div>
+                    <div className="bg-rose-100 p-2 rounded-lg">
+                        <FileSpreadsheet className="w-6 h-6 text-rose-600" />
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-extrabold text-slate-800">Analisa Data Absensi</h2>
+                        <p className="text-xs text-slate-500 font-medium">Monitoring Ketidakcocokan Data (Manual vs Mesin)</p>
+                    </div>
                 </div>
-                <button onClick={() => setView('dashboard')} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition"><LogOut className="w-4 h-4 rotate-180" /> Tutup</button>
+                <button 
+                    onClick={() => setView('dashboard')}
+                    className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition"
+                >
+                    <LogOut className="w-4 h-4 rotate-180" />
+                    Tutup / Kembali
+                </button>
             </div>
 
             {/* CONTROL BAR */}
             <div className="bg-white border-b border-gray-200 px-6 py-4 flex flex-wrap gap-4 items-end shrink-0">
-                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Mulai</label><input type="date" className="border p-2 rounded-lg text-sm font-bold" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
-                <div><label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sampai</label><input type="date" className="border p-2 rounded-lg text-sm font-bold" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
-                <button onClick={handleAnalyze} disabled={loading} className="bg-slate-800 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition flex items-center gap-2 shadow-lg shadow-slate-200">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>} Analisa
+                <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Periode Mulai</label>
+                    <input type="date" className="border border-gray-300 p-2 rounded-lg text-sm font-bold shadow-sm" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sampai Dengan</label>
+                    <input type="date" className="border border-gray-300 p-2 rounded-lg text-sm font-bold shadow-sm" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                </div>
+                <button 
+                    onClick={handleAnalyze} 
+                    disabled={loading}
+                    className="bg-slate-800 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition flex items-center gap-2 shadow-lg shadow-slate-200"
+                >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>}
+                    {loading ? 'Menganalisa...' : 'Jalankan Analisa'}
                 </button>
             </div>
 
             {/* MAIN CONTENT */}
             <div className="flex-1 overflow-hidden flex flex-col px-6 py-4 max-w-7xl mx-auto w-full">
+                
                 {hasSearched && (
                     <div className="flex-1 bg-white rounded-xl shadow-md border border-gray-300 flex flex-col overflow-hidden">
-                        {/* FILTER */}
+                        
+                        {/* FILTER BAR (MULTI SUPPORT) */}
                         <div className="bg-slate-50 p-3 border-b border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-3 shrink-0">
-                            <input type="text" placeholder="Filter Nama..." className="text-xs p-2 border rounded" value={filterNama} onChange={e => setFilterNama(e.target.value)}/>
-                            <input type="text" placeholder="Filter Divisi..." className="text-xs p-2 border rounded" value={filterDivisi} onChange={e => setFilterDivisi(e.target.value)}/>
-                            <input type="text" placeholder="Filter Manual..." className="text-xs p-2 border rounded" value={filterManual} onChange={e => setFilterManual(e.target.value)}/>
-                            <input type="text" placeholder="Filter Status..." className="text-xs p-2 border rounded" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}/>
-                        </div>
-
-                        {/* EXPORT BAR */}
-                        <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center shrink-0">
-                            <span className="text-xs font-bold text-gray-600">Hasil: {filteredList.length} Rows</span>
-                            <div className="flex gap-2">
-                                <button onClick={handleExportExcel} className="flex items-center gap-1 bg-green-600 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm">Excel</button>
-                                <button onClick={handleExportPDF} className="flex items-center gap-1 bg-red-600 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm">PDF</button>
+                            <div className="relative">
+                                <input type="text" placeholder="Filter Nama (bisa koma)" className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500" value={filterNama} onChange={e => setFilterNama(e.target.value)}/>
+                            </div>
+                            <div className="relative">
+                                <input type="text" placeholder="Filter Divisi (bisa koma)" className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500" value={filterDivisi} onChange={e => setFilterDivisi(e.target.value)}/>
+                            </div>
+                            <div className="relative">
+                                <input type="text" placeholder="Filter Tipe Manual..." className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500" value={filterManual} onChange={e => setFilterManual(e.target.value)}/>
+                            </div>
+                            <div className="relative">
+                                <input type="text" placeholder="Filter Status (Approved, Pending...)" className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500 bg-yellow-50 border-yellow-200" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}/>
                             </div>
                         </div>
 
-                        {/* TABLE */}
+                        {/* STATUS & EXPORT BAR */}
+                        <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center shrink-0">
+                            <span className="text-xs font-bold text-gray-600">
+                                Hasil: {filteredList.length} Konflik Data
+                            </span>
+                            <div className="flex gap-2">
+                                <button onClick={handleExportExcel} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm transition">
+                                    <FileSpreadsheet className="w-3.5 h-3.5" /> Cetak Excel
+                                </button>
+                                <button onClick={handleExportPDF} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm transition">
+                                    <Printer className="w-3.5 h-3.5" /> Cetak PDF
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* TABEL DATA */}
                         <div className="flex-1 overflow-auto">
                             <table className="w-full text-left border-collapse table-fixed">
                                 <thead className="sticky top-0 z-10 shadow-sm">
                                     <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                                        <th className="p-3 border-b font-bold w-10 text-center">No</th>
-                                        <th className="p-3 border-b font-bold w-1/4">Nama</th>
-                                        <th className="p-3 border-b font-bold w-24">Tanggal</th>
-                                        <th className="p-3 border-b font-bold text-center w-20 bg-blue-50">Manual</th>
-                                        <th className="p-3 border-b font-bold text-center w-20 bg-orange-50">Mesin</th>
-                                        <th className="p-3 border-b font-bold w-32 text-center">Scan</th>
-                                        <th className="p-3 border-b font-bold w-24">Status</th>
-                                        <th className="p-3 border-b font-bold w-24 text-center">Aksi</th>
+                                        <th className="p-3 border-b border-gray-300 font-bold w-12 text-center">No</th>
+                                        <th className="p-3 border-b border-gray-300 font-bold w-1/4">Nama Karyawan</th>
+                                        <th className="p-3 border-b border-gray-300 font-bold w-1/6">Departemen</th>
+                                        <th className="p-3 border-b border-gray-300 font-bold text-center w-28">Tanggal</th>
+                                        <th className="p-3 border-b border-gray-300 font-bold text-center bg-blue-50 text-blue-700 w-1/6">Data Manual</th>
+                                        <th className="p-3 border-b border-gray-300 font-bold text-center bg-orange-50 text-orange-700 w-1/6">Data Mesin</th>
+                                        <th className="p-3 border-b border-gray-300 font-bold w-1/6">Status Approval</th>
                                     </tr>
                                 </thead>
                                 <tbody className="text-sm divide-y divide-gray-100 bg-white">
-                                    {filteredList.map((item, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-50 group">
-                                            <td className="p-3 text-center font-mono text-gray-500 border-r">{idx + 1}</td>
-                                            <td className="p-3 font-bold text-slate-700 border-r truncate">{item.nama}</td>
-                                            <td className="p-3 font-medium border-r">{item.tanggal}</td>
-                                            <td className="p-3 text-center bg-blue-50/20 border-r font-bold text-blue-700 text-xs">{item.tipeManual}</td>
-                                            <td className="p-3 text-center bg-orange-50/20 border-r font-bold text-orange-700 text-xs">{item.simbolMesin}</td>
-                                            <td className="p-3 text-center border-r font-mono text-[10px]">{item.waktuMesin}</td>
-                                            <td className="p-3 border-r"><span className={`text-[10px] font-bold px-2 py-1 rounded-md border ${getStatusColor(item.status)}`}>{item.status}</span></td>
-                                            
-                                            {/* TOMBOL AKSI */}
-                                            <td className="p-3 text-center">
-                                                <div className="flex items-center justify-center gap-1">
-                                                    <button 
-                                                        onClick={() => openEditModal(item)}
-                                                        className="p-1.5 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition border border-blue-200" 
-                                                        title="Edit Data Manual"
-                                                    >
-                                                        <Edit className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handleDelete(item.uuid, item.nama)}
-                                                        className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100 transition border border-red-200" 
-                                                        title="Hapus Data Manual"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
+                                    {filteredList.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="7" className="p-10 text-center text-gray-400 italic">
+                                                {dataList.length === 0 
+                                                    ? "Data Sinkron (Tidak ada ketidakcocokan)." 
+                                                    : "Data tidak ditemukan dengan filter tersebut."}
                                             </td>
                                         </tr>
-                                    ))}
+                                    ) : (
+                                        filteredList.map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-red-50 transition-colors">
+                                                <td className="p-3 text-center font-mono text-gray-500 border-r border-gray-100 truncate">{idx + 1}</td>
+                                                <td className="p-3 font-bold text-slate-700 border-r border-gray-100 truncate" title={item.nama}>{item.nama}</td>
+                                                <td className="p-3 text-slate-500 border-r border-gray-100 truncate">{item.divisi}</td>
+                                                <td className="p-3 text-center font-medium border-r border-gray-100">{item.tanggal}</td>
+                                                
+                                                <td className="p-3 text-center bg-blue-50/20 border-r border-gray-100">
+                                                    <span className="px-2 py-1 rounded-md text-xs font-bold bg-white border border-blue-200 text-blue-700 shadow-sm inline-block">
+                                                        {item.tipeManual}
+                                                    </span>
+                                                </td>
+
+                                                <td className="p-3 text-center bg-orange-50/20 border-r border-gray-100">
+                                                    <span className={`px-2 py-1 rounded-md text-xs font-bold border shadow-sm inline-block ${item.simbolMesin === 'KOSONG' ? 'bg-red-100 text-red-600 border-red-200' : 'bg-white text-orange-700 border-orange-200'}`}>
+                                                        {item.simbolMesin}
+                                                    </span>
+                                                </td>
+
+                                                <td className="p-3">
+                                                    <div className={`text-[10px] font-bold px-2 py-1 rounded-md inline-block border shadow-sm ${getStatusColor(item.status)}`}>
+                                                        {item.status}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 )}
             </div>
-
-            {/* --- MODAL EDIT --- */}
-            {isEditModalOpen && (
-                <div className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95">
-                        <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                            <Edit className="w-5 h-5 text-blue-600" /> Edit Data Manual
-                        </h3>
-                        
-                        <div className="space-y-4">
-                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                                <p className="text-xs text-slate-500 mb-1">Karyawan</p>
-                                <p className="font-bold text-slate-800">{editTarget?.nama}</p>
-                                <p className="text-xs text-slate-500 mt-2 mb-1">Tanggal</p>
-                                <p className="font-bold text-slate-800">{editTarget?.tanggal}</p>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 mb-2">Ubah Tipe Absen Menjadi:</label>
-                                <select 
-                                    className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-blue-500"
-                                    value={newTypeInput}
-                                    onChange={(e) => setNewTypeInput(e.target.value)}
-                                >
-                                    {['Hadir', 'Sakit', 'Ijin', 'Cuti', 'Dinas', 'Lembur', 'Off', 'Tukar Shift', 'Standby', 'Cuti EO', 'Off (Tukar Shift)'].map(opt => (
-                                        <option key={opt} value={opt}>{opt}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="flex gap-2 pt-2">
-                                <button 
-                                    onClick={() => setIsEditModalOpen(false)}
-                                    className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-lg font-bold text-xs hover:bg-gray-200 transition"
-                                >
-                                    Batal
-                                </button>
-                                <button 
-                                    onClick={handleSaveEdit}
-                                    disabled={loadingAction}
-                                    className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg font-bold text-xs hover:bg-blue-700 transition flex justify-center items-center gap-2 shadow-lg shadow-blue-200"
-                                >
-                                    {loadingAction ? <Loader2 className="w-4 h-4 animate-spin"/> : <Check className="w-4 h-4"/>}
-                                    Simpan Perubahan
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
@@ -2543,23 +2571,80 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       }
   }, [showWebReport, reportCategory]);
 
-  // --- HELPER FORMAT ---
-  const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
-  const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
-  const formatTimeOnly = (val) => { if (!val || val === '-') return '-'; if (typeof val === 'string' && (val.includes('T') || val.length > 8)) { try { const d = new Date(val); if (!isNaN(d.getTime())) { return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':'); } } catch (e) { return val.substring(0, 5); } } return val.length >= 5 ? val.substring(0, 5) : val; };
-  const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
-  const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
-  const formatDateTimeFull = (val) => { if (!val || val === '-') return '-'; try { const d = new Date(val); if(isNaN(d.getTime())) return val; const dd = String(d.getDate()).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const yy = String(d.getFullYear()).slice(-2); const hh = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${dd}-${mm}-${yy} ${hh}:${min}`; } catch(e) { return val; } };
+  // --- HELPER FORMAT (FIX IOS/SAFARI DATE ISSUE) ---
+  
+  // 1. Fungsi parsing tanggal yang aman untuk semua browser (termasuk iPhone)
+  const parseDateSafe = (dateVal) => {
+      if (!dateVal || dateVal === '-') return null;
+      if (dateVal instanceof Date) return dateVal;
+      
+      let s = String(dateVal);
+      // iPhone tidak suka "YYYY-MM-DD HH:MM:SS", ubah jadi "YYYY/MM/DD HH:MM:SS" atau ISO "T"
+      // Cara paling aman: Ganti semua strip '-' menjadi '/'
+      if (s.includes('-')) {
+          s = s.replace(/-/g, '/'); 
+      }
+      
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+  };
+
+  // 2. Update fungsi formatDateIndo menggunakan parser baru
+  const formatDateIndo = (d) => { 
+      const dateObj = parseDateSafe(d);
+      if (!dateObj) return '-'; 
+      try { 
+          return dateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); 
+      } catch (e) { return '-'; } 
+  };
+
+  const formatDateShort = (d) => { 
+      const dateObj = parseDateSafe(d);
+      if (!dateObj) return '-'; 
+      try { 
+          return dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); 
+      } catch (e) { return '-'; } 
+  };
+
+  const formatTimeOnly = (val) => { 
+      if (!val || val === '-') return '-'; 
+      // Coba parse sebagai tanggal dulu
+      const dateObj = parseDateSafe(val);
+      if (dateObj) {
+          try { 
+              return dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':'); 
+          } catch (e) { }
+      }
+      // Fallback jika string biasa (misal "08:00")
+      return String(val).substring(0, 5); 
+  };
+  
+  const formatDateTimeFull = (val) => { 
+      const d = parseDateSafe(val);
+      if (!d) return '-'; 
+      try { 
+          const dd = String(d.getDate()).padStart(2, '0'); 
+          const mm = String(d.getMonth() + 1).padStart(2, '0'); 
+          const yy = String(d.getFullYear()).slice(-2); 
+          const hh = String(d.getHours()).padStart(2, '0'); 
+          const min = String(d.getMinutes()).padStart(2, '0'); 
+          return `${dd}-${mm}-${yy} ${hh}:${min}`; 
+      } catch(e) { return val; } 
+  };
+
   const getDurasiHari = (start, end) => {
-    if (!start || start === '-' || !end || end === '-') return '';
+    const d1 = parseDateSafe(start);
+    const d2 = parseDateSafe(end);
+    if (!d1 || !d2) return '';
     try {
-        const d1 = new Date(start);
-        const d2 = new Date(end);
         const diffTime = Math.abs(d2 - d1);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
         return `(${diffDays})`;
     } catch (e) { return ''; }
   };
+
+  const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
+  const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
 
 
   // --- FILTERS ---
