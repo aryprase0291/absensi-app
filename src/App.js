@@ -1255,27 +1255,27 @@ function DashboardScreen({ user, setView, handleLogout }) {
   const [announcement, setAnnouncement] = useState(null);
   const [showAnnouncement, setShowAnnouncement] = useState(false);
 
-  // 2. EFFECT: CEK INFO HRD SAAT LOGIN
-  useEffect(() => {
-    const fetchAnnouncement = async () => {
-      try {
-        const res = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'get_latest_announcement' })
-        });
-        const data = await res.json();
+//   // 2. EFFECT: CEK INFO HRD SAAT LOGIN
+//   useEffect(() => {
+//     const fetchAnnouncement = async () => {
+//       try {
+//         const res = await fetch(SCRIPT_URL, {
+//           method: 'POST',
+//           body: JSON.stringify({ action: 'get_latest_announcement' })
+//         });
+//         const data = await res.json();
         
-        // Tampilkan jika ada data announcement
-        if (data.result === 'success' && data.data) {
-          setAnnouncement(data.data);
-          setShowAnnouncement(true);
-        }
-      } catch (e) {
-        console.error("Gagal load info hrd", e);
-      }
-    };
-    fetchAnnouncement();
-  }, []);
+//         // Tampilkan jika ada data announcement
+//         if (data.result === 'success' && data.data) {
+//           setAnnouncement(data.data);
+//           setShowAnnouncement(true);
+//         }
+//       } catch (e) {
+//         console.error("Gagal load info hrd", e);
+//       }
+//     };
+//     fetchAnnouncement();
+//   }, []);
 
   const menuItems = [
     { id: 'absen', label: 'Absen', icon: Camera, color: 'bg-blue-600', desc: 'Masuk/Pulang' },
