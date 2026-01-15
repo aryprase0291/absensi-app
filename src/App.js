@@ -612,31 +612,84 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
           </p>
       </div>
 
-      {/* --- ANNOUNCEMENT POPUP --- */}
+      {/* --- ANNOUNCEMENT POPUP (MODERN 3D STYLE) --- */}
       {showNews && newsContent && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden transform animate-in zoom-in-95 duration-300">
-             <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-5 text-white relative">
-               <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full blur-2xl"></div>
-              <div className="flex items-center gap-2 mb-1">
-                 <div className="bg-white/20 p-1.5 rounded-lg"><MessageSquare className="w-5 h-5 text-white" /></div>
-                <h3 className="font-bold text-base tracking-tight">INFORMASI</h3>
-              </div>
-  
-              <p className="text-blue-100 text-[10px] uppercase tracking-widest font-medium">{newsContent.waktu}</p>
-            </div>
-            <div className="p-5">
-              <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 mb-5 max-h-60 overflow-y-auto">
-                <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">"{newsContent.isi}"</p>
-              </div>
- 
-               <button onClick={() => { 
-                   setShowNews(false);
-                   // Simpan tanda bahwa user sudah membaca agar tidak muncul lagi sampai logout/tutup tab
-                   sessionStorage.setItem('announcement_shown', 'true'); 
-               }} className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold shadow-lg text-sm">Tutup</button>
-            </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 perspective-1000">
+          
+          {/* Backdrop Blur Gelap */}
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300"
+            onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }}
+          ></div>
+
+          {/* Kartu Utama (Floating 3D) */}
+          <div className="relative w-full max-w-sm bg-white/90 backdrop-blur-xl rounded-[2rem] shadow-2xl shadow-blue-900/30 border border-white/50 transform transition-all animate-[modalPop_0.5s_cubic-bezier(0.175,0.885,0.32,1.275)_forwards]">
+             
+             {/* Header Gradient Lengkung */}
+             <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-t-[2rem] -z-10 overflow-hidden">
+                <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+                <div className="absolute -left-10 top-10 w-20 h-20 bg-blue-400/20 rounded-full blur-xl"></div>
+             </div>
+
+             {/* Icon Floating 3D */}
+             <div className="absolute -top-10 left-1/2 -translate-x-1/2">
+                <div className="bg-white p-2 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.2)]">
+                    <div className="bg-gradient-to-br from-orange-400 to-rose-500 w-20 h-20 rounded-full flex items-center justify-center shadow-inner border-4 border-white">
+                        <Megaphone className="w-10 h-10 text-white drop-shadow-md animate-[tada_1.5s_infinite]" />
+                    </div>
+                </div>
+             </div>
+
+             {/* Tombol Close Pojok */}
+             <button 
+                onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }}
+                className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full text-white backdrop-blur-md transition-all active:scale-90"
+             >
+                <X className="w-5 h-5" />
+             </button>
+
+             {/* Konten Utama */}
+             <div className="pt-16 pb-8 px-8 text-center">
+                {/* Badge Tanggal */}
+                <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-100 px-4 py-1.5 rounded-full mb-4 shadow-sm">
+                    <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
+                    <span className="text-[11px] font-extrabold text-blue-700 tracking-wide font-mono">
+                        {newsContent.waktu}
+                    </span>
+                </div>
+
+                <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">Informasi HRD</h3>
+                <div className="w-10 h-1 bg-gradient-to-r from-transparent via-slate-300 to-transparent mx-auto mb-6"></div>
+
+                {/* Area Teks Scrollable */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 shadow-inner max-h-64 overflow-y-auto custom-scrollbar text-left relative group">
+                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap font-medium">
+                        {newsContent.isi}
+                    </p>
+                    {/* Shadow overlay bawah agar user tahu bisa scroll */}
+                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-slate-50 to-transparent pointer-events-none"></div>
+                </div>
+
+                {/* Tombol Aksi */}
+                <div className="mt-8">
+                    <button 
+                        onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }}
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-xl shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+                    >
+                        <span>Saya Mengerti</span>
+                        <CheckCircle className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    </button>
+                </div>
+             </div>
           </div>
+
+          {/* Inject Keyframe Animation Khusus Pop Up ini */}
+          <style>{`
+            @keyframes modalPop {
+                0% { opacity: 0; transform: scale(0.8) translateY(20px) rotateX(10deg); }
+                100% { opacity: 1; transform: scale(1) translateY(0) rotateX(0); }
+            }
+          `}</style>
         </div>
       )}
     </div> 
