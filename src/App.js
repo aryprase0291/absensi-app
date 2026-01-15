@@ -2571,33 +2571,27 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       }
   }, [showWebReport, reportCategory]);
 
-// --- HELPER FORMAT (FIX IOS/SAFARI DATE ISSUE V2) ---
+// --- HELPER FORMAT (FIX IOS/SAFARI DATE ISSUE V3 - FINAL) ---
   
   // Fungsi parsing tanggal "Anti-Gagal" untuk iPhone
   const parseDateSafe = (dateVal) => {
-      if (!dateVal || dateVal === '-') return null;
+      if (!dateVal || dateVal === '-' || dateVal === '') return null;
       if (dateVal instanceof Date) return dateVal;
       
       let s = String(dateVal).trim();
       
-      // 1. DETEKSI FORMAT INDONESIA: DD-MM-YYYY atau DD/MM/YYYY
-      // (Contoh: 16-01-2026 atau 16/01/2026)
-      // Regex: Angka 1-2 digit, pemisah, Angka 1-2 digit, pemisah, Angka 4 digit
-      const dmyPattern = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/;
-      const match = s.match(dmyPattern);
+      // 1. DETEKSI FORMAT INDONESIA: DD-MM-YYYY (atau DD/MM/YYYY)
+      // Regex ini menangkap: (Tanggal)-(Bulan)-(Tahun) (Sisa Waktu)
+      // Contoh: "16-01-2026 08:30" -> Group 1=16, Group 2=01, Group 3=2026, Group 4=" 08:30"
+      const dmyRegex = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(.*)$/;
       
-      if (match) {
-          // Jika cocok format DD-MM-YYYY, kita susun manual
-          // match[1] = Tanggal, match[2] = Bulan, match[3] = Tahun
-          const day = parseInt(match[1]);
-          const month = parseInt(match[2]) - 1; // Javascript bulan mulai dari 0 (Jan = 0)
-          const year = parseInt(match[3]);
-          
-          return new Date(year, month, day);
-      }
-
-      // 2. JIKA FORMAT LAIN (misal ISO YYYY-MM-DD), Ganti strip jadi slash agar iPhone bisa baca
-      if (s.includes('-')) {
+      if (dmyRegex.test(s)) {
+          // TUKAR POSISI JADI: YYYY/MM/DD (Format Universal)
+          // Hasil: "2026/01/16 08:30"
+          s = s.replace(dmyRegex, "$3/$2/$1$4");
+      } else {
+          // 2. JIKA FORMAT SUDAH ISO (YYYY-MM-DD), Ganti strip jadi slash
+          // iPhone lebih suka "2026/01/16" daripada "2026-01-16"
           s = s.replace(/-/g, '/'); 
       }
       
@@ -2629,8 +2623,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       const dateObj = parseDateSafe(val);
       if (dateObj && !isNaN(dateObj.getTime())) {
           try { 
-              // Cek apakah ini benar-benar jam valid atau tanggal jam 00:00
-              // Jika jam/menit 00:00 dan input aslinya pendek, mungkin itu cuma tanggal
+              // Ambil jam dari objek tanggal yang sudah valid
               return dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).replace('.', ':'); 
           } catch (e) { }
       }
@@ -2665,6 +2658,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
   const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
 
+  
   // --- FILTERS ---
   const toggleReportUserSelection = (id) => {
     if(reportUserIds.includes(id)) setReportUserIds(reportUserIds.filter(x => x !== id));
