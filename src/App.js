@@ -20,6 +20,7 @@ import { TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 
 
+
 const ICON_MAP = {
   'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 
   'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar, 
@@ -40,9 +41,10 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.7";
+  const CLIENT_VERSION = "1.0.8";
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
+  
 
  // --- LOGIKA CEK UPDATE (DIPERBAIKI: BLOCKING UI) ---
   useEffect(() => {
@@ -77,10 +79,10 @@ export default function AppAbsensi() {
   // Fungsi Eksekusi Update (Membersihkan Cache)
   const performUpdate = () => {
       // 1. Hapus semua LocalStorage & SessionStorage agar bersih
-      localStorage.clear(); 
+      localStorage.clear();
       sessionStorage.clear();
 
-      // 2. Cache Busting yang agresif
+      // 2. Cache Busting yang agresif (Unregister Service Worker)
       if ('serviceWorker' in navigator) {
           navigator.serviceWorker.getRegistrations().then(function(registrations) {
               for(let registration of registrations) {
@@ -115,11 +117,13 @@ export default function AppAbsensi() {
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
   }, []);
 
+  //----RESET TIMER OTOMATIS LOGOUT----
   const resetTimer = useCallback(() => {
     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
     if (user) {
       logoutTimerRef.current = setTimeout(() => {
-        alert("Sesi Anda berakhir karena tidak ada aktivitas selama 5 menit.");
+        // [UBAH PESAN MENJADI 10 MENIT]
+        alert("Sesi Anda berakhir karena tidak ada aktivitas selama 10 menit.");
         handleLogout();
       }, TIMEOUT_DURATION);
     }
@@ -608,11 +612,11 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font
           -bold uppercase tracking-widest">
-              Version {masterData?.appVersion || '1.0.7'} | &copy; {new Date().getFullYear()}
+              Version {masterData?.appVersion || '1.0.8'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
-      {/* --- ANNOUNCEMENT POPUP (MODERN 3D STYLE) --- */}
+
       {/* --- ANNOUNCEMENT POPUP (SOFT & ELEGANT V2) --- */}
       {showNews && newsContent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 font-sans" style={{ perspective: '1000px' }}>
