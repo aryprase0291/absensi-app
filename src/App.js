@@ -613,82 +613,82 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
       </div>
 
       {/* --- ANNOUNCEMENT POPUP (MODERN 3D STYLE) --- */}
+      {/* --- ANNOUNCEMENT POPUP (SOFT & ELEGANT V2) --- */}
       {showNews && newsContent && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 perspective-1000">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 font-sans" style={{ perspective: '1000px' }}>
           
-          {/* Backdrop Blur Gelap */}
+          {/* 1. Backdrop (Blur Lembut & Gelap Transparan untuk Fokus) */}
           <div 
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-[6px] transition-all duration-500"
             onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }}
           ></div>
 
-          {/* Kartu Utama (Floating 3D) */}
-          <div className="relative w-full max-w-sm bg-white/90 backdrop-blur-xl rounded-[2rem] shadow-2xl shadow-blue-900/30 border border-white/50 transform transition-all animate-[modalPop_0.5s_cubic-bezier(0.175,0.885,0.32,1.275)_forwards]">
+          {/* 2. Kartu Utama (Floating Card) */}
+          <div className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] border border-white/50 overflow-hidden transform transition-all animate-[softPop_0.6s_cubic-bezier(0.22,1,0.36,1)_forwards]">
              
-             {/* Header Gradient Lengkung */}
-             <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-t-[2rem] -z-10 overflow-hidden">
-                <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
-                <div className="absolute -left-10 top-10 w-20 h-20 bg-blue-400/20 rounded-full blur-xl"></div>
-             </div>
+             {/* Hiasan Latar Belakang (Soft Aurora Glow) */}
+             <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-gradient-to-br from-blue-50 via-white to-indigo-50 opacity-60 pointer-events-none z-0"></div>
+             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
 
-             {/* Icon Floating 3D */}
-             <div className="absolute -top-10 left-1/2 -translate-x-1/2">
-                <div className="bg-white p-2 rounded-full shadow-[0_10px_20px_rgba(0,0,0,0.2)]">
-                    <div className="bg-gradient-to-br from-orange-400 to-rose-500 w-20 h-20 rounded-full flex items-center justify-center shadow-inner border-4 border-white">
-                        <Megaphone className="w-10 h-10 text-white drop-shadow-md animate-[tada_1.5s_infinite]" />
-                    </div>
-                </div>
-             </div>
-
-             {/* Tombol Close Pojok */}
+             {/* Tombol Close (Minimalis) */}
              <button 
                 onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }}
-                className="absolute top-4 right-4 bg-white/20 hover:bg-white/40 p-2 rounded-full text-white backdrop-blur-md transition-all active:scale-90"
+                className="absolute top-5 right-5 z-20 bg-white/80 hover:bg-slate-100 p-2.5 rounded-full text-slate-400 hover:text-rose-500 transition-all shadow-sm border border-slate-100 active:scale-90"
              >
                 <X className="w-5 h-5" />
              </button>
 
-             {/* Konten Utama */}
-             <div className="pt-16 pb-8 px-8 text-center">
-                {/* Badge Tanggal */}
-                <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-100 px-4 py-1.5 rounded-full mb-4 shadow-sm">
-                    <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
-                    <span className="text-[11px] font-extrabold text-blue-700 tracking-wide font-mono">
+             {/* Header Section */}
+             <div className="relative z-10 pt-10 px-8 text-center">
+                {/* Icon Circle (Soft Shadow) */}
+                <div className="mx-auto w-20 h-20 bg-white rounded-3xl shadow-xl shadow-indigo-100 flex items-center justify-center mb-5 rotate-3 hover:rotate-0 transition-transform duration-500 border border-slate-50">
+                    <Megaphone className="w-9 h-9 text-indigo-500" />
+                </div>
+
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight mb-2">Informasi HRD</h3>
+                
+                {/* Tanggal Badge (Modern Pill) */}
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-50 border border-slate-100 rounded-full mb-6">
+                    <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                         {newsContent.waktu}
                     </span>
                 </div>
+             </div>
 
-                <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">Informasi HRD</h3>
-                <div className="w-10 h-1 bg-gradient-to-r from-transparent via-slate-300 to-transparent mx-auto mb-6"></div>
-
-                {/* Area Teks Scrollable */}
-                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 shadow-inner max-h-64 overflow-y-auto custom-scrollbar text-left relative group">
-                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap font-medium">
+             {/* Content Area (Wide & Readable) */}
+             <div className="relative z-10 px-8 pb-8">
+                <div className="bg-slate-50/80 p-6 rounded-3xl border border-slate-100/80 max-h-[60vh] overflow-y-auto custom-scrollbar shadow-inner">
+                    {/* TYPOGRAPHY FIX: Jarak baris lebar (leading-loose) & Warna Gelap */}
+                    <p className="text-sm md:text-[15px] text-slate-700 font-medium leading-loose whitespace-pre-line text-left">
                         {newsContent.isi}
                     </p>
-                    {/* Shadow overlay bawah agar user tahu bisa scroll */}
-                    <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-slate-50 to-transparent pointer-events-none"></div>
                 </div>
 
-                {/* Tombol Aksi */}
-                <div className="mt-8">
+                {/* Footer Action */}
+                <div className="mt-6">
                     <button 
                         onClick={() => { setShowNews(false); sessionStorage.setItem('announcement_shown', 'true'); }}
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 rounded-2xl font-bold shadow-xl shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
+                        className="w-full bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-xl shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
                     >
                         <span>Saya Mengerti</span>
-                        <CheckCircle className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                        <Check className="w-5 h-5 text-emerald-400 group-hover:translate-x-1 transition-transform" />
                     </button>
                 </div>
              </div>
           </div>
 
-          {/* Inject Keyframe Animation Khusus Pop Up ini */}
+          {/* Animasi Soft Pop (Paste di style atau di file CSS global jika perlu, tapi inline style di sini aman) */}
           <style>{`
-            @keyframes modalPop {
-                0% { opacity: 0; transform: scale(0.8) translateY(20px) rotateX(10deg); }
-                100% { opacity: 1; transform: scale(1) translateY(0) rotateX(0); }
+            @keyframes softPop {
+                0% { opacity: 0; transform: scale(0.95) translateY(10px); }
+                100% { opacity: 1; transform: scale(1) translateY(0); }
             }
+            /* Custom Scrollbar agar tidak merusak estetika */
+            .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+            .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+            .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+            .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
           `}</style>
         </div>
       )}
