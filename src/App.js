@@ -2579,13 +2579,13 @@ const handleDecision = async (uuid, decision, namaUser) => {
   );
 }
 
-// --- 5. HISTORY SCREEN (EXCEL STYLE: WITH ACTION & DURATION) ---
+// --- 5. HISTORY SCREEN (FINAL: ACTION COLUMN MOVED & AUTO REFRESH) ---
 function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [history, setHistory] = useState([]);
   const [shiftReport, setShiftReport] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [sendingEmail, setSendingEmail] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false); // State untuk loading saat klik Approve/Reject
+  const [isProcessing, setIsProcessing] = useState(false); 
 
   // MAIN FILTER STATE
   const [filterStart, setFilterStart] = useState('');
@@ -2662,6 +2662,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   }
 
   const fetchHistory = async () => {
+    // Note: setLoading(true) will show spinner in background, but modal stays open
     setLoading(true);
     try { 
       const payload = { 
@@ -2711,13 +2712,11 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
   const formatDateTimeFull = (val) => { if (!val || val === '-') return '-'; try { const d = new Date(val); if(isNaN(d.getTime())) return val; const dd = String(d.getDate()).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const yy = String(d.getFullYear()).slice(-2); const hh = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${dd}-${mm}-${yy} ${hh}:${min}`; } catch(e) { return val; } };
   
-  // [MODIFIKASI] Helper Durasi Hari dikembalikan string bersih
   const getDurasiHari = (start, end) => {
     if (!start || start === '-' || !end || end === '-') return '-';
     try {
         const d1 = new Date(start);
         const d2 = new Date(end);
-        // Reset jam untuk hitungan hari murni
         d1.setHours(0,0,0,0);
         d2.setHours(0,0,0,0);
         const diffTime = Math.abs(d2 - d1);
@@ -2783,14 +2782,13 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
               return { ...item, col_date: formatDateIndo(item.tanggal) };
           } else { 
               let periode = item.tglMulai && item.tglMulai !== '-' ? `${formatDateShort(item.tglMulai)} - ${formatDateShort(item.tglSelesai)}` : (item.jamMulai && item.jamMulai !== '-' ? `${formatTimeOnly(item.jamMulai)} - ${formatTimeOnly(item.jamSelesai)}` : '-');
-              // [MODIFIKASI] Hitung Durasi untuk setiap baris
               let durasi = getDurasiHari(item.tglMulai, item.tglSelesai);
               return { 
                   ...item, 
                   idAkun: item.idAkun || item.noPayroll || '-', 
                   col_date: formatDateTimeFull(item.waktu), 
                   col_periode: periode, 
-                  col_durasi: durasi, // Simpan durasi di field baru
+                  col_durasi: durasi, 
                   col_approval: item.approvalTime && item.approvalTime !== '-' ? formatDateTimeFull(item.approvalTime) : '-' 
               };
           }
@@ -2855,25 +2853,23 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       return sortableItems;
   }, [filteredReportTable, reportSortConfig]);
 
-  // --- HELPER ACTIONS ---
+  // --- ACTIONS HANDLERS ---
   const toggleReportUserSelection = (id) => { if(reportUserIds.includes(id)) setReportUserIds(reportUserIds.filter(x => x !== id)); else setReportUserIds([...reportUserIds, id]); };
   const toggleReportDivisiSelection = (div) => { if(reportDivisiFilters.includes(div)) setReportDivisiFilters(reportDivisiFilters.filter(x => x !== div)); else setReportDivisiFilters([...reportDivisiFilters, div]); };
   const selectAllReportUsers = () => { const visibleIds = availableUsers.filter(u => u.nama.toLowerCase().includes(searchReportUser.toLowerCase())).map(u => u.id); if(visibleIds.every(id => reportUserIds.includes(id))) { setReportUserIds(reportUserIds.filter(id => !visibleIds.includes(id))); } else { setReportUserIds([...new Set([...reportUserIds, ...visibleIds])]); } };
   const selectAllDivisions = () => { if(availableDivisions.every(d => reportDivisiFilters.includes(d))) { setReportDivisiFilters([]); } else { setReportDivisiFilters(availableDivisions); } };
 
-  // --- [NEW] ACTION HANDLER (APPROVE/REJECT) ---
+  // --- [FIXED] ACTION PROCESS (STAY ON MODAL) ---
   const handleProcessApproval = async (item, status) => {
-    // Validasi
     if (isProcessing) return;
     const confirmMsg = status === 'Approved' 
         ? `Setujui pengajuan ${item.tipe} dari ${item.nama}?` 
         : `Tolak pengajuan ${item.tipe} dari ${item.nama}?`;
     
-    // Jika Reject, minta alasan (opsional)
     let alasan = '';
     if (status === 'Rejected') {
         alasan = window.prompt("Masukkan alasan penolakan (Opsional):");
-        if (alasan === null) return; // Cancel clicked
+        if (alasan === null) return; 
     } else {
         if (!window.confirm(confirmMsg)) return;
     }
@@ -2889,18 +2885,15 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
             alasan: alasan
         };
         
-        // Fallback jika backend belum support 'process_approval', gunakan logic update manual jika ada
-        // Disini kita asumsi endpoint generic
-        const res = await fetch(SCRIPT_URL, { 
-            method: 'POST', 
-            body: JSON.stringify(payload) 
-        });
+        const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
         const data = await res.json();
         
         if (data.result === 'success') {
             alert(`Berhasil: Data ${status}`);
-            fetchHistory(); // Refresh table
-            if(showWebReport) setShowWebReport(false); // Tutup modal agar data refresh
+            // [REVISI]: Panggil fetchHistory() untuk refresh data
+            // Karena Modal mengambil data dari state 'history', modal akan otomatis ter-update
+            // Tanpa perlu menutup modal.
+            fetchHistory(); 
         } else {
             alert("Gagal: " + data.message);
         }
@@ -2911,7 +2904,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     }
   };
 
-  // --- EXPORT (Updated with Durasi) ---
+  // --- EXPORT FUNCTIONS ---
   const generateExcel = () => {
     let tableHead = [], tableBody = []; const dataToExport = sortedReportTable; 
     if (reportCategory === 'RunningShift') {
@@ -2921,7 +2914,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         tableHead = ["No", "ID Akun", "Nama", "Posisi", "Tanggal", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
         tableBody = dataToExport.map((item, index) => [ index + 1, item.idAkun || '-', item.nama, item.divisi || '-', item.col_date, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]);
     } else {
-        // [MODIFIKASI] Tambahkan Header Durasi
         tableHead = ["No", "ID Akun", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
         tableBody = dataToExport.map((item, index) => [ index + 1, item.idAkun, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval ]);
     }
@@ -2951,7 +2943,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         tableColumn = ["No", "ID Akun", "Nama", "Posisi", "Tanggal", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
         sortedReportTable.forEach((item, index) => { tableRows.push([ index + 1, item.idAkun, item.nama, item.divisi, item.col_date, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]); });
     } else {
-        // [MODIFIKASI] Tambahkan Header Durasi
         tableColumn = ["No", "ID Akun", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
         sortedReportTable.forEach((item, index) => { tableRows.push([index + 1, item.idAkun || '-', item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval]); });
     }
@@ -2959,7 +2950,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     doc.save(`Laporan_${reportCategory}_${reportStartDate}.pdf`);
   };
 
-  // --- ACTIONS ---
+  // --- ACTIONS --- (Non-Report)
   const handleRequestApproval = async (item) => {
     const detailTanggal = item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)} s/d ${formatDateIndo(item.tglSelesai)}` : formatDateIndo(item.waktu);
     if (!window.confirm(`Kirim ulang email approval untuk ${item.tipe} (${detailTanggal})?`)) return;
@@ -3183,20 +3174,19 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                         </>
                                     ) : (
                                         <>
+                                            {/* [ACTION MOVED] Column Action (Only for Admin/HRD) */}
+                                            {canViewAll && <th className="px-2 py-3 text-xs font-bold text-center text-gray-700 uppercase bg-gray-100 border border-gray-300">Action</th>}
+                                            
                                             <ReportFilterHeader label="ID Akun" field="idAkun" />
                                             <ReportFilterHeader label="Nama" field="nama" width="min-w-[140px]"/>
                                             <ReportFilterHeader label="Form" field="tipe" />
                                             <ReportFilterHeader label="Input" field="col_date" />
                                             <ReportFilterHeader label="Periode" field="col_periode" />
-                                            {/* [BARU] Kolom Durasi */}
                                             <ReportFilterHeader label="Durasi" field="col_durasi" />
                                             
                                             <ReportFilterHeader label="Catatan" field="catatan" width="min-w-[250px]"/>
                                             <ReportFilterHeader label="Status" field="status" />
                                             <ReportFilterHeader label="Approval" field="col_approval" />
-                                            
-                                            {/* [BARU] Kolom Action (Hanya untuk Admin/HRD) */}
-                                            {canViewAll && <th className="px-2 py-3 text-xs font-bold text-center text-gray-700 uppercase bg-gray-100 border border-gray-300">Action</th>}
                                         </>
                                     )}
                                 </tr>
@@ -3232,19 +3222,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                             </>
                                         ) : (
                                             <>
-                                                <td className="px-2 py-1.5 text-[11px] font-mono text-gray-600 border border-gray-300 align-top">{item.idAkun}</td>
-                                                <td className="px-2 py-1.5 text-[11px] font-bold text-gray-800 border border-gray-300 align-top">{item.nama}</td>
-                                                <td className="px-2 py-1.5 text-[11px] border border-gray-300 align-top">{item.tipe}</td>
-                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-600 border border-gray-300 align-top">{item.col_date}</td>
-                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-700 border border-gray-300 align-top">{item.col_periode}</td>
-                                                {/* [BARU] Cell Durasi */}
-                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-800 font-bold border border-gray-300 align-top">{item.col_durasi}</td>
-                                                
-                                                <td className="px-2 py-1.5 text-[11px] text-gray-600 italic border border-gray-300 whitespace-normal min-w-[200px] align-top">{item.catatan}</td>
-                                                <td className="px-2 py-1.5 text-[11px] text-center border border-gray-300 align-top"><span className={`font-bold ${item.status === 'Approved' ? 'text-green-700' : (item.status === 'Rejected' ? 'text-red-700' : 'text-amber-700')}`}>{item.status}</span></td>
-                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-500 border border-gray-300 align-top">{item.col_approval}</td>
-                                                
-                                                {/* [BARU] Cell Action (Tombol Approve/Reject) */}
+                                                {/* [ACTION MOVED] Cell Action */}
                                                 {canViewAll && (
                                                     <td className="px-2 py-1.5 text-center border border-gray-300 align-top">
                                                         {item.status === 'Pending' ? (
@@ -3261,6 +3239,17 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                                         )}
                                                     </td>
                                                 )}
+                                                
+                                                <td className="px-2 py-1.5 text-[11px] font-mono text-gray-600 border border-gray-300 align-top">{item.idAkun}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold text-gray-800 border border-gray-300 align-top">{item.nama}</td>
+                                                <td className="px-2 py-1.5 text-[11px] border border-gray-300 align-top">{item.tipe}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-600 border border-gray-300 align-top">{item.col_date}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-700 border border-gray-300 align-top">{item.col_periode}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-800 font-bold border border-gray-300 align-top">{item.col_durasi}</td>
+                                                
+                                                <td className="px-2 py-1.5 text-[11px] text-gray-600 italic border border-gray-300 whitespace-normal min-w-[200px] align-top">{item.catatan}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center border border-gray-300 align-top"><span className={`font-bold ${item.status === 'Approved' ? 'text-green-700' : (item.status === 'Rejected' ? 'text-red-700' : 'text-amber-700')}`}>{item.status}</span></td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-500 border border-gray-300 align-top">{item.col_approval}</td>
                                             </>
                                         )}
                                     </tr>
