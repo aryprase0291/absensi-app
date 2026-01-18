@@ -1000,29 +1000,44 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
     );
 }
 
-// Pastikan import Wifi dan WifiOff ada di bagian paling atas file App.js
-// import { ..., Wifi, WifiOff, ... } from 'lucide-react';
 
-// --- SCREEN ANALISA DATA (UPDATE V7: STATUS APPROVAL REAL) ---
+// --- SCREEN ANALISA DATA (UPDATE V17: SORTING, FIND, & MULTI-FILTER) ---
 function AnalysisScreen({ user, setView }) {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [dataList, setDataList] = useState([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
+    
+    // STATE FILTER (Multi Select)
+    const [columnFilters, setColumnFilters] = useState({
+        tglPengajuan: [], idAkun: [], nik: [], nama: [], divisi: [],
+        periode: [], durasi: [], tglKonflik: [], tipeManual: [], 
+        simbolMesin: [], waktuScan: [], status: []
+    });
 
-    // STATE FILTER
-    const [filterNama, setFilterNama] = useState('');
-    const [filterDivisi, setFilterDivisi] = useState('');
-    const [filterManual, setFilterManual] = useState('');
-    const [filterStatus, setFilterStatus] = useState(''); 
+    // STATE SORTING (Baru)
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+
+    const [activeFilter, setActiveFilter] = useState(null);
 
     useEffect(() => {
-        if (user.role !== 'admin') {
+        if (user.role !== 'admin' && user.role !== 'hrd') {
             alert("Akses Ditolak!");
             setView('dashboard');
         }
     }, [user, setView]);
+
+    // Close dropdown saat klik di luar
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (activeFilter && !event.target.closest('.filter-dropdown-container')) {
+                setActiveFilter(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [activeFilter]);
 
     const handleAnalyze = async () => {
         if (!startDate || !endDate) {
@@ -1031,8 +1046,13 @@ function AnalysisScreen({ user, setView }) {
         }
         setLoading(true);
         setHasSearched(true);
-        // Reset Filter
-        setFilterNama(''); setFilterDivisi(''); setFilterManual(''); setFilterStatus('');
+        // Reset Filter & Sort
+        setColumnFilters({
+            tglPengajuan: [], idAkun: [], nik: [], nama: [], divisi: [],
+            periode: [], durasi: [], tglKonflik: [], tipeManual: [], 
+            simbolMesin: [], waktuScan: [], status: []
+        });
+        setSortConfig({ key: null, direction: 'asc' });
 
         try {
             const res = await fetch(SCRIPT_URL, {
@@ -1057,240 +1077,380 @@ function AnalysisScreen({ user, setView }) {
         }
     };
 
-    // Helper Filter Multi
-    const checkMultiFilter = (itemValue, filterInput) => {
-        if (!filterInput) return true;
-        if (!itemValue) return false;
-        const keywords = filterInput.toLowerCase().split(',').map(k => k.trim()).filter(k => k !== '');
-        const itemLower = itemValue.toLowerCase();
-        return keywords.some(keyword => itemLower.includes(keyword));
+    const handleProcessApproval = async (uuid, decision, namaKaryawan) => {
+        const actionText = decision === 'approve' ? 'Menyetujui' : 'Menolak';
+        if (!window.confirm(`Apakah Anda yakin ingin ${actionText} pengajuan atas nama ${namaKaryawan}?`)) return;
+
+        setLoading(true);
+        try {
+            const res = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'process_approval',
+                    uuid: uuid,
+                    decision: decision,
+                    approverName: user.nama + ' (Via Analisa)',
+                    alasan: 'Diproses melalui Menu Analisa Data'
+                })
+            });
+            const result = await res.json();
+            if (result.result === 'success') {
+                alert(`Berhasil: ${result.message}`);
+                handleAnalyze(); 
+            } else {
+                alert(`Gagal: ${result.message}`);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Terjadi kesalahan jaringan.");
+        } finally {
+            setLoading(false);
+        }
     };
 
+    // --- HELPER FILTER & SORT ---
+
+    const getUniqueValues = (field) => {
+        const values = dataList.map(item => item[field]).filter(v => v !== null && v !== undefined && v !== '');
+        return [...new Set(values)].sort();
+    };
+
+    const toggleFilterValue = (field, value) => {
+        setColumnFilters(prev => {
+            const currentValues = prev[field];
+            if (currentValues.includes(value)) return { ...prev, [field]: currentValues.filter(v => v !== value) };
+            else return { ...prev, [field]: [...currentValues, value] };
+        });
+    };
+
+    const toggleSelectAll = (field, visibleOptions) => {
+        setColumnFilters(prev => {
+            const currentValues = prev[field];
+            // Jika semua opsi yg terlihat sudah terpilih, maka uncheck semua. Jika belum, check semua.
+            const allVisibleSelected = visibleOptions.every(val => currentValues.includes(val));
+            
+            if (allVisibleSelected) {
+                // Hapus visibleOptions dari currentValues
+                return { ...prev, [field]: currentValues.filter(v => !visibleOptions.includes(v)) };
+            } else {
+                // Tambahkan visibleOptions yang belum ada ke currentValues
+                const newValues = [...currentValues];
+                visibleOptions.forEach(v => {
+                    if (!newValues.includes(v)) newValues.push(v);
+                });
+                return { ...prev, [field]: newValues };
+            }
+        });
+    };
+
+    // 1. FILTERING
     const filteredList = dataList.filter(item => {
-        return checkMultiFilter(item.nama, filterNama) &&
-               checkMultiFilter(item.divisi, filterDivisi) &&
-               checkMultiFilter(item.tipeManual, filterManual) &&
-               checkMultiFilter(item.status, filterStatus);
+        return Object.keys(columnFilters).every(key => {
+            const selectedValues = columnFilters[key];
+            if (selectedValues.length === 0) return true;
+            return selectedValues.includes(String(item[key]));
+        });
     });
 
-    // --- Helper Warna Status ---
+    // 2. SORTING (Apply Sort pada filteredList)
+    const sortedList = React.useMemo(() => {
+        let sortableItems = [...filteredList];
+        if (sortConfig.key !== null) {
+            sortableItems.sort((a, b) => {
+                let valA = a[sortConfig.key];
+                let valB = b[sortConfig.key];
+                
+                // Handle null/undefined
+                if (valA === null) valA = '';
+                if (valB === null) valB = '';
+
+                // Cek apakah angka
+                const numA = parseFloat(valA);
+                const numB = parseFloat(valB);
+                const isNum = !isNaN(numA) && !isNaN(numB) && String(valA).trim() !== '' && String(valB).trim() !== '';
+
+                if (isNum) {
+                    return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+                } else {
+                    return sortConfig.direction === 'asc' 
+                        ? String(valA).localeCompare(String(valB))
+                        : String(valB).localeCompare(String(valA));
+                }
+            });
+        }
+        return sortableItems;
+    }, [filteredList, sortConfig]);
+
+    // Handle Klik Sort
+    const requestSort = (key, direction) => {
+        setSortConfig({ key, direction });
+        // Jangan tutup filter agar user bisa lanjut filter lain (opsional, bisa setActiveFilter(null) jika ingin tutup)
+    };
+
     const getStatusColor = (status) => {
         const s = String(status).toLowerCase();
         if (s.includes('approve') || s.includes('verified')) return 'bg-green-100 text-green-700 border-green-200';
         if (s.includes('reject')) return 'bg-red-100 text-red-700 border-red-200';
-        return 'bg-yellow-100 text-yellow-700 border-yellow-200'; // Default Pending
+        return 'bg-yellow-100 text-yellow-700 border-yellow-200';
     };
 
     // --- EXPORT EXCEL ---
     const handleExportExcel = () => {
-        if (filteredList.length === 0) return alert("Tidak ada data untuk diexport.");
-        
-        const dataToExport = filteredList.map((item, index) => ({
+        if (sortedList.length === 0) return alert("Tidak ada data untuk diexport.");
+        const dataToExport = sortedList.map((item, index) => ({
             "No": index + 1,
+            "Tgl Ajuan": item.tglPengajuan,
+            "ID Akun": item.idAkun,
+            "NIK": item.nik, 
             "Nama Karyawan": item.nama,
             "Departemen": item.divisi,
-            "Tanggal": item.tanggal,
+            "Periode Form": item.periode,
+            "Durasi": item.durasi,
+            "Tgl Konflik": item.tglKonflik,
             "Data Manual": item.tipeManual,
             "Data Mesin": item.simbolMesin,
-            "Status Approval": item.status // STATUS ASLI
+            "Waktu Scan": item.waktuScan,
+            "Status Approval": item.status 
         }));
-
         const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Analisa_Mismatch");
-        
-        const wscols = [{wch:5}, {wch:30}, {wch:20}, {wch:15}, {wch:20}, {wch:15}, {wch:20}];
+        const wscols = [{wch:5}, {wch:15}, {wch:12}, {wch:12}, {wch:30}, {wch:20}, {wch:25}, {wch:10}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}];
         ws['!cols'] = wscols;
-
         XLSX.writeFile(wb, `Analisa_Absensi_${startDate}_${endDate}.xlsx`);
     };
 
     // --- EXPORT PDF ---
     const handleExportPDF = () => {
-        if (filteredList.length === 0) return alert("Tidak ada data untuk dicetak.");
-
+        if (sortedList.length === 0) return alert("Tidak ada data untuk dicetak.");
         const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
         doc.setFontSize(14);
         doc.text("Laporan Analisa Ketidakcocokan Absensi", 14, 15);
         doc.setFontSize(10);
         doc.text(`Periode: ${startDate} s/d ${endDate}`, 14, 21);
-        doc.text(`Dicetak Oleh: Admin | Tgl: ${new Date().toLocaleDateString('id-ID')}`, 14, 26);
+        doc.text(`Dicetak Oleh: ${user.nama} | Tgl: ${new Date().toLocaleDateString('id-ID')}`, 14, 26);
 
-        const tableColumn = ["No", "Nama Karyawan", "Dept", "Tanggal", "Manual", "Mesin", "Status Approval"];
+        const tableColumn = [
+            "No", "Tgl Ajuan", "ID Akun", "NIK", "Nama", "Dept", 
+            "Periode", "Dur", "Tgl Konflik", "Form", "Mesin", "Scan", "Status"
+        ];
         const tableRows = [];
-
-        filteredList.forEach((item, index) => {
+        sortedList.forEach((item, index) => {
             tableRows.push([
-                index + 1,
-                item.nama,
-                item.divisi,
-                item.tanggal,
-                item.tipeManual,
-                item.simbolMesin,
-                item.status
+                index + 1, item.tglPengajuan, item.idAkun, item.nik, item.nama, item.divisi,
+                item.periode, item.durasi, item.tglKonflik, item.tipeManual, item.simbolMesin, item.waktuScan, item.status
             ]);
         });
 
         autoTable(doc, {
-            head: [tableColumn],
-            body: tableRows,
-            startY: 30,
-            theme: 'grid',
-            headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: 'bold' },
-            styles: { fontSize: 9, cellPadding: 2 },
+            head: [tableColumn], body: tableRows, startY: 30, theme: 'grid',
+            headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: 'bold', halign: 'center', valign: 'middle', lineWidth: 0.1 },
+            styles: { fontSize: 6.5, cellPadding: 1.5, valign: 'middle', overflow: 'linebreak', lineWidth: 0.1, lineColor: [200, 200, 200] },
             columnStyles: {
-                0: { cellWidth: 10, halign: 'center' },
-                3: { cellWidth: 25, halign: 'center' },
-                4: { cellWidth: 30, halign: 'center' },
-                5: { cellWidth: 25, halign: 'center' },
-                6: { cellWidth: 'auto', fontStyle: 'bold' } 
+                0: { cellWidth: 8, halign: 'center' }, 1: { cellWidth: 20, halign: 'center' }, 2: { cellWidth: 18, halign: 'center' },
+                3: { cellWidth: 18, halign: 'center' }, 4: { cellWidth: 45, halign: 'left' }, 5: { cellWidth: 28, halign: 'left' },
+                6: { cellWidth: 35, halign: 'center' }, 7: { cellWidth: 12, halign: 'center' }, 8: { cellWidth: 22, halign: 'center', textColor: [220, 38, 38] },
+                9: { cellWidth: 18, halign: 'center' }, 10: { cellWidth: 15, halign: 'center' }, 11: { cellWidth: 18, halign: 'center' }, 12: { cellWidth: 20, halign: 'center' }
             },
-            // Custom styling baris berdasarkan status (opsional)
+            margin: { left: 10, right: 10 },
             didParseCell: function(data) {
-                if (data.section === 'body' && data.column.index === 6) {
+                if (data.section === 'body' && data.column.index === 12) {
                     const text = data.cell.raw.toString().toLowerCase();
-                    if (text.includes('reject')) {
-                        data.cell.styles.textColor = [220, 38, 38]; // Merah
-                    } else if (text.includes('approve')) {
-                        data.cell.styles.textColor = [21, 128, 61]; // Hijau
-                    } else {
-                        data.cell.styles.textColor = [202, 138, 4]; // Kuning
-                    }
+                    if (text.includes('reject')) data.cell.styles.textColor = [220, 38, 38];
+                    else if (text.includes('approve')) data.cell.styles.textColor = [21, 128, 61];
+                    else data.cell.styles.textColor = [202, 138, 4];
                 }
             }
         });
-
         doc.save(`Laporan_Analisa_${startDate}_${endDate}.pdf`);
     };
 
-    return (
-        <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col font-sans">
-            
-            {/* HEADER */}
-            <div className="bg-white border-b border-gray-300 px-6 py-4 shadow-sm flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="bg-rose-100 p-2 rounded-lg">
-                        <FileSpreadsheet className="w-6 h-6 text-rose-600" />
+    // --- COMPONENT FILTER HEADER (WITH SORT & FIND) ---
+    const FilterHeader = ({ label, field, width, textColor }) => {
+        const uniqueOptions = getUniqueValues(field);
+        const selectedValues = columnFilters[field];
+        const isOpen = activeFilter === field;
+        
+        // State untuk Find/Search dalam dropdown
+        const [searchTerm, setSearchTerm] = useState('');
+
+        // Reset search term saat dropdown ditutup/dibuka
+        useEffect(() => {
+            if (!isOpen) setSearchTerm('');
+        }, [isOpen]);
+
+        // Filter opsi berdasarkan search term
+        const visibleOptions = uniqueOptions.filter(opt => 
+            String(opt).toLowerCase().includes(searchTerm.toLowerCase())
+        );
+
+        return (
+            <th className={`p-2 border border-gray-300 align-top ${width || 'w-24'} font-normal text-gray-700 bg-gray-100`}>
+                <div className="flex flex-col gap-1 filter-dropdown-container relative">
+                    {/* LABEL HEADER */}
+                    <div className="flex items-center justify-center gap-1">
+                        <span className={`text-center font-normal ${textColor || ''}`}>{label}</span>
+                        {/* Indikator Sort */}
+                        {sortConfig.key === field && (
+                            <span className="text-[9px] text-blue-600 font-bold">
+                                {sortConfig.direction === 'asc' ? '↓' : '↑'}
+                            </span>
+                        )}
                     </div>
-                    <div>
-                        <h2 className="text-xl font-extrabold text-slate-800">Analisa Data Absensi</h2>
-                        <p className="text-xs text-slate-500 font-medium">Monitoring Ketidakcocokan Data (Manual vs Mesin)</p>
-                    </div>
+
+                    {/* BUTTON TRIGGER FILTER */}
+                    <button 
+                        onClick={() => setActiveFilter(isOpen ? null : field)}
+                        className={`flex items-center justify-between w-full text-[10px] px-2 py-1 border rounded bg-white outline-none focus:border-blue-500 font-normal ${selectedValues.length > 0 ? 'text-blue-600 border-blue-300 bg-blue-50' : 'text-gray-500 border-gray-300'}`}
+                    >
+                        <span className="truncate">{selectedValues.length === 0 ? "(All)" : `${selectedValues.length} Selected`}</span>
+                        <Filter className="w-3 h-3 ml-1" />
+                    </button>
+
+                    {/* DROPDOWN CONTENT */}
+                    {isOpen && (
+                        <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-300 shadow-xl rounded-md z-50 flex flex-col max-h-80">
+                            
+                            {/* SECTION 1: SORTING */}
+                            <div className="p-2 border-b border-gray-200 bg-gray-50 grid grid-cols-2 gap-2">
+                                <button 
+                                    onClick={() => requestSort(field, 'asc')}
+                                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] border ${sortConfig.key === field && sortConfig.direction === 'asc' ? 'bg-blue-100 text-blue-700 border-blue-300 font-bold' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}
+                                >
+                                    <span>A-Z</span> ↓
+                                </button>
+                                <button 
+                                    onClick={() => requestSort(field, 'desc')}
+                                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] border ${sortConfig.key === field && sortConfig.direction === 'desc' ? 'bg-blue-100 text-blue-700 border-blue-300 font-bold' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}
+                                >
+                                    <span>Z-A</span> ↑
+                                </button>
+                            </div>
+
+                            {/* SECTION 2: SEARCH (FIND) */}
+                            <div className="p-2 border-b border-gray-200">
+                                <div className="relative">
+                                    <Search className="w-3 h-3 absolute left-2 top-2 text-gray-400" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Find..." 
+                                        className="w-full pl-7 pr-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+
+                            {/* SECTION 3: CHECKLIST FILTER */}
+                            <div className="p-2 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+                                <input type="checkbox" className="rounded border-gray-300 w-3.5 h-3.5 cursor-pointer" 
+                                    checked={visibleOptions.length > 0 && visibleOptions.every(v => selectedValues.includes(v))} 
+                                    onChange={() => toggleSelectAll(field, visibleOptions)}
+                                />
+                                <span className="text-[10px] text-gray-600 font-normal cursor-pointer" onClick={() => toggleSelectAll(field, visibleOptions)}>Select All (Shown)</span>
+                            </div>
+                            
+                            <div className="overflow-y-auto p-1 flex-1 min-h-[100px]">
+                                {visibleOptions.map((val, idx) => (
+                                    <label key={idx} className="flex items-center gap-2 px-2 py-1.5 hover:bg-blue-50 cursor-pointer rounded">
+                                        <input type="checkbox" className="rounded border-gray-300 text-blue-600 w-3.5 h-3.5" checked={selectedValues.includes(val)} onChange={() => toggleFilterValue(field, val)}/>
+                                        <span className="text-[11px] text-gray-700 font-normal truncate">{val}</span>
+                                    </label>
+                                ))}
+                                {visibleOptions.length === 0 && <div className="p-2 text-[10px] text-gray-400 text-center font-normal">No results found</div>}
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <button 
-                    onClick={() => setView('dashboard')}
-                    className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold transition"
-                >
-                    <LogOut className="w-4 h-4 rotate-180" />
-                    Tutup / Kembali
+            </th>
+        );
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-gray-100 flex flex-col font-sans h-screen w-screen overflow-hidden text-xs">
+            {/* HEADER */}
+            <div className="bg-white border-b border-gray-300 px-4 py-3 shadow-sm flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                    <div className="bg-rose-100 p-2 rounded-lg"><FileSpreadsheet className="w-5 h-5 text-rose-600" /></div>
+                    <div><h2 className="text-lg font-normal text-slate-800">Analisa Data Absensi</h2><p className="text-xs text-slate-500 font-normal">Monitoring Ketidakcocokan Data</p></div>
+                </div>
+                <button onClick={() => setView('dashboard')} className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-normal transition border border-gray-200">
+                    <LogOut className="w-3.5 h-3.5 rotate-180" /> Tutup
                 </button>
             </div>
 
             {/* CONTROL BAR */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 flex flex-wrap gap-4 items-end shrink-0">
-                <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Periode Mulai</label>
-                    <input type="date" className="border border-gray-300 p-2 rounded-lg text-sm font-bold shadow-sm" value={startDate} onChange={e => setStartDate(e.target.value)} />
-                </div>
-                <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sampai Dengan</label>
-                    <input type="date" className="border border-gray-300 p-2 rounded-lg text-sm font-bold shadow-sm" value={endDate} onChange={e => setEndDate(e.target.value)} />
-                </div>
-                <button 
-                    onClick={handleAnalyze} 
-                    disabled={loading}
-                    className="bg-slate-800 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-slate-700 transition flex items-center gap-2 shadow-lg shadow-slate-200"
-                >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>}
-                    {loading ? 'Menganalisa...' : 'Jalankan Analisa'}
+            <div className="bg-white border-b border-gray-200 px-4 py-3 flex flex-wrap gap-3 items-end shrink-0">
+                <div><label className="text-[10px] font-normal text-gray-400 uppercase block mb-1">Periode Mulai</label><input type="date" className="border border-gray-300 p-1.5 rounded text-xs font-normal shadow-sm" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
+                <div><label className="text-[10px] font-normal text-gray-400 uppercase block mb-1">Sampai Dengan</label><input type="date" className="border border-gray-300 p-1.5 rounded text-xs font-normal shadow-sm" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+                <button onClick={handleAnalyze} disabled={loading} className="bg-slate-800 text-white px-5 py-2 rounded font-normal text-xs hover:bg-slate-700 transition flex items-center gap-2 shadow-md">
+                    {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Search className="w-3.5 h-3.5"/>} {loading ? 'Proses...' : 'Analisa Data'}
                 </button>
             </div>
 
             {/* MAIN CONTENT */}
-            <div className="flex-1 overflow-hidden flex flex-col px-6 py-4 max-w-7xl mx-auto w-full">
-                
+            <div className="flex-1 flex flex-col overflow-hidden w-full bg-gray-50 p-4">
                 {hasSearched && (
-                    <div className="flex-1 bg-white rounded-xl shadow-md border border-gray-300 flex flex-col overflow-hidden">
-                        
-                        {/* FILTER BAR (MULTI SUPPORT) */}
-                        <div className="bg-slate-50 p-3 border-b border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-3 shrink-0">
-                            <div className="relative">
-                                <input type="text" placeholder="Filter Nama (bisa koma)" className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500" value={filterNama} onChange={e => setFilterNama(e.target.value)}/>
-                            </div>
-                            <div className="relative">
-                                <input type="text" placeholder="Filter Divisi (bisa koma)" className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500" value={filterDivisi} onChange={e => setFilterDivisi(e.target.value)}/>
-                            </div>
-                            <div className="relative">
-                                <input type="text" placeholder="Filter Tipe Manual..." className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500" value={filterManual} onChange={e => setFilterManual(e.target.value)}/>
-                            </div>
-                            <div className="relative">
-                                <input type="text" placeholder="Filter Status (Approved, Pending...)" className="w-full text-xs p-2 pl-2 border rounded outline-none focus:ring-1 focus:ring-blue-500 bg-yellow-50 border-yellow-200" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}/>
-                            </div>
-                        </div>
-
-                        {/* STATUS & EXPORT BAR */}
-                        <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center shrink-0">
-                            <span className="text-xs font-bold text-gray-600">
-                                Hasil: {filteredList.length} Konflik Data
-                            </span>
+                    <div className="flex-1 flex flex-col bg-white border border-gray-300 shadow-sm overflow-hidden">
+                        {/* STATS */}
+                        <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-200 flex justify-between items-center shrink-0">
+                            <span className="text-xs font-normal text-gray-600">Total: {sortedList.length} Data</span>
                             <div className="flex gap-2">
-                                <button onClick={handleExportExcel} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm transition">
-                                    <FileSpreadsheet className="w-3.5 h-3.5" /> Cetak Excel
-                                </button>
-                                <button onClick={handleExportPDF} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-[11px] font-bold shadow-sm transition">
-                                    <Printer className="w-3.5 h-3.5" /> Cetak PDF
-                                </button>
+                                <button onClick={handleExportExcel} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-normal shadow-sm"><FileSpreadsheet className="w-3 h-3" /> Excel</button>
+                                <button onClick={handleExportPDF} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-[10px] font-normal shadow-sm"><Printer className="w-3 h-3" /> PDF</button>
                             </div>
                         </div>
 
-                        {/* TABEL DATA */}
+                        {/* TABLE */}
                         <div className="flex-1 overflow-auto">
-                            <table className="w-full text-left border-collapse table-fixed">
-                                <thead className="sticky top-0 z-10 shadow-sm">
-                                    <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                                        <th className="p-3 border-b border-gray-300 font-bold w-12 text-center">No</th>
-                                        <th className="p-3 border-b border-gray-300 font-bold w-1/4">Nama Karyawan</th>
-                                        <th className="p-3 border-b border-gray-300 font-bold w-1/6">Departemen</th>
-                                        <th className="p-3 border-b border-gray-300 font-bold text-center w-28">Tanggal</th>
-                                        <th className="p-3 border-b border-gray-300 font-bold text-center bg-blue-50 text-blue-700 w-1/6">Data Manual</th>
-                                        <th className="p-3 border-b border-gray-300 font-bold text-center bg-orange-50 text-orange-700 w-1/6">Data Mesin</th>
-                                        <th className="p-3 border-b border-gray-300 font-bold w-1/6">Status Approval</th>
+                            <table className="w-full text-left border-collapse table-fixed text-xs">
+                                <thead className="sticky top-0 z-10 bg-gray-100 text-gray-700 font-normal uppercase border-b-2 border-gray-300">
+                                    <tr>
+                                        <th className="p-2 border border-gray-300 text-center w-10 align-top font-normal">No</th>
+                                        <FilterHeader label="Tgl Ajuan" field="tglPengajuan" width="w-24" />
+                                        <FilterHeader label="ID Akun" field="idAkun" width="w-20" />
+                                        <FilterHeader label="NIK" field="nik" width="w-20" /> 
+                                        <FilterHeader label="Nama Karyawan" field="nama" width="w-40" />
+                                        <FilterHeader label="Departemen" field="divisi" width="w-24" />
+                                        <FilterHeader label="Periode" field="periode" width="w-28" />
+                                        <FilterHeader label="Dur" field="durasi" width="w-12" />
+                                        <FilterHeader label="Tgl Konflik" field="tglKonflik" width="w-24" textColor="text-red-600" />
+                                        <FilterHeader label="Form" field="tipeManual" width="w-20" />
+                                        <FilterHeader label="Mesin" field="simbolMesin" width="w-16" />
+                                        <FilterHeader label="Scan" field="waktuScan" width="w-20" />
+                                        <FilterHeader label="Status" field="status" width="w-24" />
+                                        <th className="p-2 border border-gray-300 text-center w-24 align-top font-normal">Action</th>
                                     </tr>
                                 </thead>
-                                <tbody className="text-sm divide-y divide-gray-100 bg-white">
-                                    {filteredList.length === 0 ? (
-                                        <tr>
-                                            <td colSpan="7" className="p-10 text-center text-gray-400 italic">
-                                                {dataList.length === 0 
-                                                    ? "Data Sinkron (Tidak ada ketidakcocokan)." 
-                                                    : "Data tidak ditemukan dengan filter tersebut."}
-                                            </td>
-                                        </tr>
+                                <tbody className="text-gray-800 text-xs bg-white font-normal">
+                                    {sortedList.length === 0 ? (
+                                        <tr><td colSpan="14" className="p-8 text-center text-gray-400 italic border border-gray-300 font-normal">Tidak ada data.</td></tr>
                                     ) : (
-                                        filteredList.map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-red-50 transition-colors">
-                                                <td className="p-3 text-center font-mono text-gray-500 border-r border-gray-100 truncate">{idx + 1}</td>
-                                                <td className="p-3 font-bold text-slate-700 border-r border-gray-100 truncate" title={item.nama}>{item.nama}</td>
-                                                <td className="p-3 text-slate-500 border-r border-gray-100 truncate">{item.divisi}</td>
-                                                <td className="p-3 text-center font-medium border-r border-gray-100">{item.tanggal}</td>
-                                                
-                                                <td className="p-3 text-center bg-blue-50/20 border-r border-gray-100">
-                                                    <span className="px-2 py-1 rounded-md text-xs font-bold bg-white border border-blue-200 text-blue-700 shadow-sm inline-block">
-                                                        {item.tipeManual}
-                                                    </span>
+                                        sortedList.map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-blue-50 transition-colors">
+                                                <td className="p-2 border border-gray-300 text-center font-normal">{idx + 1}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-normal">{item.tglPengajuan}</td>
+                                                <td className="p-2 border border-gray-300 font-mono text-gray-600 font-normal">{item.idAkun}</td>
+                                                <td className="p-2 border border-gray-300 font-mono text-gray-600 font-normal">{item.nik}</td>
+                                                <td className="p-2 border border-gray-300 truncate font-normal" title={item.nama}>{item.nama}</td>
+                                                <td className="p-2 border border-gray-300 truncate font-normal">{item.divisi}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-normal">{item.periode}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-normal">{item.durasi}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-normal text-red-600">{item.tglKonflik}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-normal">{item.tipeManual}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-normal">{item.simbolMesin}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-mono font-normal">{item.waktuScan}</td>
+                                                <td className="p-2 border border-gray-300 text-center font-normal">
+                                                    <span className={`px-1.5 py-0.5 rounded border ${getStatusColor(item.status)}`}>{item.status}</span>
                                                 </td>
-
-                                                <td className="p-3 text-center bg-orange-50/20 border-r border-gray-100">
-                                                    <span className={`px-2 py-1 rounded-md text-xs font-bold border shadow-sm inline-block ${item.simbolMesin === 'KOSONG' ? 'bg-red-100 text-red-600 border-red-200' : 'bg-white text-orange-700 border-orange-200'}`}>
-                                                        {item.simbolMesin}
-                                                    </span>
-                                                </td>
-
-                                                <td className="p-3">
-                                                    <div className={`text-[10px] font-bold px-2 py-1 rounded-md inline-block border shadow-sm ${getStatusColor(item.status)}`}>
-                                                        {item.status}
-                                                    </div>
+                                                <td className="p-1 border border-gray-300 text-center font-normal">
+                                                    {item.status === 'Pending' ? (
+                                                        <div className="flex justify-center gap-1">
+                                                            <button onClick={() => handleProcessApproval(item.uuid, 'approve', item.nama)} className="bg-green-600 hover:bg-green-700 text-white p-1 rounded shadow-sm" title="Approve"><CheckCircle className="w-3.5 h-3.5" /></button>
+                                                            <button onClick={() => handleProcessApproval(item.uuid, 'reject', item.nama)} className="bg-red-600 hover:bg-red-700 text-white p-1 rounded shadow-sm" title="Reject"><X className="w-3.5 h-3.5" /></button>
+                                                        </div>
+                                                    ) : <span className="text-gray-300">-</span>}
                                                 </td>
                                             </tr>
                                         ))
@@ -2205,51 +2365,60 @@ function ApprovalScreen({ user, setView }) {
 
   useEffect(() => { fetchApprovalList(); }, [fetchApprovalList]);
 
-  // --- LOGIC APPROVE/REJECT (Sama seperti sebelumnya) ---
-  const handleDecision = async (uuid, decision, namaUser) => {
-      const isReject = decision === 'reject';
-      const actionText = isReject ? 'Menolak' : 'Menyetujui';
-      const pesanPrompt = isReject 
-          ? `Alasan PENOLAKAN untuk ${namaUser} (Wajib diisi):` 
-          : `Catatan PERSETUJUAN untuk ${namaUser} (Opsional):`;
-      
-      const alasanInput = window.prompt(pesanPrompt, "");
-      if (alasanInput === null) return;
-      if (isReject && alasanInput.trim() === "") {
-          alert("Gagal! Anda wajib memberikan alasan jika menolak pengajuan.");
-          return;
-      }
-  
-      if (!window.confirm(`Yakin ingin ${actionText} pengajuan ini?`)) return;
-      
-      // Optimistic Update UI (Biar terasa cepat)
-      const newList = list.filter(item => item.uuid !== uuid);
-      setList(newList);
+  // --- LOGIC APPROVE/REJECT ---
+const handleDecision = async (uuid, decision, namaUser) => {
+    const isReject = decision === 'reject';
+    const actionText = isReject ? 'Menolak' : 'Menyetujui';
+    
+    // 1. Minta Input Alasan/Catatan
+    const pesanPrompt = isReject 
+        ? `Alasan PENOLAKAN untuk ${namaUser} (Wajib diisi):` 
+        : `Catatan PERSETUJUAN untuk ${namaUser} (Opsional):`;
+    
+    const alasanInput = window.prompt(pesanPrompt, "");
+    
+    // Jika user klik Cancel di prompt
+    if (alasanInput === null) return;
 
-      try {
-          const res = await fetch(SCRIPT_URL, { 
-              method: 'POST', 
-              body: JSON.stringify({ 
-                  action: 'process_approval', 
-                  uuid, 
-                  decision, 
-                  approverName: user.nama,
-                  alasan: alasanInput.trim() 
-              }) 
-          }).then(r => r.json());
-          
-          if (res.result === 'success') { 
-              alert(res.message);
-              // fetchApprovalList(); // Tidak perlu fetch ulang jika optimistic update sukses
-          } else {
-              alert(res.message);
-              fetchApprovalList(); // Revert jika gagal
-          }
-      } catch (e) {
-          alert('Terjadi kesalahan koneksi');
-          fetchApprovalList();
-      }
-  };
+    // 2. Validasi: Reject Wajib Ada Alasan
+    if (isReject && alasanInput.trim() === "") {
+        alert("Gagal! Anda wajib memberikan alasan jika menolak pengajuan.");
+        return;
+    }
+
+    // 3. Konfirmasi Terakhir
+    if (!window.confirm(`Yakin ingin ${actionText} pengajuan ini?`)) return;
+    
+    // 4. Optimistic Update UI (Hapus baris dari layar biar cepat)
+    const newList = list.filter(item => item.uuid !== uuid);
+    setList(newList);
+
+    try {
+        // 5. Kirim ke Server
+        const res = await fetch(SCRIPT_URL, { 
+            method: 'POST', 
+            body: JSON.stringify({ 
+                action: 'process_approval', 
+                uuid: uuid, 
+                decision: decision, 
+                approverName: user.nama, // Mengambil nama user yang sedang login
+                alasan: alasanInput.trim() 
+            }) 
+        }).then(r => r.json());
+        
+        if (res.result === 'success') { 
+            alert(res.message);
+            // Tidak perlu fetch ulang jika sukses, karena data sudah dihapus dari layar (Optimistic UI)
+        } else {
+            // Jika Gagal, kembalikan data (Revert)
+            alert(res.message);
+            fetchApprovalList(); 
+        }
+    } catch (e) {
+        alert('Terjadi kesalahan koneksi');
+        fetchApprovalList(); // Revert jika error koneksi
+    }
+};
 
   const formatDateIndo = (dateString) => { 
     if (!dateString || dateString === '-') return '-';
