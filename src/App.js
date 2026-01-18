@@ -2860,48 +2860,50 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const selectAllDivisions = () => { if(availableDivisions.every(d => reportDivisiFilters.includes(d))) { setReportDivisiFilters([]); } else { setReportDivisiFilters(availableDivisions); } };
 
   // --- [FIXED] ACTION PROCESS (STAY ON MODAL) ---
-  const handleProcessApproval = async (item, status) => {
-    if (isProcessing) return;
-    const confirmMsg = status === 'Approved' 
-        ? `Setujui pengajuan ${item.tipe} dari ${item.nama}?` 
-        : `Tolak pengajuan ${item.tipe} dari ${item.nama}?`;
-    
-    let alasan = '';
-    if (status === 'Rejected') {
-        alasan = window.prompt("Masukkan alasan penolakan (Opsional):");
-        if (alasan === null) return; 
-    } else {
-        if (!window.confirm(confirmMsg)) return;
-    }
+  const handleProcessApproval = async (item, statusLabel) => { // Ubah nama argumen jadi statusLabel biar jelas
+      if (isProcessing) return;
+      
+      // Mapping Status ('Approved' -> 'approve')
+      const decision = statusLabel === 'Approved' ? 'approve' : 'reject';
 
-    setIsProcessing(true);
-    try {
-        const payload = {
-            action: 'process_approval', // Pastikan backend handle ini
-            uuid: item.uuid,
-            status: status,
-            approverId: user.id,
-            approverName: user.nama,
-            alasan: alasan
-        };
-        
-        const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
-        const data = await res.json();
-        
-        if (data.result === 'success') {
-            alert(`Berhasil: Data ${status}`);
-            // [REVISI]: Panggil fetchHistory() untuk refresh data
-            // Karena Modal mengambil data dari state 'history', modal akan otomatis ter-update
-            // Tanpa perlu menutup modal.
-            fetchHistory(); 
-        } else {
-            alert("Gagal: " + data.message);
-        }
-    } catch (e) {
-        alert("Error koneksi: " + e.message);
-    } finally {
-        setIsProcessing(false);
-    }
+      const confirmMsg = decision === 'approve' ? `Setujui pengajuan ${item.tipe} dari ${item.nama}?` : `Tolak pengajuan ${item.tipe} dari ${item.nama}?`;
+      
+      let alasan = '';
+      if (decision === 'reject') {
+          alasan = window.prompt("Masukkan alasan penolakan (Opsional):");
+          if (alasan === null) return;
+      } else {
+          if (!window.confirm(confirmMsg)) return;
+      }
+
+      setIsProcessing(true);
+      try {
+          const payload = {
+              action: 'process_approval',
+              uuid: item.uuid,
+              decision: decision, // <--- UBAH INI: Kirim 'decision', bukan 'status'
+              approverName: user.nama,
+              alasan: alasan
+          };
+
+          const res = await fetch(SCRIPT_URL, {
+              method: 'POST',
+              body: JSON.stringify(payload)
+          });
+          
+          const data = await res.json();
+
+          if (data.result === 'success') {
+              alert(`Berhasil: Data ${statusLabel}`); 
+              fetchHistory(); // Refresh data
+          } else {
+              alert("Gagal: " + data.message);
+          }
+      } catch (e) {
+          alert("Error koneksi: " + e.message);
+      } finally {
+          setIsProcessing(false);
+      }
   };
 
   // --- EXPORT FUNCTIONS ---
