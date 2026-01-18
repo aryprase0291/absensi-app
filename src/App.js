@@ -2579,43 +2579,52 @@ const handleDecision = async (uuid, decision, namaUser) => {
   );
 }
 
-// --- 5. HISTORY SCREEN (FINAL: SWEET UI, DYNAMIC FONTS & COLORS) ---
+// --- 5. HISTORY SCREEN (EXCEL STYLE: WITH ACTION & DURATION) ---
 function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [history, setHistory] = useState([]);
   const [shiftReport, setShiftReport] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // State untuk loading saat klik Approve/Reject
 
-  // FILTER STATE
+  // MAIN FILTER STATE
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
   const [filterType, setFilterType] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All'); 
   
-  // REPORT STATE
+  // REPORT MODAL STATE
   const [showWebReport, setShowWebReport] = useState(false);
   const [reportStatusFilter, setReportStatusFilter] = useState('All');
   const [reportCategory, setReportCategory] = useState('General'); 
   const [isReportLoading, setIsReportLoading] = useState(false);
   const [reportFormFilter, setReportFormFilter] = useState('All');
-
-  // REPORT FILTER STATE
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
   const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
 
-  // MULTI-SELECT FILTERS
+  // REPORT ADVANCED FILTERS
   const [reportUserIds, setReportUserIds] = useState([]); 
   const [reportDivisiFilters, setReportDivisiFilters] = useState([]); 
-  
-  // UI TOGGLES
   const [isReportFilterExpanded, setIsReportFilterExpanded] = useState(false); 
   const [isPosisiFilterExpanded, setIsPosisiFilterExpanded] = useState(false); 
   const [searchReportUser, setSearchReportUser] = useState('');
 
-  // REFS
-  const filterPosisiRef = useRef(null);
-  const filterNamaRef = useRef(null);
+  // REPORT TABLE FILTERS
+  const [reportColumnFilters, setReportColumnFilters] = useState({});
+  const [reportSortConfig, setReportSortConfig] = useState({ key: null, direction: 'asc' });
+  const [activeReportFilter, setActiveReportFilter] = useState(null);
+
+  // Close dropdown logic
+  useEffect(() => {
+      const handleClickOutside = (event) => {
+          if (activeReportFilter && !event.target.closest('.report-filter-container')) {
+              setActiveReportFilter(null);
+          }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeReportFilter]);
 
   const userRole = user.role ? String(user.role).toLowerCase() : '';
   const canViewAll = ['admin', 'hrd'].includes(userRole);
@@ -2626,7 +2635,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [locationFilter, setLocationFilter] = useState('All');
   const [searchUser, setSearchUser] = useState('');
-
   const APPROVAL_TYPES = ['Cuti', 'Sakit', 'Dinas Luar', 'Lembur', 'Tukar Shift', 'Off', 'Cuti EO'];
 
   // --- EFFECT ---
@@ -2636,6 +2644,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           setReportEndDate(filterEnd);
           setIsReportLoading(true);
           setTimeout(() => setIsReportLoading(false), 800);
+          setReportColumnFilters({});
+          setReportSortConfig({ key: null, direction: 'asc' });
       }
   }, [showWebReport]);
 
@@ -2658,7 +2668,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         action: 'get_history', 
         userId: user.id,
         canViewAll: canViewAll, 
-        // [PERBAIKAN 1]: Menggunakan locationFilter jika user adalah Super Admin
         requestorLokasi: isSuperAdmin ? locationFilter : (user.lokasi || 'All'), 
         targetUserIds: canViewAll ? selectedUserIds : [] 
       };
@@ -2691,6 +2700,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           setIsReportLoading(true);
           setTimeout(() => setIsReportLoading(false), 500);
       }
+      setReportColumnFilters({});
   }, [showWebReport, reportCategory]);
 
   // --- HELPER FORMAT ---
@@ -2700,26 +2710,20 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
   const uniqueStatuses = ['All', ...new Set(history.map(item => item.status).filter(Boolean))];
   const formatDateTimeFull = (val) => { if (!val || val === '-') return '-'; try { const d = new Date(val); if(isNaN(d.getTime())) return val; const dd = String(d.getDate()).padStart(2, '0'); const mm = String(d.getMonth() + 1).padStart(2, '0'); const yy = String(d.getFullYear()).slice(-2); const hh = String(d.getHours()).padStart(2, '0'); const min = String(d.getMinutes()).padStart(2, '0'); return `${dd}-${mm}-${yy} ${hh}:${min}`; } catch(e) { return val; } };
+  
+  // [MODIFIKASI] Helper Durasi Hari dikembalikan string bersih
   const getDurasiHari = (start, end) => {
-    if (!start || start === '-' || !end || end === '-') return '';
+    if (!start || start === '-' || !end || end === '-') return '-';
     try {
         const d1 = new Date(start);
         const d2 = new Date(end);
+        // Reset jam untuk hitungan hari murni
+        d1.setHours(0,0,0,0);
+        d2.setHours(0,0,0,0);
         const diffTime = Math.abs(d2 - d1);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; 
-        return `(${diffDays})`;
-    } catch (e) { return ''; }
-  };
-
-
-  // --- FILTERS ---
-  const toggleReportUserSelection = (id) => {
-    if(reportUserIds.includes(id)) setReportUserIds(reportUserIds.filter(x => x !== id));
-    else setReportUserIds([...reportUserIds, id]);
-  };
-  const toggleReportDivisiSelection = (div) => {
-    if(reportDivisiFilters.includes(div)) setReportDivisiFilters(reportDivisiFilters.filter(x => x !== div));
-    else setReportDivisiFilters([...reportDivisiFilters, div]);
+        return `${diffDays} Hari`;
+    } catch (e) { return '-'; }
   };
 
   // --- CORE DATA PROCESSING ---
@@ -2727,7 +2731,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       let finalData = [];
       let availableUsers = [];
       let availableDivisions = [];
-
       const start = reportStartDate ? new Date(reportStartDate).setHours(0, 0, 0, 0) : null;
       const end = reportEndDate ? new Date(reportEndDate).setHours(23, 59, 59, 999) : null;
 
@@ -2738,219 +2741,236 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
              const matchDate = (!start && !end) || (itemDate >= start && itemDate <= end);
              return matchDate && tallyTypes.includes(item.tipe);
           });
-
           const groupedMap = {};
           filteredRaw.forEach(item => {
               const dateKey = new Date(item.waktu).toLocaleDateString('en-CA'); 
               const groupKey = `${item.userId}_${dateKey}`;
-
               if (!groupedMap[groupKey]) {
                   groupedMap[groupKey] = {
-                      id: item.userId, 
-                      nama: item.nama,
-                      idAkun: item.noPayroll || '-',
-                      divisi: item.divisi || '-',
-                      dateObj: new Date(item.waktu),
-                      tanggal: item.waktu,
-                      foto: item.foto || '-', 
-                      catatan: item.catatan ? [item.catatan] : [],
-                      masuk: '-', pulang: '-', standby: '-'
+                      id: item.userId, nama: item.nama, idAkun: item.noPayroll || '-', divisi: item.divisi || '-',
+                      dateObj: new Date(item.waktu), tanggal: item.waktu, foto: item.foto || '-', 
+                      catatan: item.catatan ? [item.catatan] : [], masuk: '-', pulang: '-', standby: '-'
                   };
               } else {
                   if (item.catatan) groupedMap[groupKey].catatan.push(item.catatan);
-                  if ((!groupedMap[groupKey].foto || groupedMap[groupKey].foto === '-') && item.foto) {
-                      groupedMap[groupKey].foto = item.foto;
-                  }
+                  if ((!groupedMap[groupKey].foto || groupedMap[groupKey].foto === '-') && item.foto) groupedMap[groupKey].foto = item.foto;
               }
-
               const timeStr = formatTimeOnly(item.waktu); 
               if (item.tipe === 'Hadir') groupedMap[groupKey].masuk = timeStr;
               else if (item.tipe === 'Pulang') groupedMap[groupKey].pulang = timeStr;
               else if (item.tipe === 'Standby' || item.tipe === 'Off') groupedMap[groupKey].standby = timeStr; 
           });
-
-          finalData = Object.values(groupedMap).map(g => ({
-              ...g,
-              catatan: g.catatan.join('; ')
-          }));
-      } 
-      else {
+          finalData = Object.values(groupedMap).map(g => ({ ...g, catatan: g.catatan.join('; ') }));
+      } else {
           let sourceData = (reportCategory === 'RunningShift') ? shiftReport : history;
           finalData = sourceData.filter(item => {
               const dateRef = reportCategory === 'RunningShift' ? item.tanggal : item.waktu;
               const itemDate = new Date(dateRef).setHours(0, 0, 0, 0);
               const matchDate = (!start && !end) || (itemDate >= start && itemDate <= end);
-              
-              let matchStatus = true;
-              let matchForm = true; // [BARU]
-
+              let matchStatus = true; let matchForm = true;
               if (reportCategory === 'General') {
-                 // Filter Status
                  matchStatus = (reportStatusFilter === 'All' || item.status === reportStatusFilter);
-                 // [BARU]: Filter Form
                  matchForm = (reportFormFilter === 'All' || item.tipe === reportFormFilter);
               }
-              
-              return matchDate && matchStatus && matchForm; // [UPDATE RETURN]
+              return matchDate && matchStatus && matchForm;
           });
       }
+
+      finalData = finalData.map(item => {
+          if (reportCategory === 'RunningShift') {
+              return { ...item, col_date: formatDateIndo(item.tanggal), col_time: formatDateTimeFull(item.waktuInput) };
+          } else if (reportCategory === 'Tally') {
+              return { ...item, col_date: formatDateIndo(item.tanggal) };
+          } else { 
+              let periode = item.tglMulai && item.tglMulai !== '-' ? `${formatDateShort(item.tglMulai)} - ${formatDateShort(item.tglSelesai)}` : (item.jamMulai && item.jamMulai !== '-' ? `${formatTimeOnly(item.jamMulai)} - ${formatTimeOnly(item.jamSelesai)}` : '-');
+              // [MODIFIKASI] Hitung Durasi untuk setiap baris
+              let durasi = getDurasiHari(item.tglMulai, item.tglSelesai);
+              return { 
+                  ...item, 
+                  idAkun: item.idAkun || item.noPayroll || '-', 
+                  col_date: formatDateTimeFull(item.waktu), 
+                  col_periode: periode, 
+                  col_durasi: durasi, // Simpan durasi di field baru
+                  col_approval: item.approvalTime && item.approvalTime !== '-' ? formatDateTimeFull(item.approvalTime) : '-' 
+              };
+          }
+      });
 
       availableUsers = finalData.reduce((acc, current) => {
           const uid = String(current.id || current.userId); 
           if (!acc.find(u => u.id === uid)) acc.push({ id: uid, nama: current.nama });
           return acc;
       }, []).sort((a, b) => a.nama.localeCompare(b.nama));
-
       availableDivisions = [...new Set(finalData.map(item => item.divisi || '-'))].sort();
 
       if (reportUserIds.length > 0) finalData = finalData.filter(item => reportUserIds.includes(String(item.id || item.userId)));
       if (reportDivisiFilters.length > 0) finalData = finalData.filter(item => reportDivisiFilters.includes(item.divisi || '-'));
-
-      finalData.sort((a, b) => {
-          const nameCompare = a.nama.localeCompare(b.nama);
-          if (nameCompare !== 0) return nameCompare;
-          const dA = new Date(a.dateObj || a.tanggal || a.waktu);
-          const dB = new Date(b.dateObj || b.tanggal || b.waktu);
-          return dB - dA;
-      });
 
       return { finalData, availableUsers, availableDivisions };
   };
 
   const { finalData: currentReportData, availableUsers, availableDivisions } = processReportData();
 
-  const selectAllReportUsers = () => {
-     const visibleIds = availableUsers.filter(u => u.nama.toLowerCase().includes(searchReportUser.toLowerCase())).map(u => u.id);
-     if(visibleIds.every(id => reportUserIds.includes(id))) { setReportUserIds(reportUserIds.filter(id => !visibleIds.includes(id))); } 
-     else { setReportUserIds([...new Set([...reportUserIds, ...visibleIds])]); }
+  // --- FILTERING & SORTING ---
+  const getReportUniqueValues = (field) => {
+      const values = currentReportData.map(item => item[field]).filter(v => v !== null && v !== undefined && v !== '');
+      return [...new Set(values)].sort();
   };
-  const selectAllDivisions = () => {
-     if(availableDivisions.every(d => reportDivisiFilters.includes(d))) { setReportDivisiFilters([]); } 
-     else { setReportDivisiFilters(availableDivisions); }
+  const toggleReportFilterValue = (field, value) => {
+      setReportColumnFilters(prev => {
+          const currentValues = prev[field] || [];
+          if (currentValues.includes(value)) return { ...prev, [field]: currentValues.filter(v => v !== value) };
+          else return { ...prev, [field]: [...currentValues, value] };
+      });
+  };
+  const toggleReportSelectAll = (field, visibleOptions) => {
+      setReportColumnFilters(prev => {
+          const currentValues = prev[field] || [];
+          const allVisibleSelected = visibleOptions.every(val => currentValues.includes(val));
+          if (allVisibleSelected) return { ...prev, [field]: currentValues.filter(v => !visibleOptions.includes(v)) };
+          else {
+              const newValues = [...currentValues];
+              visibleOptions.forEach(v => { if (!newValues.includes(v)) newValues.push(v); });
+              return { ...prev, [field]: newValues };
+          }
+      });
+  };
+  const requestReportSort = (key, direction) => { setReportSortConfig({ key, direction }); };
+  const filteredReportTable = currentReportData.filter(item => {
+      return Object.keys(reportColumnFilters).every(key => {
+          const selectedValues = reportColumnFilters[key];
+          if (!selectedValues || selectedValues.length === 0) return true;
+          return selectedValues.includes(String(item[key]));
+      });
+  });
+  const sortedReportTable = React.useMemo(() => {
+      let sortableItems = [...filteredReportTable];
+      if (reportSortConfig.key !== null) {
+          sortableItems.sort((a, b) => {
+              let valA = a[reportSortConfig.key] || '';
+              let valB = b[reportSortConfig.key] || '';
+              return reportSortConfig.direction === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
+          });
+      }
+      return sortableItems;
+  }, [filteredReportTable, reportSortConfig]);
+
+  // --- HELPER ACTIONS ---
+  const toggleReportUserSelection = (id) => { if(reportUserIds.includes(id)) setReportUserIds(reportUserIds.filter(x => x !== id)); else setReportUserIds([...reportUserIds, id]); };
+  const toggleReportDivisiSelection = (div) => { if(reportDivisiFilters.includes(div)) setReportDivisiFilters(reportDivisiFilters.filter(x => x !== div)); else setReportDivisiFilters([...reportDivisiFilters, div]); };
+  const selectAllReportUsers = () => { const visibleIds = availableUsers.filter(u => u.nama.toLowerCase().includes(searchReportUser.toLowerCase())).map(u => u.id); if(visibleIds.every(id => reportUserIds.includes(id))) { setReportUserIds(reportUserIds.filter(id => !visibleIds.includes(id))); } else { setReportUserIds([...new Set([...reportUserIds, ...visibleIds])]); } };
+  const selectAllDivisions = () => { if(availableDivisions.every(d => reportDivisiFilters.includes(d))) { setReportDivisiFilters([]); } else { setReportDivisiFilters(availableDivisions); } };
+
+  // --- [NEW] ACTION HANDLER (APPROVE/REJECT) ---
+  const handleProcessApproval = async (item, status) => {
+    // Validasi
+    if (isProcessing) return;
+    const confirmMsg = status === 'Approved' 
+        ? `Setujui pengajuan ${item.tipe} dari ${item.nama}?` 
+        : `Tolak pengajuan ${item.tipe} dari ${item.nama}?`;
+    
+    // Jika Reject, minta alasan (opsional)
+    let alasan = '';
+    if (status === 'Rejected') {
+        alasan = window.prompt("Masukkan alasan penolakan (Opsional):");
+        if (alasan === null) return; // Cancel clicked
+    } else {
+        if (!window.confirm(confirmMsg)) return;
+    }
+
+    setIsProcessing(true);
+    try {
+        const payload = {
+            action: 'process_approval', // Pastikan backend handle ini
+            uuid: item.uuid,
+            status: status,
+            approverId: user.id,
+            approverName: user.nama,
+            alasan: alasan
+        };
+        
+        // Fallback jika backend belum support 'process_approval', gunakan logic update manual jika ada
+        // Disini kita asumsi endpoint generic
+        const res = await fetch(SCRIPT_URL, { 
+            method: 'POST', 
+            body: JSON.stringify(payload) 
+        });
+        const data = await res.json();
+        
+        if (data.result === 'success') {
+            alert(`Berhasil: Data ${status}`);
+            fetchHistory(); // Refresh table
+            if(showWebReport) setShowWebReport(false); // Tutup modal agar data refresh
+        } else {
+            alert("Gagal: " + data.message);
+        }
+    } catch (e) {
+        alert("Error koneksi: " + e.message);
+    } finally {
+        setIsProcessing(false);
+    }
   };
 
-  // --- EXCEL ---
+  // --- EXPORT (Updated with Durasi) ---
   const generateExcel = () => {
-    let tableHead = [];
-    let tableBody = [];
-
+    let tableHead = [], tableBody = []; const dataToExport = sortedReportTable; 
     if (reportCategory === 'RunningShift') {
         tableHead = ["No", "ID Akun", "Nama", "Posisi", "Tanggal Shift", "Kode Shift", "Jam Kerja", "Waktu Input"];
-        tableBody = currentReportData.map((item, index) => [
-            index + 1, item.idAkun || '-', item.nama, item.divisi || '-',
-            formatDateIndo(item.tanggal), item.shiftValue, item.shiftLabel, formatDateTimeFull(item.waktuInput)
-        ]);
+        tableBody = dataToExport.map((item, index) => [ index + 1, item.idAkun || '-', item.nama, item.divisi || '-', item.col_date, item.shiftValue, item.shiftLabel, item.col_time ]);
     } else if (reportCategory === 'Tally') {
         tableHead = ["No", "ID Akun", "Nama", "Posisi", "Tanggal", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
-        tableBody = currentReportData.map((item, index) => [
-            index + 1, item.idAkun || '-', item.nama, item.divisi || '-',
-            formatDateIndo(item.tanggal), item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-'
-        ]);
+        tableBody = dataToExport.map((item, index) => [ index + 1, item.idAkun || '-', item.nama, item.divisi || '-', item.col_date, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]);
     } else {
-        // [BARU]: Logika Excel untuk Laporan Absensi (General)
-        tableHead = ["No", "ID Akun", "Payroll", "Nama", "Form", "Waktu Input", "Periode", "Catatan", "Status", "Approval"];
-        tableBody = currentReportData.map((item, index) => {
-            let p = item.tglMulai && item.tglMulai !== '-' ? `${formatDateShort(item.tglMulai)} - ${formatDateShort(item.tglSelesai)}` : (item.jamMulai && item.jamMulai !== '-' ? `${formatTimeOnly(item.jamMulai)} - ${formatTimeOnly(item.jamSelesai)}` : '-');
-            return [
-                index + 1, item.idAkun || '-', item.noPayroll || '-', item.nama, item.tipe, 
-                formatDateTimeFull(item.waktu), p, item.catatan || '-', item.status, 
-                item.approvalTime && item.approvalTime !== '-' ? formatDateTimeFull(item.approvalTime) : '-'
-            ];
-        });
+        // [MODIFIKASI] Tambahkan Header Durasi
+        tableHead = ["No", "ID Akun", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
+        tableBody = dataToExport.map((item, index) => [ index + 1, item.idAkun, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval ]);
     }
-    
     const worksheet = XLSX.utils.aoa_to_sheet([tableHead, ...tableBody]);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan");
     XLSX.writeFile(workbook, `Laporan_${reportCategory}_${reportStartDate || 'All'}.xlsx`);
   };
 
-  // --- PDF ---
   const generatePDF = () => {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const marginLeft = 10; const marginTop = 10;
-    
     doc.setFontSize(10); doc.setFont("helvetica", "bold");
     let judul = "LAPORAN DATA ABSENSI";
     if (reportCategory === 'RunningShift') judul = "LAPORAN RUNNING SHIFT (JADWAL)";
     if (reportCategory === 'Tally') judul = "LAPORAN ABSEN ONLINE TALLY";
-    
     doc.text(judul, marginLeft, marginTop);
     doc.setFontSize(8); doc.setFont("helvetica", "normal");
-    
     const posisiText = reportDivisiFilters.length > 0 ? reportDivisiFilters.join(', ') : 'Semua Posisi';
-    const infoFilter = `Periode: ${reportStartDate || 'Awal'} s/d ${reportEndDate || 'Akhir'} | Posisi: ${posisiText} | Total: ${currentReportData.length}`;
+    const infoFilter = `Periode: ${reportStartDate || 'Awal'} s/d ${reportEndDate || 'Akhir'} | Total: ${sortedReportTable.length}`;
     doc.text(infoFilter, marginLeft, marginTop + 4);
-
-    let tableColumn = [];
-    let tableRows = [];
-
+    let tableColumn = [], tableRows = [];
     if (reportCategory === 'RunningShift') {
         tableColumn = ["No", "ID Akun", "Nama", "Posisi", "Tanggal Shift", "Kode", "Jam Kerja", "Waktu Input"];
-        currentReportData.forEach((item, index) => {
-            tableRows.push([index + 1, item.idAkun || '-', item.nama, item.divisi || '-', formatDateIndo(item.tanggal), item.shiftValue, item.shiftLabel, formatDateTimeFull(item.waktuInput)]);
-        });
+        sortedReportTable.forEach((item, index) => { tableRows.push([index + 1, item.idAkun || '-', item.nama, item.divisi || '-', item.col_date, item.shiftValue, item.shiftLabel, item.col_time]); });
     } else if (reportCategory === 'Tally') {
         tableColumn = ["No", "ID Akun", "Nama", "Posisi", "Tanggal", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
-        currentReportData.forEach((item, index) => {
-            tableRows.push([
-                index + 1, item.idAkun, item.nama, item.divisi, formatDateIndo(item.tanggal), 
-                item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-'
-            ]);
-        });
+        sortedReportTable.forEach((item, index) => { tableRows.push([ index + 1, item.idAkun, item.nama, item.divisi, item.col_date, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]); });
     } else {
-        tableColumn = ["No", "ID Akun", "Payroll", "Nama", "Form", "Waktu Input", "Periode", "Catatan", "Status", "Approval"];
-        currentReportData.forEach((item, index) => {
-            let p = item.tglMulai && item.tglMulai !== '-' ? `${formatDateShort(item.tglMulai)} - ${formatDateShort(item.tglSelesai)}` : (item.jamMulai && item.jamMulai !== '-' ? `${formatTimeOnly(item.jamMulai)} - ${formatTimeOnly(item.jamSelesai)}` : '-');
-            tableRows.push([index + 1, item.idAkun || '-', item.noPayroll || '-', item.nama, item.tipe, formatDateTimeFull(item.waktu), p, item.catatan || '-', item.status, item.approvalTime && item.approvalTime !== '-' ? formatDateTimeFull(item.approvalTime) : '-']);
-        });
+        // [MODIFIKASI] Tambahkan Header Durasi
+        tableColumn = ["No", "ID Akun", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
+        sortedReportTable.forEach((item, index) => { tableRows.push([index + 1, item.idAkun || '-', item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval]); });
     }
-
-    autoTable(doc, {
-      head: [tableColumn], body: tableRows, startY: 18, theme: 'grid', 
-      margin: { top: 15, right: 10, bottom: 10, left: 10 }, 
-      styles: { fontSize: 6, cellPadding: 1, valign: 'middle', overflow: 'linebreak' },
-      headStyles: { fillColor: [50, 50, 50], fontSize: 7, fontStyle: 'bold', halign: 'center' },
-    });
+    autoTable(doc, { head: [tableColumn], body: tableRows, startY: 18, theme: 'grid', styles: { fontSize: 6, cellPadding: 1, valign: 'middle' }, headStyles: { fillColor: [50, 50, 50] } });
     doc.save(`Laporan_${reportCategory}_${reportStartDate}.pdf`);
   };
 
   // --- ACTIONS ---
   const handleRequestApproval = async (item) => {
-    // Format tanggal untuk konfirmasi
-    const detailTanggal = item.tglMulai && item.tglMulai !== '-' 
-        ? `${formatDateIndo(item.tglMulai)} s/d ${formatDateIndo(item.tglSelesai)}` 
-        : formatDateIndo(item.waktu);
-
+    const detailTanggal = item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)} s/d ${formatDateIndo(item.tglSelesai)}` : formatDateIndo(item.waktu);
     if (!window.confirm(`Kirim ulang email approval untuk ${item.tipe} (${detailTanggal})?`)) return;
-    
     setSendingEmail(true);
     try {
-      const res = await fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        body: JSON.stringify({ 
-            action: 'request_approval_email', 
-            uuid: item.uuid,
-            scriptUrl: SCRIPT_URL // <--- TAMBAHAN PENTING: KIRIM URL DARI SINI
-        }) 
-      });
+      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'request_approval_email', uuid: item.uuid, scriptUrl: SCRIPT_URL }) });
       const data = await res.json(); 
-      if (data.result === 'success') {
-          alert("Sukses! " + data.message);
-      } else {
-          alert("Gagal: " + data.message);
-      }
-    } catch (e) { 
-        alert("Gagal kirim email: " + e.message); 
-    } finally { 
-        setSendingEmail(false); 
-    }
+      if (data.result === 'success') alert("Sukses! " + data.message); else alert("Gagal: " + data.message);
+    } catch (e) { alert("Gagal kirim email: " + e.message); } finally { setSendingEmail(false); }
   };
-  const handleDelete = async (uuid) => { 
-      if (!window.confirm('Yakin hapus data ini?')) return;
-      try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) });
-      const data = await res.json(); if (data.result === 'success') { alert('Berhasil dihapus'); fetchHistory(); } else { alert(data.message); } } catch (e) { alert('Gagal hapus'); } 
-  };
+  const handleDelete = async (uuid) => { if (!window.confirm('Yakin hapus data ini?')) return; try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) }); const data = await res.json(); if (data.result === 'success') { alert('Berhasil dihapus'); fetchHistory(); } else { alert(data.message); } } catch (e) { alert('Gagal hapus'); } };
   const handleEdit = (item) => { setEditItem(item); localStorage.setItem('absenType', item.tipe); setView('form'); };
   const isEditable = (waktuStr, status) => { if (status === 'Approved' || status === 'Rejected') return false; if (!waktuStr || waktuStr === '-') return false; try { return (new Date().getTime() - new Date(waktuStr).getTime()) / (1000 * 60 * 60) <= 1; } catch (e) { return false; } };
   const getFilteredHistory = () => { return history.filter(item => { const itemDate = new Date(item.waktu).setHours(0, 0, 0, 0); const start = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null; const end = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null; return ((!start && !end) || (itemDate >= start && itemDate <= end)) && (filterType === 'All' || item.tipe === filterType) && (filterStatus === 'All' || item.status === filterStatus); }); };
@@ -2960,14 +2980,67 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const uniqueTypes = ['All', ...new Set(history.map(item => item.tipe))];
   const displayData = getFilteredHistory().filter(item => { if (canViewAll) { if (item.tipe === 'Hadir' || item.tipe === 'Pulang') return false; } return true; });
 
+  // --- HEADER COMPONENT ---
+  const ReportFilterHeader = ({ label, field, width }) => {
+      const uniqueOptions = getReportUniqueValues(field);
+      const selectedValues = reportColumnFilters[field] || [];
+      const isOpen = activeReportFilter === field;
+      const [searchTerm, setSearchTerm] = useState('');
+      const visibleOptions = uniqueOptions.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase()));
+
+      return (
+          <th className={`p-0 border border-gray-300 bg-gray-100 align-top ${width || 'w-auto'} relative`}>
+              <div className="flex flex-col h-full">
+                  <div className="flex items-center justify-between p-2 pb-1">
+                      <span className="text-[10px] font-bold text-gray-700 uppercase">{label}</span>
+                      {reportSortConfig.key === field && (
+                          <span className="text-[9px] text-gray-800 font-bold ml-1">{reportSortConfig.direction === 'asc' ? '↓' : '↑'}</span>
+                      )}
+                  </div>
+                  <div className="px-2 pb-2 report-filter-container">
+                    <button onClick={(e) => { e.stopPropagation(); setActiveReportFilter(isOpen ? null : field); }} 
+                        className={`flex items-center justify-between w-full text-[9px] px-2 py-1 border rounded bg-white shadow-sm transition-all
+                        ${selectedValues.length > 0 ? 'text-blue-700 border-blue-400 bg-blue-50' : 'text-gray-600 border-gray-300 hover:border-gray-400'}`}>
+                        <span className="truncate font-medium">{selectedValues.length === 0 ? "(All)" : `${selectedValues.length} Selected`}</span>
+                        <Filter className="w-2.5 h-2.5 ml-1 opacity-70" />
+                    </button>
+                    {isOpen && (
+                        <div className="absolute top-[95%] left-0 mt-0 w-48 bg-white border border-gray-400 shadow-xl z-[100] flex flex-col max-h-64 rounded-sm">
+                            <div className="p-1.5 border-b bg-gray-50 flex gap-1">
+                                <button onClick={() => requestReportSort(field, 'asc')} className="flex-1 text-[9px] font-bold bg-white border rounded p-1 hover:bg-gray-200">A-Z</button>
+                                <button onClick={() => requestReportSort(field, 'desc')} className="flex-1 text-[9px] font-bold bg-white border rounded p-1 hover:bg-gray-200">Z-A</button>
+                            </div>
+                            <div className="p-1.5 border-b relative">
+                                <input type="text" placeholder="Cari..." className="w-full text-[9px] border p-1 rounded bg-white outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus />
+                            </div>
+                            <div className="px-2 py-1.5 bg-gray-50 flex items-center gap-2 border-b hover:bg-gray-100 cursor-pointer" onClick={() => toggleReportSelectAll(field, visibleOptions)}>
+                                <input type="checkbox" readOnly checked={visibleOptions.length > 0 && visibleOptions.every(v => selectedValues.includes(v))} className="w-3 h-3 text-blue-600 rounded border-gray-300"/>
+                                <span className="text-[9px] font-bold text-gray-700">Select All</span>
+                            </div>
+                            <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
+                                {visibleOptions.map((val, idx) => (
+                                    <label key={idx} className="flex items-center gap-2 px-1.5 py-1 hover:bg-blue-50 cursor-pointer rounded transition-colors">
+                                        <input type="checkbox" className="w-3 h-3 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked={selectedValues.includes(val)} onChange={() => toggleReportFilterValue(field, val)}/>
+                                        <span className="text-[9px] text-gray-700 truncate font-medium">{val}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                  </div>
+              </div>
+          </th>
+      );
+  };
+
   return (
     <div className="p-4 h-full overflow-y-auto pb-20 bg-gray-50/50">
       
-      {/* --- MODAL WEB REPORT (FIXED LAYOUT & SWEET UI) --- */}
+      {/* --- MODAL WEB REPORT --- */}
       {showWebReport && (
         <div className="fixed inset-0 bg-slate-200/50 backdrop-blur-sm z-[60] flex flex-col font-sans animate-in fade-in duration-200">
           
-          {/* 1. TOP HEADER (GRADIENT) */}
+          {/* HEADER */}
           <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white px-5 py-3 flex justify-between items-center shadow-lg shadow-slate-300/50 z-30 flex-none h-16 rounded-b-2xl mx-2 mt-2">
               <div className="flex items-center gap-3">
                   <div className="bg-white/10 p-2 rounded-xl backdrop-blur-sm"><FileIcon className="w-5 h-5 text-yellow-400"/></div>
@@ -2979,23 +3052,17 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
               <button onClick={() => setShowWebReport(false)} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-all duration-200 border border-white/5"><X className="w-5 h-5 text-white"/></button>
           </div>
 
-          {/* 2. CONTROL PANEL */}
+          {/* CONTROL PANEL */}
           <div className="bg-white/90 backdrop-blur-md shadow-sm z-20 border border-gray-100 mx-2 mt-2 rounded-2xl flex-none flex flex-col overflow-visible">
-              
-              {/* Row 1: Main Controls */}
               <div className="p-4 flex flex-wrap gap-4 items-center justify-between">
-                  
-                  {/* Filter Kiri */}
+                  {/* Left Controls */}
                   <div className="flex flex-wrap gap-3 items-center">
-                      {/* Periode Pill */}
-                      <div className="flex items-center bg-slate-50 border border-slate-200 rounded-full px-4 py-1.5 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex items-center bg-slate-50 border border-slate-200 rounded-full px-4 py-1.5 shadow-sm">
                           <span className="text-[10px] text-slate-500 font-bold mr-2 uppercase tracking-wider">Periode</span>
                           <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} className="bg-transparent text-xs font-bold text-slate-700 outline-none w-24 cursor-pointer" />
                           <span className="text-slate-300 mx-1">|</span>
                           <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} className="bg-transparent text-xs font-bold text-slate-700 outline-none w-24 cursor-pointer" />
                       </div>
-
-                      {/* Kategori Selector */}
                       <div className="relative">
                         <select value={reportCategory} onChange={(e) => setReportCategory(e.target.value)} className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-full cursor-pointer outline-none transition-all shadow-sm">
                             <option value="General">Laporan Absensi</option>
@@ -3004,82 +3071,46 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                         </select>
                         <ChevronDown className="w-3 h-3 text-indigo-400 absolute right-3 top-2 pointer-events-none"/>
                       </div>
-
-                      {/* [BARU] Filter FORM (Hanya muncul di General) */}
                       {reportCategory === 'General' && (
                           <div className="relative">
                             <select value={reportFormFilter} onChange={(e) => setReportFormFilter(e.target.value)} className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-slate-300 rounded-full cursor-pointer outline-none transition-all shadow-sm">
                                 <option value="All">Semua Form</option>
-                                {uniqueForms.filter(t => t !== 'All').map((type, idx) => (
-                                    <option key={idx} value={type}>{type}</option>
-                                ))}
-                            </select>
-                            <ChevronDown className="w-3 h-3 text-slate-400 absolute right-3 top-2 pointer-events-none"/>
-                          </div>
-                      )}
-
-                      {/* Status Selector (DINAMIS) */}
-                      {reportCategory !== 'RunningShift' && reportCategory !== 'Tally' && (
-                          <div className="relative">
-                            <select 
-                                value={reportStatusFilter} 
-                                onChange={(e) => setReportStatusFilter(e.target.value)} 
-                                className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:border-slate-300 rounded-full cursor-pointer outline-none transition-all shadow-sm"
-                            >
-                                {/* [PERUBAHAN DISINI]: Mapping dari uniqueStatuses */}
-                                {uniqueStatuses.map((status, idx) => (
-                                    <option key={idx} value={status}>
-                                        {status === 'All' ? 'Semua Status' : status}
-                                    </option>
-                                ))}
+                                {uniqueForms.filter(t => t !== 'All').map((type, idx) => (<option key={idx} value={type}>{type}</option>))}
                             </select>
                             <ChevronDown className="w-3 h-3 text-slate-400 absolute right-3 top-2 pointer-events-none"/>
                           </div>
                       )}
                   </div>
-
-                  {/* Actions Kanan */}
+                  {/* Right Actions */}
                   <div className="flex items-center gap-3">
                       {canViewAll && (
                           <button onClick={() => setShowAdvancedFilter(!showAdvancedFilter)} className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm ${showAdvancedFilter ? 'bg-blue-50 text-blue-600 border-blue-200 ring-2 ring-blue-100' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                              <Filter className="w-3.5 h-3.5" /> Filter {reportDivisiFilters.length + reportUserIds.length > 0 && <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span></span>}
+                              <Filter className="w-3.5 h-3.5" /> Filter
                           </button>
                       )}
-                      
                       <div className="h-6 w-px bg-slate-200 mx-1"></div>
-
                       <div className="flex gap-2">
-                          <button onClick={generatePDF} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 shadow-md shadow-rose-200 transition-all active:scale-95" title="PDF">
-                              <Printer className="w-3.5 h-3.5" /> PDF
-                          </button>
-                         
-                          {/* [BARU] Tombol Excel dengan Logic Role */}
-                          {/* Muncul Jika: RunningShift/Tally ATAU (General DAN user adalah Admin/HRD) */}
+                          <button onClick={generatePDF} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 shadow-md shadow-rose-200 transition-all active:scale-95"><Printer className="w-3.5 h-3.5" /> PDF</button>
                           {(reportCategory === 'RunningShift' || reportCategory === 'Tally' || (reportCategory === 'General' && canViewAll)) && (
-                              <button onClick={generateExcel} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all active:scale-95" title="Excel">
-                                  <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
-                              </button>
+                              <button onClick={generateExcel} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold text-white bg-emerald-500 hover:bg-emerald-600 shadow-md shadow-emerald-200 transition-all active:scale-95"><FileSpreadsheet className="w-3.5 h-3.5" /> Excel</button>
                           )}
                       </div>
                   </div>
               </div>
-
-              {/* Row 2: Advanced Filter (Sliding Panel) */}
               <div className={`transition-all duration-300 ease-in-out border-t border-dashed border-slate-200 bg-slate-50/50 ${showAdvancedFilter ? 'max-h-[500px] opacity-100 p-4' : 'max-h-0 opacity-0 overflow-hidden'}`}>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {/* Filter Posisi */}
                         <div className="relative">
                             <button onClick={() => setIsPosisiFilterExpanded(!isPosisiFilterExpanded)} className="w-full p-2.5 px-4 text-xs border border-slate-200 rounded-xl bg-white shadow-sm flex justify-between items-center text-left hover:border-indigo-300 hover:ring-2 hover:ring-indigo-50 transition-all">
                                 <span className="truncate text-slate-600 font-bold">{reportDivisiFilters.length > 0 ? `${reportDivisiFilters.length} Posisi Dipilih` : 'Semua Posisi'}</span>
                                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isPosisiFilterExpanded ? 'rotate-180' : ''}`}/>
                             </button>
                             {isPosisiFilterExpanded && (
-                                <div className="mt-2 bg-white p-3 rounded-xl border border-slate-100 shadow-xl z-10 animate-in fade-in slide-in-from-top-2">
+                                <div className="mt-2 bg-white p-3 rounded-xl border border-slate-100 shadow-xl z-10 animate-in fade-in slide-in-from-top-2 absolute w-full">
                                     <button onClick={selectAllDivisions} className="text-[10px] font-bold text-indigo-600 mb-2 hover:underline w-full text-left uppercase tracking-wider">{reportDivisiFilters.length > 0 ? 'Reset Pilihan' : 'Pilih Semua'}</button>
                                     <div className="space-y-1 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
                                         {availableDivisions.map((div, i) => (
                                             <label key={i} className="flex items-center gap-2.5 text-xs cursor-pointer hover:bg-indigo-50 p-1.5 rounded-lg transition-colors">
-                                                <input type="checkbox" checked={reportDivisiFilters.includes(div)} onChange={() => toggleReportDivisiSelection(div)} className="w-4 h-4 text-indigo-600 rounded-md border-gray-300 focus:ring-indigo-500 transition duration-150 ease-in-out" />
+                                                <input type="checkbox" checked={reportDivisiFilters.includes(div)} onChange={() => toggleReportDivisiSelection(div)} className="w-4 h-4 text-indigo-600 rounded-md border-gray-300 focus:ring-indigo-500" />
                                                 <span className="truncate font-medium text-slate-600">{div}</span>
                                             </label>
                                         ))}
@@ -3087,24 +3118,22 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                 </div>
                             )}
                         </div>
-
-                        {/* Filter Nama */}
                         <div className="relative">
                             <button onClick={() => setIsReportFilterExpanded(!isReportFilterExpanded)} className="w-full p-2.5 px-4 text-xs border border-slate-200 rounded-xl bg-white shadow-sm flex justify-between items-center text-left hover:border-blue-300 hover:ring-2 hover:ring-blue-50 transition-all">
                                 <span className="truncate text-slate-600 font-bold">{reportUserIds.length > 0 ? `${reportUserIds.length} Karyawan Dipilih` : 'Semua Karyawan'}</span>
                                 <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${isReportFilterExpanded ? 'rotate-180' : ''}`}/>
                             </button>
                             {isReportFilterExpanded && (
-                                <div className="mt-2 bg-white p-3 rounded-xl border border-slate-100 shadow-xl z-10 animate-in fade-in slide-in-from-top-2">
+                                <div className="mt-2 bg-white p-3 rounded-xl border border-slate-100 shadow-xl z-10 animate-in fade-in slide-in-from-top-2 absolute w-full">
                                     <div className="mb-2 relative">
-                                        <input type="text" placeholder="Cari nama..." value={searchReportUser} onChange={(e) => setSearchReportUser(e.target.value)} className="w-full py-1.5 pl-8 pr-2 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-blue-100 focus:border-blue-300 outline-none transition-all" />
+                                        <input type="text" placeholder="Cari nama..." value={searchReportUser} onChange={(e) => setSearchReportUser(e.target.value)} className="w-full py-1.5 pl-8 pr-2 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:ring-2 focus:ring-blue-100 outline-none" />
                                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2"/>
                                     </div>
                                     <button onClick={selectAllReportUsers} className="text-[10px] font-bold text-blue-600 mb-2 hover:underline w-full text-left uppercase tracking-wider">{reportUserIds.length > 0 ? 'Reset Pilihan' : 'Pilih Semua'}</button>
                                     <div className="space-y-1 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
                                         {availableUsers.map((u) => ( (u.nama.toLowerCase().includes(searchReportUser.toLowerCase())) && 
                                             <label key={u.id} className="flex items-center gap-2.5 text-xs cursor-pointer hover:bg-blue-50 p-1.5 rounded-lg transition-colors">
-                                                <input type="checkbox" checked={reportUserIds.includes(u.id)} onChange={() => toggleReportUserSelection(u.id)} className="w-4 h-4 text-blue-600 rounded-md border-gray-300 focus:ring-blue-500 transition duration-150 ease-in-out" />
+                                                <input type="checkbox" checked={reportUserIds.includes(u.id)} onChange={() => toggleReportUserSelection(u.id)} className="w-4 h-4 text-blue-600 rounded-md border-gray-300 focus:ring-blue-500" />
                                                 <span className="truncate font-medium text-slate-600">{u.nama}</span>
                                             </label>
                                         ))}
@@ -3120,109 +3149,135 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           <div className="flex-1 overflow-hidden relative flex flex-col mx-2 mb-2 rounded-b-2xl">
                 {isReportLoading && (
                     <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-50 flex flex-col items-center justify-center rounded-2xl">
-                        <div className="bg-white p-4 rounded-2xl shadow-xl flex flex-col items-center animate-bounce-slow">
-                             <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-2"/>
-                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Loading...</span>
-                        </div>
+                        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-2"/>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Loading...</span>
                     </div>
                 )}
                 
-                <div className="flex-1 overflow-auto bg-white rounded-2xl shadow-sm border border-gray-100 custom-scrollbar">
-                        <table className="w-full whitespace-nowrap">
+                <div className="flex-1 overflow-auto bg-white border border-gray-300 shadow-sm custom-scrollbar">
+                        <table className="w-full whitespace-nowrap border-collapse">
                             <thead className="sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-center text-slate-600 uppercase bg-slate-100 border-b border-slate-200">No</th>
-                                    <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">ID Akun</th>
-                                    <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Nama</th>
-                                    <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Posisi</th>
-                                    
-                                    {reportCategory === 'RunningShift' && (
+                                    <th className="px-2 py-3 text-xs font-bold text-center text-gray-700 uppercase bg-gray-100 border border-gray-300 w-10">No</th>
+                                    {reportCategory === 'RunningShift' ? (
                                         <>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Tanggal Shift</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Kode</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Jam Kerja</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Input</th>
+                                            <ReportFilterHeader label="ID Akun" field="idAkun" />
+                                            <ReportFilterHeader label="Nama" field="nama" width="min-w-[140px]"/>
+                                            <ReportFilterHeader label="Posisi" field="divisi" />
+                                            <ReportFilterHeader label="Tgl Shift" field="col_date" />
+                                            <ReportFilterHeader label="Kode" field="shiftValue" />
+                                            <ReportFilterHeader label="Jam Kerja" field="shiftLabel" />
+                                            <ReportFilterHeader label="Waktu Input" field="col_time" />
                                         </>
-                                    )}
-
-                                    {reportCategory === 'Tally' && (
+                                    ) : reportCategory === 'Tally' ? (
                                         <>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Tanggal</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-center text-emerald-700 uppercase bg-emerald-50 border-b border-emerald-100">Masuk</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-center text-rose-700 uppercase bg-rose-50 border-b border-rose-100">Pulang</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-center text-amber-700 uppercase bg-amber-50 border-b border-amber-100">Standby</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Foto</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Catatan</th>
+                                            <ReportFilterHeader label="ID Akun" field="idAkun" />
+                                            <ReportFilterHeader label="Nama" field="nama" width="min-w-[140px]"/>
+                                            <ReportFilterHeader label="Posisi" field="divisi" />
+                                            <ReportFilterHeader label="Tanggal" field="col_date" />
+                                            <ReportFilterHeader label="Masuk" field="masuk" />
+                                            <ReportFilterHeader label="Pulang" field="pulang" />
+                                            <ReportFilterHeader label="Standby" field="standby" />
+                                            <th className="px-2 py-3 text-xs font-bold text-left text-gray-700 uppercase bg-gray-100 border border-gray-300">Foto</th>
+                                            <ReportFilterHeader label="Catatan" field="catatan" width="min-w-[200px]"/>
                                         </>
-                                    )}
-
-                                    {reportCategory === 'General' && (
+                                    ) : (
                                         <>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Form</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Input</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Periode/Jam</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-left text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Catatan</th>
-                                            <th className="px-4 py-3 text-xs font-extrabold tracking-wider text-center text-slate-600 uppercase bg-slate-100 border-b border-slate-200">Status</th>
+                                            <ReportFilterHeader label="ID Akun" field="idAkun" />
+                                            <ReportFilterHeader label="Nama" field="nama" width="min-w-[140px]"/>
+                                            <ReportFilterHeader label="Form" field="tipe" />
+                                            <ReportFilterHeader label="Input" field="col_date" />
+                                            <ReportFilterHeader label="Periode" field="col_periode" />
+                                            {/* [BARU] Kolom Durasi */}
+                                            <ReportFilterHeader label="Durasi" field="col_durasi" />
+                                            
+                                            <ReportFilterHeader label="Catatan" field="catatan" width="min-w-[250px]"/>
+                                            <ReportFilterHeader label="Status" field="status" />
+                                            <ReportFilterHeader label="Approval" field="col_approval" />
+                                            
+                                            {/* [BARU] Kolom Action (Hanya untuk Admin/HRD) */}
+                                            {canViewAll && <th className="px-2 py-3 text-xs font-bold text-center text-gray-700 uppercase bg-gray-100 border border-gray-300">Action</th>}
                                         </>
                                     )}
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50 bg-white">
-                              {currentReportData.map((item, index) => (
-                                    <tr key={index} className="hover:bg-blue-50/40 transition-colors group">
-                                        <td className="px-4 py-3 text-[11px] font-medium text-center text-gray-400 group-hover:text-gray-600">{index + 1}</td>
-                                        <td className="px-4 py-3 text-[11px] font-semibold text-gray-500 font-mono tracking-tight">{reportCategory === 'RunningShift' ? (item.idAkun || '-') : (item.idAkun || item.noPayroll || '-')}</td>
-                                        <td className="px-4 py-3 text-[11px] font-bold text-gray-700 group-hover:text-blue-700">{item.nama}</td>
-                                        <td className="px-4 py-3 text-[11px] font-medium text-gray-500">{item.divisi || '-'}</td>
-
-                                        {reportCategory === 'RunningShift' && (
+                            <tbody className="bg-white">
+                              {sortedReportTable.length === 0 ? (
+                                   <tr><td colSpan="14" className="p-12 text-center text-slate-400 italic border border-gray-300">Tidak ada data sesuai filter.</td></tr>
+                              ) : (
+                                  sortedReportTable.map((item, index) => (
+                                    <tr key={index} className="hover:bg-blue-50 transition-colors">
+                                        <td className="px-2 py-1.5 text-[11px] text-center text-gray-600 border border-gray-300 bg-gray-50/50 align-top">{index + 1}</td>
+                                        {reportCategory === 'RunningShift' ? (
                                             <>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-gray-600">{formatDateIndo(item.tanggal)}</td>
-                                                <td className="px-4 py-3 text-[11px] font-bold text-gray-700 font-mono bg-gray-50/50 rounded">{item.shiftValue}</td>
-                                                <td className="px-4 py-3 text-[11px] font-bold text-blue-600">{item.shiftLabel}</td>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-gray-400">{formatDateTimeFull(item.waktuInput)}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-mono text-gray-700 border border-gray-300 align-top">{item.idAkun}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold text-gray-800 border border-gray-300 align-top">{item.nama}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-gray-600 border border-gray-300 align-top">{item.divisi}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-700 border border-gray-300 align-top">{item.col_date}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold text-center border border-gray-300 align-top">{item.shiftValue}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center border border-gray-300 align-top">{item.shiftLabel}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-500 border border-gray-300 align-top">{item.col_time}</td>
                                             </>
-                                        )}
-
-                                        {reportCategory === 'Tally' && (
+                                        ) : reportCategory === 'Tally' ? (
                                             <>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-gray-600">{formatDateIndo(item.tanggal)}</td>
-                                                <td className="px-4 py-3 text-[11px] font-bold text-center text-emerald-600 bg-emerald-50/30 font-mono tracking-tight">{item.masuk}</td>
-                                                <td className="px-4 py-3 text-[11px] font-bold text-center text-rose-600 bg-rose-50/30 font-mono tracking-tight">{item.pulang}</td>
-                                                <td className="px-4 py-3 text-[11px] font-bold text-center text-amber-600 bg-amber-50/30 font-mono tracking-tight">{item.standby}</td>
-                                                <td className="px-4 py-3 text-[11px]">
-                                                    {(item.foto && item.foto !== '-') ? (
-                                                        <a href={item.foto} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 font-bold bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors"><Camera className="w-3 h-3"/> Foto</a>
-                                                    ) : <span className="text-gray-300 italic">-</span>}
-                                                </td>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-gray-500 italic truncate max-w-[150px]">{item.catatan}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-mono border border-gray-300 align-top">{item.idAkun}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold border border-gray-300 align-top">{item.nama}</td>
+                                                <td className="px-2 py-1.5 text-[11px] border border-gray-300 align-top">{item.divisi}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center border border-gray-300 align-top">{item.col_date}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold text-center text-emerald-700 bg-emerald-50/50 border border-gray-300 align-top">{item.masuk}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold text-center text-red-700 bg-red-50/50 border border-gray-300 align-top">{item.pulang}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold text-center text-amber-700 bg-amber-50/50 border border-gray-300 align-top">{item.standby}</td>
+                                                <td className="px-2 py-1.5 text-[11px] border border-gray-300 text-center align-top">{(item.foto && item.foto !== '-') ? (<a href={item.foto} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-bold text-[10px]">Lihat</a>) : '-'}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-gray-600 italic border border-gray-300 whitespace-normal min-w-[200px] align-top">{item.catatan}</td>
                                             </>
-                                        )}
-
-                                        {reportCategory === 'General' && (
+                                        ) : (
                                             <>
-                                                <td className="px-4 py-3 text-[11px]"><span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-bold border border-indigo-100">{item.tipe}</span></td>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-gray-500">{formatDateTimeFull(item.waktu)}</td>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-gray-700">{item.tglMulai && item.tglMulai !== '-' ? `${formatDateShort(item.tglMulai)} - ${formatDateShort(item.tglSelesai)}` : (item.jamMulai && item.jamMulai !== '-' ? `${formatTimeOnly(item.jamMulai)} - ${formatTimeOnly(item.jamSelesai)}` : '-')}</td>
-                                                <td className="px-4 py-3 text-[11px] font-medium text-gray-500 italic truncate max-w-[150px]">{item.catatan}</td>
-                                                <td className="px-4 py-3 text-[11px] text-center"><span className={`inline-block px-2.5 py-0.5 rounded-full font-bold border ${getStatusColor(item.status)} shadow-sm`}>{item.status}</span></td>
+                                                <td className="px-2 py-1.5 text-[11px] font-mono text-gray-600 border border-gray-300 align-top">{item.idAkun}</td>
+                                                <td className="px-2 py-1.5 text-[11px] font-bold text-gray-800 border border-gray-300 align-top">{item.nama}</td>
+                                                <td className="px-2 py-1.5 text-[11px] border border-gray-300 align-top">{item.tipe}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-600 border border-gray-300 align-top">{item.col_date}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-700 border border-gray-300 align-top">{item.col_periode}</td>
+                                                {/* [BARU] Cell Durasi */}
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-800 font-bold border border-gray-300 align-top">{item.col_durasi}</td>
+                                                
+                                                <td className="px-2 py-1.5 text-[11px] text-gray-600 italic border border-gray-300 whitespace-normal min-w-[200px] align-top">{item.catatan}</td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center border border-gray-300 align-top"><span className={`font-bold ${item.status === 'Approved' ? 'text-green-700' : (item.status === 'Rejected' ? 'text-red-700' : 'text-amber-700')}`}>{item.status}</span></td>
+                                                <td className="px-2 py-1.5 text-[11px] text-center text-gray-500 border border-gray-300 align-top">{item.col_approval}</td>
+                                                
+                                                {/* [BARU] Cell Action (Tombol Approve/Reject) */}
+                                                {canViewAll && (
+                                                    <td className="px-2 py-1.5 text-center border border-gray-300 align-top">
+                                                        {item.status === 'Pending' ? (
+                                                            <div className="flex justify-center gap-1">
+                                                                <button onClick={() => handleProcessApproval(item, 'Approved')} disabled={isProcessing} className="p-1 bg-green-50 border border-green-200 text-green-600 rounded hover:bg-green-100 transition shadow-sm" title="Approve">
+                                                                    <CheckCircle className="w-3.5 h-3.5"/>
+                                                                </button>
+                                                                <button onClick={() => handleProcessApproval(item, 'Rejected')} disabled={isProcessing} className="p-1 bg-red-50 border border-red-200 text-red-600 rounded hover:bg-red-100 transition shadow-sm" title="Reject">
+                                                                    <X className="w-3.5 h-3.5"/>
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-[9px] text-gray-400 italic">Done</span>
+                                                        )}
+                                                    </td>
+                                                )}
                                             </>
                                         )}
                                     </tr>
-                              ))}
-                              {currentReportData.length === 0 && ( <tr><td colSpan="10" className="p-12 text-center text-slate-400 italic bg-white"><div className="flex flex-col items-center gap-2"><div className="bg-slate-50 p-3 rounded-full"><FileText className="w-6 h-6 text-slate-300"/></div><span>Tidak ada data untuk periode ini.</span></div></td></tr> )}
+                                  ))
+                              )}
                             </tbody>
                         </table>
                 </div>
-                <div className="bg-white px-4 py-2 border-t border-gray-100 flex justify-between items-center rounded-b-2xl mt-px shadow-sm">
-                     <span className="text-[10px] text-slate-400 font-medium">Menampilkan <b>{currentReportData.length}</b> baris data</span>
-                     <div className="text-[10px] text-slate-300 italic">E-Absensi System</div>
+                <div className="bg-gray-100 px-4 py-2 border border-gray-300 border-t-0 flex justify-between items-center rounded-b-2xl mt-0">
+                     <span className="text-[10px] text-gray-500 font-bold">Total Data: {sortedReportTable.length}</span>
+                     <div className="text-[10px] text-gray-400 italic">E-Absensi System</div>
                 </div>
           </div>
         </div>
       )}
       
-      {/* --- HEADER UI UTAMA (MODIFIED) --- */}
+      {/* --- MAIN PAGE CONTENT (RIWAYAT CARD VIEW) --- */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-bold ml-2 text-slate-800">Riwayat & Laporan</h2>
         <BackButton onClick={() => setView('dashboard')} />
@@ -3312,28 +3367,20 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
             const showResendButton = APPROVAL_TYPES.includes(item.tipe) && item.status === 'Pending' && !canViewAll;
             return (
               <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 relative hover:shadow-md transition-shadow">
-                
-                {/* HEADER KARTU */}
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <h4 className="font-bold text-slate-800 text-lg flex items-center gap-2">
                         {item.tipe} 
                         {canViewAll && <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">({item.nama})</span>}
                     </h4>
-                    
-                    {/* [UPDATE]: Timestamp */}
                     <p className="text-xs text-slate-400 font-medium flex items-center gap-1 mt-1">
                         <Clock className="w-3 h-3"/> 
-                        {formatDateIndo(item.waktu)} 
-                        <span className="opacity-50 mx-1">|</span> 
-                        {formatTimeOnly(item.waktu)}
+                        {formatDateIndo(item.waktu)} <span className="opacity-50 mx-1">|</span> {formatTimeOnly(item.waktu)}
                     </p>
                   </div>
-
                   <div className="flex flex-col items-end gap-1">
                     {!isRegularAbsen && (<span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${getStatusColor(item.status)}`}>{item.status || 'Pending'}</span>)}
                     {isRegularAbsen && (<span className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full font-mono">{formatTimeOnly(item.waktu)}</span>)}
-                    
                     {canEdit && !canViewAll && ( 
                         <div className="flex gap-1 mt-1">
                             <button onClick={() => handleEdit(item)} className="p-1.5 bg-yellow-50 text-yellow-600 rounded-lg border border-yellow-100 hover:bg-yellow-100"><Edit className="w-3.5 h-3.5"/></button>
@@ -3342,60 +3389,27 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                     )}
                   </div>
                 </div>
-
-                {/* CONTENT CATATAN */}
                 <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-100 mb-2">
                     <p className="text-xs text-slate-600 italic leading-relaxed">"{item.catatan || '-'}"</p>
                 </div>
-
-                {/* --- TAMPILAN ALASAN REJECT (POSISI BARU) --- */}
                 {item.status === 'Rejected' && item.alasan && item.alasan !== '-' && (
                     <div className="bg-red-50 border border-red-100 p-3 rounded-xl mb-2 animate-in fade-in slide-in-from-top-1">
                         <div className="flex items-start gap-2">
-                            <div className="mt-0.5 min-w-[16px]">
-                                <AlertTriangle className="w-4 h-4 text-red-500" />
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-[10px] font-bold text-red-700 uppercase tracking-wide leading-none mb-1">
-                                    (Ditolak):
-                                </p>
-                                <p className="text-xs text-red-600 italic leading-relaxed font-medium">
-                                    "{item.alasan}"
-                                </p>
-                            </div>
+                            <div className="mt-0.5 min-w-[16px]"><AlertTriangle className="w-4 h-4 text-red-500" /></div>
+                            <div className="flex-1"><p className="text-[10px] font-bold text-red-700 uppercase tracking-wide leading-none mb-1">(Ditolak):</p><p className="text-xs text-red-600 italic leading-relaxed font-medium">"{item.alasan}"</p></div>
                         </div>
                     </div>
                 )}
-
-                {/* [PERBAIKAN 4]: Tampilkan Durasi Hari */}
                 {(item.tglMulai && item.tglMulai !== '-') && (
                     <div className="text-xs text-indigo-600 flex gap-1.5 mt-2 font-bold items-center bg-indigo-50 p-2 rounded-lg w-fit border border-indigo-100">
-                        <Calendar className="w-3.5 h-3.5"/> 
-                        {formatDateShort(item.tglMulai)} s/d {formatDateShort(item.tglSelesai)}
-                        <span className="text-indigo-400 ml-1">{getDurasiHari(item.tglMulai, item.tglSelesai)}</span>
+                        <Calendar className="w-3.5 h-3.5"/> {formatDateShort(item.tglMulai)} s/d {formatDateShort(item.tglSelesai)} <span className="text-indigo-400 ml-1">{getDurasiHari(item.tglMulai, item.tglSelesai)}</span>
                     </div>
                 )}
-
-                {/* [PERBAIKAN 1]: Tampilkan Tombol Foto & Lampiran Kembali */}
                 <div className="flex gap-2 mt-3">
-                    {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
-                        <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 transition no-underline">
-                            <Camera className="w-3 h-3"/> Lihat Foto
-                        </a>
-                    )}
-                    {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
-                        <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-200 hover:bg-orange-100 transition no-underline">
-                            <FileIcon className="w-3 h-3"/> Lihat Lampiran
-                        </a>
-                    )}
+                    {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (<a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-blue-200 hover:bg-blue-100 transition no-underline"><Camera className="w-3 h-3"/> Lihat Foto</a>)}
+                    {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (<a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-200 hover:bg-orange-100 transition no-underline"><FileIcon className="w-3 h-3"/> Lihat Lampiran</a>)}
                 </div>
-
-                {/* TOMBOL RESEND EMAIL */}
-                {showResendButton && ( 
-                    <button onClick={() => handleRequestApproval(item)} disabled={sendingEmail} className="w-full mt-3 bg-purple-50 text-purple-700 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-purple-100 border border-purple-200 transition-colors"> 
-                        {sendingEmail ? 'Mengirim...' : <><CheckSquare className="w-3.5 h-3.5"/> Kirim Ulang Email Approval</>} 
-                    </button> 
-                )}
+                {showResendButton && ( <button onClick={() => handleRequestApproval(item)} disabled={sendingEmail} className="w-full mt-3 bg-purple-50 text-purple-700 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-purple-100 border border-purple-200 transition-colors"> {sendingEmail ? 'Mengirim...' : <><CheckSquare className="w-3.5 h-3.5"/> Kirim Ulang Email Approval</>} </button> )}
               </div>
             );
           })}
