@@ -3076,6 +3076,31 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                   </div>
                   {/* Right Actions */}
                   <div className="flex items-center gap-3">
+
+                    {/* Tombol Refresh Tabel */}
+                      <button 
+                          onClick={async () => {
+                              setIsReportLoading(true);
+                              try {
+                                  if (reportCategory === 'RunningShift') {
+                                      await fetchShiftReport();
+                                  } else {
+                                      await fetchHistory();
+                                  }
+                              } catch (e) { 
+                                  console.error(e); 
+                              } finally { 
+                                  setTimeout(() => setIsReportLoading(false), 500); 
+                              }
+                          }} 
+                          className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm bg-white text-slate-600 border-slate-200 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 active:scale-95 group"
+                          title="Refresh Data Tabel"
+                      >
+                          <RefreshCcw className={`w-3.5 h-3.5 transition-transform group-hover:rotate-180 ${isReportLoading ? 'animate-spin text-blue-500' : ''}`} />
+                          <span className="hidden sm:inline">Refresh</span>
+                      </button>
+
+
                       {canViewAll && (
                           <button onClick={() => setShowAdvancedFilter(!showAdvancedFilter)} className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm ${showAdvancedFilter ? 'bg-blue-50 text-blue-600 border-blue-200 ring-2 ring-blue-100' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
                               <Filter className="w-3.5 h-3.5" /> Filter
@@ -3270,8 +3295,30 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       
       {/* --- MAIN PAGE CONTENT (RIWAYAT CARD VIEW) --- */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold ml-2 text-slate-800">Riwayat & Laporan</h2>
-        <BackButton onClick={() => setView('dashboard')} />
+        <div className="flex items-center gap-2">
+           <h2 className="text-xl font-bold ml-2 text-slate-800">Riwayat & Laporan</h2>
+           {/* Indikator Loading Kecil jika sedang refresh */}
+           {loading && <span className="text-[10px] text-slate-400 font-normal animate-pulse">Updating...</span>}
+        </div>
+
+        <div className="flex items-center gap-2">
+            {/* --- TOMBOL UPDATE DATA (BARU) --- */}
+            <button 
+                onClick={() => {
+                    fetchHistory(); //  Memanggil ulang fungsi fetch data history
+                    if(canViewAll) fetchUsers(); // [cite: 631] Refresh list user juga (opsional untuk admin)
+                }} 
+                disabled={loading}
+                className="p-2.5 bg-white text-blue-600 rounded-xl border border-blue-100 hover:bg-blue-50 active:scale-95 transition-all shadow-sm flex items-center justify-center"
+                title="Perbarui Data Laporan"
+            >
+                {/* Icon RefreshCcw sudah diimport di baris 2 */}
+                <RefreshCcw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            {/* ---------------------------------- */}
+
+            <BackButton onClick={() => setView('dashboard')} />
+        </div>
       </div>
 
       {canViewAll && (
@@ -3344,6 +3391,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           </button> 
         </div>
       </div>
+
+
 
       {loading ? (
           <div className="flex flex-col items-center justify-center py-10">
