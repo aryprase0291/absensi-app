@@ -1003,11 +1003,36 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
 
 // --- SCREEN ANALISA DATA (UPDATE V17: SORTING, FIND, & MULTI-FILTER) ---
 function AnalysisScreen({ user, setView }) {
-    const [startDate, setStartDate] = useState('');
-    const [endDate, setEndDate] = useState('');
     const [dataList, setDataList] = useState([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
+    
+// --- [UPDATE] HELPER TANGGAL DEFAULT (7 HARI TERAKHIR) ---
+  const getDefaultDates = () => {
+      const today = new Date();
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(today.getDate() - 7);
+
+      // Format ke YYYY-MM-DD (Manual formatting agar aman Timezone Lokal)
+      const formatYMD = (date) => {
+          const y = date.getFullYear();
+          const m = String(date.getMonth() + 1).padStart(2, '0');
+          const d = String(date.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+      };
+
+      return {
+          start: formatYMD(sevenDaysAgo),
+          end: formatYMD(today)
+      };
+  };
+
+  const defaultDates = getDefaultDates();
+
+  // Set State awal langsung ke 7 hari terakhir
+  const [startDate, setStartDate] = useState(defaultDates.start);
+  const [endDate, setEndDate] = useState(defaultDates.end);
+  // ---------------------------------------------------------
     
     // STATE FILTER (Multi Select)
     const [columnFilters, setColumnFilters] = useState({
