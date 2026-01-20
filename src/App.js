@@ -1870,7 +1870,7 @@ function RemarkScreen({ user, setView }) {
                             className={`${isTableMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'} px-3 py-2 rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-2`}
                         >
                             {viewMode === 'list' ? <FileSpreadsheet className="w-4 h-4 text-green-600"/> : <MessageSquare className="w-4 h-4 text-white"/>}
-                            {viewMode === 'list' ? 'Buka Tabel Data' : 'Kembali ke List'}
+                            {viewMode === 'list' ? 'View Tabel' : 'Kembali ke List'}
                         </button>
                     )}
                     {!isTableMode && <BackButton onClick={() => setView('dashboard')} />}
@@ -3228,7 +3228,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       return true;
   });
 
-  
+
   // --- HEADER COMPONENT ---
   const ReportFilterHeader = ({ label, field, width }) => {
       const uniqueOptions = getReportUniqueValues(field);
