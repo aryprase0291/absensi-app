@@ -3219,8 +3219,16 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const toggleUserSelection = (id) => { if(selectedUserIds.includes(id)) { setSelectedUserIds(selectedUserIds.filter(x => x !== id)); } else { setSelectedUserIds([...selectedUserIds, id]); } };
   const selectAllUsers = () => { const visibleIds = allUsers.filter(u => u.nama.toLowerCase().includes(searchUser.toLowerCase())).map(u => u.id); if(visibleIds.every(id => selectedUserIds.includes(id))) { setSelectedUserIds(selectedUserIds.filter(id => !visibleIds.includes(id))); } else { setSelectedUserIds([...new Set([...selectedUserIds, ...visibleIds])]); } };
   const uniqueTypes = ['All', ...new Set(history.map(item => item.tipe))];
-  const displayData = getFilteredHistory().filter(item => { if (canViewAll) { if (item.tipe === 'Hadir' || item.tipe === 'Pulang') return false; } return true; });
+  const displayData = getFilteredHistory().filter(item => {
+      // [UPDATE] Sembunyikan tipe rutin/auto-verified dari list utama Admin/HRD
+      if (canViewAll) {
+          const HIDDEN_TYPES = ['Hadir', 'Pulang', 'Standby', 'Off', 'Tukar Shift'];
+          if (HIDDEN_TYPES.includes(item.tipe)) return false;
+      }
+      return true;
+  });
 
+  
   // --- HEADER COMPONENT ---
   const ReportFilterHeader = ({ label, field, width }) => {
       const uniqueOptions = getReportUniqueValues(field);
