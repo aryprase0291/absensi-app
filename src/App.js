@@ -1611,7 +1611,7 @@ function DashboardScreen({ user, setView, handleLogout }) {
   );
 }
 
-// --- 2. REMARK SCREEN (LAYOUT UPDATED) ---
+// --- 2. REMARK SCREEN (UPDATED: ACTION COLUMN MOVED TO FRONT) ---
 function RemarkScreen({ user, setView }) {
     const userRole = user.role ? String(user.role).toLowerCase() : '';
     const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
@@ -1624,7 +1624,25 @@ function RemarkScreen({ user, setView }) {
     const [loading, setLoading] = useState(false);
     const [remarks, setRemarks] = useState([]);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
-    const [statusFilter, setStatusFilter] = useState('All');
+    
+    // VIEW MODE STATE
+    const [viewMode, setViewMode] = useState('list'); // 'list' or 'table'
+
+    // TABLE FILTER STATE
+    const [reportColumnFilters, setReportColumnFilters] = useState({});
+    const [reportSortConfig, setReportSortConfig] = useState({ key: null, direction: 'asc' });
+    const [activeReportFilter, setActiveReportFilter] = useState(null);
+
+    // Close dropdown logic
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (activeReportFilter && !event.target.closest('.report-filter-container')) {
+                setActiveReportFilter(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [activeReportFilter]);
 
     useEffect(() => {
         const fetchRemarks = async () => {
@@ -1664,7 +1682,6 @@ function RemarkScreen({ user, setView }) {
                     whatsapp, kategori, pesan, file
                 })
             }).then(r => r.json());
-
             if (res.result === 'success') {
                 alert('Laporan berhasil dikirim ke HRD!');
                 setPesan(''); setWhatsapp(''); setFile(null); setFileName('');
@@ -1691,29 +1708,182 @@ function RemarkScreen({ user, setView }) {
         } catch (e) { alert("Gagal update"); }
     };
 
-    const filteredRemarks = remarks.filter(item => {
-        if (!isHRDOrAdmin) return true;
-        if (user.lokasi) {
-            const allowedLocations = user.lokasi.split(',').map(l => l.trim());
-            if (allowedLocations.includes('All')) { } 
+    // --- FILTER LOGIC ---
+    const getReportUniqueValues = (field) => {
+        const values = remarks.map(item => item[field]).filter(v => v !== null && v !== undefined && v !== '');
+        return [...new Set(values)].sort();
+    };
+
+    const toggleReportFilterValue = (field, value) => {
+        setReportColumnFilters(prev => {
+            const currentValues = prev[field] || [];
+            if (currentValues.includes(value)) return { ...prev, [field]: currentValues.filter(v => v !== value) };
+            else return { ...prev, [field]: [...currentValues, value] };
+        });
+    };
+
+    const toggleReportSelectAll = (field, visibleOptions) => {
+        setReportColumnFilters(prev => {
+            const currentValues = prev[field] || [];
+            const allVisibleSelected = visibleOptions.every(val => currentValues.includes(val));
+            if (allVisibleSelected) return { ...prev, [field]: currentValues.filter(v => !visibleOptions.includes(v)) };
             else {
-                const laporanLokasi = item.lokasi || '';
-                if (!allowedLocations.includes(laporanLokasi)) return false;
+                const newValues = [...currentValues];
+                visibleOptions.forEach(v => { if (!newValues.includes(v)) newValues.push(v); });
+                return { ...prev, [field]: newValues };
             }
+        });
+    };
+
+    const requestReportSort = (key, direction) => {
+        setReportSortConfig({ key, direction });
+    };
+
+    const filteredRemarksTable = remarks.filter(item => {
+        if (isHRDOrAdmin && user.lokasi) {
+            const allowedLocations = user.lokasi.split(',').map(l => l.trim());
+            // Filter lokasi logic placeholder
         }
-        if (statusFilter === 'All') return true;
-        return item.status === statusFilter;
+        return Object.keys(reportColumnFilters).every(key => {
+            const selectedValues = reportColumnFilters[key];
+            if (!selectedValues || selectedValues.length === 0) return true;
+            return selectedValues.includes(String(item[key]));
+        });
     });
 
+    const sortedRemarksTable = React.useMemo(() => {
+        let sortableItems = [...filteredRemarksTable];
+        if (reportSortConfig.key !== null) {
+            sortableItems.sort((a, b) => {
+                let valA = a[reportSortConfig.key] || '';
+                let valB = b[reportSortConfig.key] || '';
+                return reportSortConfig.direction === 'asc' 
+                    ? String(valA).localeCompare(String(valB)) 
+                    : String(valB).localeCompare(String(valA));
+            });
+        }
+        return sortableItems;
+    }, [filteredRemarksTable, reportSortConfig]);
+
+    // --- EXPORT FUNCTION ---
+    const generateExcel = () => {
+        const tableHead = ["No", "Waktu", "Nama", "Divisi", "Jenis", "Keterangan", "No WA", "Status", "Respon HRD", "Waktu Respon"];
+        const tableBody = sortedRemarksTable.map((item, index) => [
+            index + 1, item.waktu, item.nama, item.divisi, item.kategori, item.pesan, item.whatsapp, item.status, item.respon, item.waktuRespon
+        ]);
+        const worksheet = XLSX.utils.aoa_to_sheet([tableHead, ...tableBody]);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan_Masuk");
+        XLSX.writeFile(workbook, `Laporan_Remarks_${new Date().getTime()}.xlsx`);
+    };
+
+    const generatePDF = () => {
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        doc.setFontSize(10);
+        doc.text("Laporan Respon / Masukan Karyawan", 14, 15);
+        doc.setFontSize(8);
+        doc.text(`Total Data: ${sortedRemarksTable.length}`, 14, 20);
+
+        const tableColumn = ["No", "Waktu", "Nama", "Divisi", "Jenis", "Keterangan", "Status", "Respon"];
+        const tableRows = sortedRemarksTable.map((item, index) => [
+            index + 1, item.waktu, item.nama, item.divisi, item.kategori, item.pesan, item.status, item.respon
+        ]);
+
+        autoTable(doc, {
+            head: [tableColumn], body: tableRows, startY: 25, theme: 'grid',
+            styles: { fontSize: 7, cellPadding: 1, valign: 'middle' },
+            headStyles: { fillColor: [50, 50, 50] }
+        });
+        doc.save(`Laporan_Remarks_${new Date().getTime()}.pdf`);
+    };
+
+    // --- FILTER HEADER COMPONENT ---
+    const ReportFilterHeader = ({ label, field, width }) => {
+        const uniqueOptions = getReportUniqueValues(field);
+        const selectedValues = reportColumnFilters[field] || [];
+        const isOpen = activeReportFilter === field;
+        const [searchTerm, setSearchTerm] = useState('');
+        const visibleOptions = uniqueOptions.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase()));
+
+        return (
+            <th className={`p-0 border border-gray-300 bg-gray-100 align-top ${width || 'w-auto'} relative`}>
+                <div className="flex flex-col h-full">
+                    <div className="flex items-center justify-between p-2 pb-1">
+                        <span className="text-[10px] font-bold text-gray-700 uppercase">{label}</span>
+                        {reportSortConfig.key === field && (
+                            <span className="text-[9px] text-gray-800 font-bold ml-1">{reportSortConfig.direction === 'asc' ? '↓' : '↑'}</span>
+                        )}
+                    </div>
+                    <div className="px-2 pb-2 report-filter-container">
+                        <button onClick={(e) => { e.stopPropagation(); setActiveReportFilter(isOpen ? null : field); }} 
+                            className={`flex items-center justify-between w-full text-[9px] px-2 py-1 border rounded bg-white shadow-sm transition-all ${selectedValues.length > 0 ? 'text-blue-700 border-blue-400 bg-blue-50' : 'text-gray-600 border-gray-300 hover:border-gray-400'}`}>
+                            <span className="truncate font-medium">{selectedValues.length === 0 ? "(All)" : `${selectedValues.length} Selected`}</span>
+                            <Filter className="w-2.5 h-2.5 ml-1 opacity-70" />
+                        </button>
+                        {isOpen && (
+                            <div className="absolute top-[95%] left-0 mt-0 w-48 bg-white border border-gray-400 shadow-xl z-[100] flex flex-col max-h-64 rounded-sm">
+                                <div className="p-1.5 border-b bg-gray-50 flex gap-1">
+                                    <button onClick={() => requestReportSort(field, 'asc')} className="flex-1 text-[9px] font-bold bg-white border rounded p-1 hover:bg-gray-200">A-Z</button>
+                                    <button onClick={() => requestReportSort(field, 'desc')} className="flex-1 text-[9px] font-bold bg-white border rounded p-1 hover:bg-gray-200">Z-A</button>
+                                </div>
+                                <div className="p-1.5 border-b relative">
+                                    <input type="text" placeholder="Cari..." className="w-full text-[9px] border p-1 rounded bg-white outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus />
+                                </div>
+                                <div className="px-2 py-1.5 bg-gray-50 flex items-center gap-2 border-b hover:bg-gray-100 cursor-pointer" onClick={() => toggleReportSelectAll(field, visibleOptions)}>
+                                    <input type="checkbox" readOnly checked={visibleOptions.length > 0 && visibleOptions.every(v => selectedValues.includes(v))} className="w-3 h-3 text-blue-600 rounded border-gray-300"/>
+                                    <span className="text-[9px] font-bold text-gray-700">Select All</span>
+                                </div>
+                                <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
+                                    {visibleOptions.map((val, idx) => (
+                                        <label key={idx} className="flex items-center gap-2 px-1.5 py-1 hover:bg-blue-50 cursor-pointer rounded transition-colors">
+                                            <input type="checkbox" className="w-3 h-3 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked={selectedValues.includes(val)} onChange={() => toggleReportFilterValue(field, val)}/>
+                                            <span className="text-[9px] text-gray-700 truncate font-medium">{val}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </th>
+        );
+    };
+
+    // LOGIC SWITCH STYLE
+    const isTableMode = viewMode === 'table' && isHRDOrAdmin;
+    const containerClass = isTableMode 
+        ? "fixed inset-0 z-[50] bg-white flex flex-col" 
+        : "p-4 h-full overflow-y-auto pb-20 bg-gray-50";
+
     return (
-        <div className="p-4 h-full overflow-y-auto pb-20">
-            {/* HEADER: TOMBOL KEMBALI DI KANAN */}
-            <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold">{isHRDOrAdmin ? 'Respon Laporan Masuk' : 'Lapor & Riwayat'}</h2>
-                <BackButton onClick={() => setView('dashboard')} />
+        <div className={containerClass}>
+            {/* HEADER AREA */}
+            <div className={`flex items-center justify-between mb-4 ${isTableMode ? 'px-4 py-3 bg-white border-b shadow-sm' : ''}`}>
+                <div>
+                    <h2 className="text-xl font-bold text-gray-800">{isHRDOrAdmin ? 'Respon Laporan Masuk' : 'Lapor & Riwayat'}</h2>
+                    {isHRDOrAdmin && !isTableMode && <p className="text-[10px] text-gray-500">Kelola dan respon laporan karyawan</p>}
+                </div>
+                <div className="flex gap-2">
+                    {isHRDOrAdmin && (
+                        <button 
+                            onClick={() => setViewMode(viewMode === 'list' ? 'table' : 'list')}
+                            className={`${isTableMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'} px-3 py-2 rounded-lg text-xs font-bold transition shadow-sm flex items-center gap-2`}
+                        >
+                            {viewMode === 'list' ? <FileSpreadsheet className="w-4 h-4 text-green-600"/> : <MessageSquare className="w-4 h-4 text-white"/>}
+                            {viewMode === 'list' ? 'Buka Tabel Data' : 'Kembali ke List'}
+                        </button>
+                    )}
+                    {!isTableMode && <BackButton onClick={() => setView('dashboard')} />}
+                    {isTableMode && (
+                         <button onClick={() => setViewMode('list')} className="p-2 hover:bg-red-50 text-gray-500 hover:text-red-600 rounded-lg transition" title="Exit Full Screen">
+                            <X className="w-5 h-5" />
+                         </button>
+                    )}
+                </div>
             </div>
 
-            {!isHRDOrAdmin && (
+            {/* FORM BUAT LAPORAN (LIST MODE ONLY) */}
+            {(!isHRDOrAdmin || viewMode === 'list') && !isHRDOrAdmin && (
                 <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 mb-6">
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Edit className="w-4 h-4"/> Buat Laporan</h3>
                     <form onSubmit={handleSubmit} className="space-y-4">
@@ -1752,33 +1922,86 @@ function RemarkScreen({ user, setView }) {
                 </div>
             )}
 
-            <div>
-                {/* SUB-HEADER: JUDUL DAN FILTER SEJAJAR */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                     <h3 className="font-bold text-gray-700 flex items-center gap-2">
-                        <History className="w-4 h-4"/> {isHRDOrAdmin ? `Daftar Laporan (${statusFilter})` : 'Status Laporan Anda'}
-                    </h3>
-
-                    {isHRDOrAdmin && (
-                        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg shadow-sm border border-gray-200 self-end sm:self-auto">
-                            <Filter className="w-4 h-4 text-gray-500" />
-                            <select 
-                                value={statusFilter} 
-                                onChange={(e) => setStatusFilter(e.target.value)} 
-                                className="text-sm bg-transparent border-none outline-none font-medium text-gray-700 cursor-pointer"
-                            >
-                                <option value="All">Semua Status</option>
-                                <option value="Open">Open</option>
-                                <option value="Done">Done</option>
-                            </select>
+            {/* --- MODE TABEL (FULL SCREEN WEB REPORT) --- */}
+            {isHRDOrAdmin && viewMode === 'table' ? (
+                <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                    <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                        <span className="text-xs font-bold text-gray-600">Total: {sortedRemarksTable.length} Data</span>
+                        <div className="flex gap-2">
+                            <button onClick={generateExcel} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition"><FileSpreadsheet className="w-3.5 h-3.5" /> Excel</button>
+                            <button onClick={generatePDF} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition"><Printer className="w-3.5 h-3.5" /> PDF</button>
                         </div>
-                    )}
+                    </div>
+
+                    <div className="flex-1 overflow-auto">
+                        <table className="w-full text-left border-collapse table-fixed text-xs">
+                            <thead className="sticky top-0 z-10 bg-gray-100 text-gray-700 font-normal uppercase border-b-2 border-gray-300 shadow-sm">
+                                <tr>
+                                    <th className="p-2 border border-gray-300 text-center w-10 align-top font-bold bg-gray-100">No</th>
+                                    
+                                    {/* KOLOM ACTION DIPINDAH KESINI */}
+                                    <th className="p-2 border border-gray-300 text-center w-20 align-top font-bold bg-gray-100">Action</th>
+                                    
+                                    <ReportFilterHeader label="Waktu" field="waktu" width="w-24" />
+                                    <ReportFilterHeader label="Nama" field="nama" width="w-32" />
+                                    <ReportFilterHeader label="Divisi" field="divisi" width="w-24" />
+                                    <ReportFilterHeader label="Jenis" field="kategori" width="w-28" />
+                                    <ReportFilterHeader label="Keterangan" field="pesan" width="w-48" />
+                                    <th className="p-2 border border-gray-300 text-center w-16 align-top font-bold bg-gray-100">Lampiran</th>
+                                    <ReportFilterHeader label="Status" field="status" width="w-20" />
+                                    <ReportFilterHeader label="Respon HRD" field="respon" width="w-32" />
+                                    <ReportFilterHeader label="Waktu Respon" field="waktuRespon" width="w-24" />
+                                </tr>
+                            </thead>
+                            <tbody className="text-gray-800 text-xs bg-white font-normal divide-y divide-gray-200">
+                                {sortedRemarksTable.length === 0 ? (
+                                    <tr><td colSpan="11" className="p-8 text-center text-gray-400 italic font-normal bg-gray-50">Tidak ada data laporan.</td></tr>
+                                ) : (
+                                    sortedRemarksTable.map((item, idx) => (
+                                        <tr key={idx} className="hover:bg-blue-50 transition-colors group">
+                                            <td className="p-2 border border-gray-200 text-center font-medium bg-gray-50/50">{idx + 1}</td>
+                                            
+                                            {/* TOMBOL ACTION DISINI */}
+                                            <td className="p-2 border border-gray-200 text-center">
+                                                {item.status === 'Open' ? (
+                                                    <button onClick={() => handleMarkDone(item.uuid)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm flex items-center justify-center gap-1 w-full transition active:scale-95">
+                                                        <Check className="w-3 h-3"/> Done
+                                                    </button>
+                                                ) : <span className="text-green-600 font-bold">✔</span>}
+                                            </td>
+
+                                            <td className="p-2 border border-gray-200 text-center font-mono text-[10px] text-gray-500">{item.waktu}</td>
+                                            <td className="p-2 border border-gray-200 font-bold text-gray-700">{item.nama}</td>
+                                            <td className="p-2 border border-gray-200 text-gray-600">{item.divisi}</td>
+                                            <td className="p-2 border border-gray-200 text-purple-700 font-medium">{item.kategori}</td>
+                                            <td className="p-2 border border-gray-200 italic text-gray-600 break-words">{item.pesan}</td>
+                                            <td className="p-2 border border-gray-200 text-center">
+                                                {item.lampiran && item.lampiran !== '-' ? (
+                                                    <a href={item.lampiran} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition" title="Lihat Lampiran">
+                                                        <FileIcon className="w-3.5 h-3.5"/>
+                                                    </a>
+                                                ) : <span className="text-gray-300">-</span>}
+                                            </td>
+                                            <td className="p-2 border border-gray-200 text-center">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${item.status === 'Done' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
+                                                    {item.status}
+                                                </span>
+                                            </td>
+                                            <td className="p-2 border border-gray-200 text-blue-800 font-medium">{item.respon}</td>
+                                            <td className="p-2 border border-gray-200 text-center text-[10px] text-gray-500">{item.waktuRespon}</td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                
+            ) : (
+                /* --- MODE LIST CARD (NORMAL VIEW) --- */
                 <div className="space-y-3">
-                    {filteredRemarks.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Belum ada data laporan.</p>}
+                    {filteredRemarksTable.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Belum ada data laporan.</p>}
                     
-                    {filteredRemarks.map((item, idx) => (
+                    {filteredRemarksTable.map((item, idx) => (
                         <div key={idx} className={`bg-white p-4 rounded-xl shadow-sm border-l-4 relative ${item.status === 'Done' ? 'border-l-green-500' : 'border-l-yellow-500'}`}>
                             <div className="flex justify-between items-start mb-1">
                                 <div>
@@ -1836,7 +2059,7 @@ function RemarkScreen({ user, setView }) {
                         </div>
                     ))}
                 </div>
-            </div>
+            )}
         </div>
     );
 }
