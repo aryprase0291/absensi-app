@@ -1001,38 +1001,29 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
 }
 
 
-// --- SCREEN ANALISA DATA (UPDATE V17: SORTING, FIND, & MULTI-FILTER) ---
+// --- SCREEN ANALISA DATA (UPDATED: REFRESH BTN & MOVED ACTION COLUMN) ---
 function AnalysisScreen({ user, setView }) {
     const [dataList, setDataList] = useState([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
-    
-// --- [UPDATE] HELPER TANGGAL DEFAULT (7 HARI TERAKHIR) ---
-  const getDefaultDates = () => {
-      const today = new Date();
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(today.getDate() - 7);
 
-      // Format ke YYYY-MM-DD (Manual formatting agar aman Timezone Lokal)
-      const formatYMD = (date) => {
-          const y = date.getFullYear();
-          const m = String(date.getMonth() + 1).padStart(2, '0');
-          const d = String(date.getDate()).padStart(2, '0');
-          return `${y}-${m}-${d}`;
-      };
+    // --- HELPER TANGGAL DEFAULT (7 HARI TERAKHIR) ---
+    const getDefaultDates = () => {
+        const today = new Date();
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(today.getDate() - 7);
+        const formatYMD = (date) => {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        };
+        return { start: formatYMD(sevenDaysAgo), end: formatYMD(today) };
+    };
 
-      return {
-          start: formatYMD(sevenDaysAgo),
-          end: formatYMD(today)
-      };
-  };
-
-  const defaultDates = getDefaultDates();
-
-  // Set State awal langsung ke 7 hari terakhir
-  const [startDate, setStartDate] = useState(defaultDates.start);
-  const [endDate, setEndDate] = useState(defaultDates.end);
-  // ---------------------------------------------------------
+    const defaultDates = getDefaultDates();
+    const [startDate, setStartDate] = useState(defaultDates.start);
+    const [endDate, setEndDate] = useState(defaultDates.end);
     
     // STATE FILTER (Multi Select)
     const [columnFilters, setColumnFilters] = useState({
@@ -1041,9 +1032,8 @@ function AnalysisScreen({ user, setView }) {
         simbolMesin: [], waktuScan: [], status: []
     });
 
-    // STATE SORTING (Baru)
+    // STATE SORTING
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-
     const [activeFilter, setActiveFilter] = useState(null);
 
     useEffect(() => {
@@ -1053,7 +1043,7 @@ function AnalysisScreen({ user, setView }) {
         }
     }, [user, setView]);
 
-    // Close dropdown saat klik di luar
+    // Close dropdown logic
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (activeFilter && !event.target.closest('.filter-dropdown-container')) {
@@ -1071,13 +1061,10 @@ function AnalysisScreen({ user, setView }) {
         }
         setLoading(true);
         setHasSearched(true);
-        // Reset Filter & Sort
-        setColumnFilters({
-            tglPengajuan: [], idAkun: [], nik: [], nama: [], divisi: [],
-            periode: [], durasi: [], tglKonflik: [], tipeManual: [], 
-            simbolMesin: [], waktuScan: [], status: []
-        });
-        setSortConfig({ key: null, direction: 'asc' });
+        
+        // Reset Filter & Sort saat search baru (opsional, bisa dihapus jika ingin preserve filter)
+        // setColumnFilters({ ... }); 
+        // setSortConfig({ key: null, direction: 'asc' });
 
         try {
             const res = await fetch(SCRIPT_URL, {
@@ -1121,7 +1108,7 @@ function AnalysisScreen({ user, setView }) {
             const result = await res.json();
             if (result.result === 'success') {
                 alert(`Berhasil: ${result.message}`);
-                handleAnalyze(); 
+                handleAnalyze(); // Refresh data otomatis setelah action
             } else {
                 alert(`Gagal: ${result.message}`);
             }
@@ -1134,7 +1121,6 @@ function AnalysisScreen({ user, setView }) {
     };
 
     // --- HELPER FILTER & SORT ---
-
     const getUniqueValues = (field) => {
         const values = dataList.map(item => item[field]).filter(v => v !== null && v !== undefined && v !== '');
         return [...new Set(values)].sort();
@@ -1151,14 +1137,10 @@ function AnalysisScreen({ user, setView }) {
     const toggleSelectAll = (field, visibleOptions) => {
         setColumnFilters(prev => {
             const currentValues = prev[field];
-            // Jika semua opsi yg terlihat sudah terpilih, maka uncheck semua. Jika belum, check semua.
             const allVisibleSelected = visibleOptions.every(val => currentValues.includes(val));
-            
             if (allVisibleSelected) {
-                // Hapus visibleOptions dari currentValues
                 return { ...prev, [field]: currentValues.filter(v => !visibleOptions.includes(v)) };
             } else {
-                // Tambahkan visibleOptions yang belum ada ke currentValues
                 const newValues = [...currentValues];
                 visibleOptions.forEach(v => {
                     if (!newValues.includes(v)) newValues.push(v);
@@ -1168,7 +1150,7 @@ function AnalysisScreen({ user, setView }) {
         });
     };
 
-    // 1. FILTERING
+    // FILTERING
     const filteredList = dataList.filter(item => {
         return Object.keys(columnFilters).every(key => {
             const selectedValues = columnFilters[key];
@@ -1177,19 +1159,15 @@ function AnalysisScreen({ user, setView }) {
         });
     });
 
-    // 2. SORTING (Apply Sort pada filteredList)
+    // SORTING
     const sortedList = React.useMemo(() => {
         let sortableItems = [...filteredList];
         if (sortConfig.key !== null) {
             sortableItems.sort((a, b) => {
                 let valA = a[sortConfig.key];
                 let valB = b[sortConfig.key];
-                
-                // Handle null/undefined
                 if (valA === null) valA = '';
                 if (valB === null) valB = '';
-
-                // Cek apakah angka
                 const numA = parseFloat(valA);
                 const numB = parseFloat(valB);
                 const isNum = !isNaN(numA) && !isNaN(numB) && String(valA).trim() !== '' && String(valB).trim() !== '';
@@ -1206,10 +1184,8 @@ function AnalysisScreen({ user, setView }) {
         return sortableItems;
     }, [filteredList, sortConfig]);
 
-    // Handle Klik Sort
     const requestSort = (key, direction) => {
         setSortConfig({ key, direction });
-        // Jangan tutup filter agar user bisa lanjut filter lain (opsional, bisa setActiveFilter(null) jika ingin tutup)
     };
 
     const getStatusColor = (status) => {
@@ -1219,7 +1195,7 @@ function AnalysisScreen({ user, setView }) {
         return 'bg-yellow-100 text-yellow-700 border-yellow-200';
     };
 
-    // --- EXPORT EXCEL ---
+    // --- EXPORT FUNCTIONS (EXCEL & PDF) ---
     const handleExportExcel = () => {
         if (sortedList.length === 0) return alert("Tidak ada data untuk diexport.");
         const dataToExport = sortedList.map((item, index) => ({
@@ -1245,7 +1221,6 @@ function AnalysisScreen({ user, setView }) {
         XLSX.writeFile(wb, `Analisa_Absensi_${startDate}_${endDate}.xlsx`);
     };
 
-    // --- EXPORT PDF ---
     const handleExportPDF = () => {
         if (sortedList.length === 0) return alert("Tidak ada data untuk dicetak.");
         const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -1254,7 +1229,6 @@ function AnalysisScreen({ user, setView }) {
         doc.setFontSize(10);
         doc.text(`Periode: ${startDate} s/d ${endDate}`, 14, 21);
         doc.text(`Dicetak Oleh: ${user.nama} | Tgl: ${new Date().toLocaleDateString('id-ID')}`, 14, 26);
-
         const tableColumn = [
             "No", "Tgl Ajuan", "ID Akun", "NIK", "Nama", "Dept", 
             "Periode", "Dur", "Tgl Konflik", "Form", "Mesin", "Scan", "Status"
@@ -1266,7 +1240,6 @@ function AnalysisScreen({ user, setView }) {
                 item.periode, item.durasi, item.tglKonflik, item.tipeManual, item.simbolMesin, item.waktuScan, item.status
             ]);
         });
-
         autoTable(doc, {
             head: [tableColumn], body: tableRows, startY: 30, theme: 'grid',
             headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: 'bold', halign: 'center', valign: 'middle', lineWidth: 0.1 },
@@ -1290,92 +1263,44 @@ function AnalysisScreen({ user, setView }) {
         doc.save(`Laporan_Analisa_${startDate}_${endDate}.pdf`);
     };
 
-    // --- COMPONENT FILTER HEADER (WITH SORT & FIND) ---
+    // --- FILTER HEADER COMPONENT ---
     const FilterHeader = ({ label, field, width, textColor }) => {
         const uniqueOptions = getUniqueValues(field);
         const selectedValues = columnFilters[field];
         const isOpen = activeFilter === field;
-        
-        // State untuk Find/Search dalam dropdown
         const [searchTerm, setSearchTerm] = useState('');
-
-        // Reset search term saat dropdown ditutup/dibuka
-        useEffect(() => {
-            if (!isOpen) setSearchTerm('');
-        }, [isOpen]);
-
-        // Filter opsi berdasarkan search term
-        const visibleOptions = uniqueOptions.filter(opt => 
-            String(opt).toLowerCase().includes(searchTerm.toLowerCase())
-        );
+        useEffect(() => { if (!isOpen) setSearchTerm(''); }, [isOpen]);
+        const visibleOptions = uniqueOptions.filter(opt => String(opt).toLowerCase().includes(searchTerm.toLowerCase()));
 
         return (
             <th className={`p-2 border border-gray-300 align-top ${width || 'w-24'} font-normal text-gray-700 bg-gray-100`}>
                 <div className="flex flex-col gap-1 filter-dropdown-container relative">
-                    {/* LABEL HEADER */}
                     <div className="flex items-center justify-center gap-1">
                         <span className={`text-center font-normal ${textColor || ''}`}>{label}</span>
-                        {/* Indikator Sort */}
                         {sortConfig.key === field && (
-                            <span className="text-[9px] text-blue-600 font-bold">
-                                {sortConfig.direction === 'asc' ? '↓' : '↑'}
-                            </span>
+                            <span className="text-[9px] text-blue-600 font-bold">{sortConfig.direction === 'asc' ? '↓' : '↑'}</span>
                         )}
                     </div>
-
-                    {/* BUTTON TRIGGER FILTER */}
-                    <button 
-                        onClick={() => setActiveFilter(isOpen ? null : field)}
-                        className={`flex items-center justify-between w-full text-[10px] px-2 py-1 border rounded bg-white outline-none focus:border-blue-500 font-normal ${selectedValues.length > 0 ? 'text-blue-600 border-blue-300 bg-blue-50' : 'text-gray-500 border-gray-300'}`}
-                    >
+                    <button onClick={() => setActiveFilter(isOpen ? null : field)} className={`flex items-center justify-between w-full text-[10px] px-2 py-1 border rounded bg-white outline-none focus:border-blue-500 font-normal ${selectedValues.length > 0 ? 'text-blue-600 border-blue-300 bg-blue-50' : 'text-gray-500 border-gray-300'}`}>
                         <span className="truncate">{selectedValues.length === 0 ? "(All)" : `${selectedValues.length} Selected`}</span>
                         <Filter className="w-3 h-3 ml-1" />
                     </button>
-
-                    {/* DROPDOWN CONTENT */}
                     {isOpen && (
                         <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-300 shadow-xl rounded-md z-50 flex flex-col max-h-80">
-                            
-                            {/* SECTION 1: SORTING */}
                             <div className="p-2 border-b border-gray-200 bg-gray-50 grid grid-cols-2 gap-2">
-                                <button 
-                                    onClick={() => requestSort(field, 'asc')}
-                                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] border ${sortConfig.key === field && sortConfig.direction === 'asc' ? 'bg-blue-100 text-blue-700 border-blue-300 font-bold' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}
-                                >
-                                    <span>A-Z</span> ↓
-                                </button>
-                                <button 
-                                    onClick={() => requestSort(field, 'desc')}
-                                    className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] border ${sortConfig.key === field && sortConfig.direction === 'desc' ? 'bg-blue-100 text-blue-700 border-blue-300 font-bold' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}
-                                >
-                                    <span>Z-A</span> ↑
-                                </button>
+                                <button onClick={() => requestSort(field, 'asc')} className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] border ${sortConfig.key === field && sortConfig.direction === 'asc' ? 'bg-blue-100 text-blue-700 border-blue-300 font-bold' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}><span>A-Z</span> ↓</button>
+                                <button onClick={() => requestSort(field, 'desc')} className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[10px] border ${sortConfig.key === field && sortConfig.direction === 'desc' ? 'bg-blue-100 text-blue-700 border-blue-300 font-bold' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}><span>Z-A</span> ↑</button>
                             </div>
-
-                            {/* SECTION 2: SEARCH (FIND) */}
                             <div className="p-2 border-b border-gray-200">
                                 <div className="relative">
                                     <Search className="w-3 h-3 absolute left-2 top-2 text-gray-400" />
-                                    <input 
-                                        type="text" 
-                                        placeholder="Find..." 
-                                        className="w-full pl-7 pr-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        autoFocus
-                                    />
+                                    <input type="text" placeholder="Find..." className="w-full pl-7 pr-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} autoFocus />
                                 </div>
                             </div>
-
-                            {/* SECTION 3: CHECKLIST FILTER */}
                             <div className="p-2 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
-                                <input type="checkbox" className="rounded border-gray-300 w-3.5 h-3.5 cursor-pointer" 
-                                    checked={visibleOptions.length > 0 && visibleOptions.every(v => selectedValues.includes(v))} 
-                                    onChange={() => toggleSelectAll(field, visibleOptions)}
-                                />
+                                <input type="checkbox" className="rounded border-gray-300 w-3.5 h-3.5 cursor-pointer" checked={visibleOptions.length > 0 && visibleOptions.every(v => selectedValues.includes(v))} onChange={() => toggleSelectAll(field, visibleOptions)} />
                                 <span className="text-[10px] text-gray-600 font-normal cursor-pointer" onClick={() => toggleSelectAll(field, visibleOptions)}>Select All (Shown)</span>
                             </div>
-                            
                             <div className="overflow-y-auto p-1 flex-1 min-h-[100px]">
                                 {visibleOptions.map((val, idx) => (
                                     <label key={idx} className="flex items-center gap-2 px-2 py-1.5 hover:bg-blue-50 cursor-pointer rounded">
@@ -1409,8 +1334,20 @@ function AnalysisScreen({ user, setView }) {
             <div className="bg-white border-b border-gray-200 px-4 py-3 flex flex-wrap gap-3 items-end shrink-0">
                 <div><label className="text-[10px] font-normal text-gray-400 uppercase block mb-1">Periode Mulai</label><input type="date" className="border border-gray-300 p-1.5 rounded text-xs font-normal shadow-sm" value={startDate} onChange={e => setStartDate(e.target.value)} /></div>
                 <div><label className="text-[10px] font-normal text-gray-400 uppercase block mb-1">Sampai Dengan</label><input type="date" className="border border-gray-300 p-1.5 rounded text-xs font-normal shadow-sm" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+                
+                {/* Tombol Analisa Data */}
                 <button onClick={handleAnalyze} disabled={loading} className="bg-slate-800 text-white px-5 py-2 rounded font-normal text-xs hover:bg-slate-700 transition flex items-center gap-2 shadow-md">
                     {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Search className="w-3.5 h-3.5"/>} {loading ? 'Proses...' : 'Analisa Data'}
+                </button>
+
+                {/* --- [BARU] TOMBOL REFRESH --- */}
+                <button 
+                    onClick={handleAnalyze} 
+                    disabled={loading || !hasSearched} 
+                    className="bg-white text-blue-600 border border-blue-200 px-3 py-2 rounded font-normal text-xs hover:bg-blue-50 transition flex items-center gap-2 shadow-sm"
+                    title="Refresh Data"
+                >
+                    <RefreshCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 </button>
             </div>
 
@@ -1433,6 +1370,10 @@ function AnalysisScreen({ user, setView }) {
                                 <thead className="sticky top-0 z-10 bg-gray-100 text-gray-700 font-normal uppercase border-b-2 border-gray-300">
                                     <tr>
                                         <th className="p-2 border border-gray-300 text-center w-10 align-top font-normal">No</th>
+                                        
+                                        {/* --- [PINDAH] KOLOM ACTION KE SINI --- */}
+                                        <th className="p-2 border border-gray-300 text-center w-20 align-top font-normal">Action</th>
+
                                         <FilterHeader label="Tgl Ajuan" field="tglPengajuan" width="w-24" />
                                         <FilterHeader label="ID Akun" field="idAkun" width="w-20" />
                                         <FilterHeader label="NIK" field="nik" width="w-20" /> 
@@ -1445,7 +1386,6 @@ function AnalysisScreen({ user, setView }) {
                                         <FilterHeader label="Mesin" field="simbolMesin" width="w-16" />
                                         <FilterHeader label="Scan" field="waktuScan" width="w-20" />
                                         <FilterHeader label="Status" field="status" width="w-24" />
-                                        <th className="p-2 border border-gray-300 text-center w-24 align-top font-normal">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="text-gray-800 text-xs bg-white font-normal">
@@ -1455,6 +1395,17 @@ function AnalysisScreen({ user, setView }) {
                                         sortedList.map((item, idx) => (
                                             <tr key={idx} className="hover:bg-blue-50 transition-colors">
                                                 <td className="p-2 border border-gray-300 text-center font-normal">{idx + 1}</td>
+                                                
+                                                {/* --- [PINDAH] TOMBOL ACTION DI SINI --- */}
+                                                <td className="p-1 border border-gray-300 text-center font-normal">
+                                                    {item.status === 'Pending' ? (
+                                                        <div className="flex justify-center gap-1">
+                                                            <button onClick={() => handleProcessApproval(item.uuid, 'approve', item.nama)} className="bg-green-600 hover:bg-green-700 text-white p-1 rounded shadow-sm" title="Approve"><CheckCircle className="w-3.5 h-3.5" /></button>
+                                                            <button onClick={() => handleProcessApproval(item.uuid, 'reject', item.nama)} className="bg-red-600 hover:bg-red-700 text-white p-1 rounded shadow-sm" title="Reject"><X className="w-3.5 h-3.5" /></button>
+                                                        </div>
+                                                    ) : <span className="text-gray-300">-</span>}
+                                                </td>
+
                                                 <td className="p-2 border border-gray-300 text-center font-normal">{item.tglPengajuan}</td>
                                                 <td className="p-2 border border-gray-300 font-mono text-gray-600 font-normal">{item.idAkun}</td>
                                                 <td className="p-2 border border-gray-300 font-mono text-gray-600 font-normal">{item.nik}</td>
@@ -1468,14 +1419,6 @@ function AnalysisScreen({ user, setView }) {
                                                 <td className="p-2 border border-gray-300 text-center font-mono font-normal">{item.waktuScan}</td>
                                                 <td className="p-2 border border-gray-300 text-center font-normal">
                                                     <span className={`px-1.5 py-0.5 rounded border ${getStatusColor(item.status)}`}>{item.status}</span>
-                                                </td>
-                                                <td className="p-1 border border-gray-300 text-center font-normal">
-                                                    {item.status === 'Pending' ? (
-                                                        <div className="flex justify-center gap-1">
-                                                            <button onClick={() => handleProcessApproval(item.uuid, 'approve', item.nama)} className="bg-green-600 hover:bg-green-700 text-white p-1 rounded shadow-sm" title="Approve"><CheckCircle className="w-3.5 h-3.5" /></button>
-                                                            <button onClick={() => handleProcessApproval(item.uuid, 'reject', item.nama)} className="bg-red-600 hover:bg-red-700 text-white p-1 rounded shadow-sm" title="Reject"><X className="w-3.5 h-3.5" /></button>
-                                                        </div>
-                                                    ) : <span className="text-gray-300">-</span>}
                                                 </td>
                                             </tr>
                                         ))
@@ -1611,12 +1554,12 @@ function DashboardScreen({ user, setView, handleLogout }) {
   );
 }
 
-// --- 2. REMARK SCREEN (UPDATED: ACTION COLUMN MOVED TO FRONT) ---
+// --- 2. REMARK SCREEN (UPDATED: DATE FORMAT DD-MM-YYYY) ---
 function RemarkScreen({ user, setView }) {
     const userRole = user.role ? String(user.role).toLowerCase() : '';
     const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
 
-    const [whatsapp, setWhatsapp] = useState('');
+    const [tglKoreksi, setTglKoreksi] = useState(''); 
     const [kategori, setKategori] = useState('Koreksi Absensi');
     const [pesan, setPesan] = useState('');
     const [file, setFile] = useState(null);
@@ -1626,12 +1569,31 @@ function RemarkScreen({ user, setView }) {
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     
     // VIEW MODE STATE
-    const [viewMode, setViewMode] = useState('list'); // 'list' or 'table'
+    const [viewMode, setViewMode] = useState('list'); 
 
     // TABLE FILTER STATE
     const [reportColumnFilters, setReportColumnFilters] = useState({});
     const [reportSortConfig, setReportSortConfig] = useState({ key: null, direction: 'asc' });
     const [activeReportFilter, setActiveReportFilter] = useState(null);
+
+    // --- HELPER FORMAT TANGGAL (DD-MM-YYYY) ---
+    const formatDateDisplay = (value) => {
+        if (!value || value === '-' || value === '') return '-';
+        const strVal = String(value);
+
+        // 1. Jika format YYYY-MM-DD (dari Input Date/Backend TglKoreksi) -> Ubah ke DD-MM-YYYY
+        if (strVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            const [y, m, d] = strVal.split('-');
+            return `${d}-${m}-${y}`;
+        }
+        
+        // 2. Jika format dd/mm/yyyy (dari Timestamp Backend) -> Ubah / jadi -
+        if (strVal.includes('/')) {
+            return strVal.replace(/\//g, '-');
+        }
+
+        return strVal;
+    };
 
     // Close dropdown logic
     useEffect(() => {
@@ -1678,13 +1640,19 @@ function RemarkScreen({ user, setView }) {
             const res = await fetch(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
-                    action: 'send_remark', userId: user.id, nama: user.nama, divisi: user.divisi,
-                    whatsapp, kategori, pesan, file
+                    action: 'send_remark', 
+                    userId: user.id, 
+                    nama: user.nama, 
+                    divisi: user.divisi,
+                    tglKoreksi, 
+                    kategori, 
+                    pesan, 
+                    file
                 })
             }).then(r => r.json());
             if (res.result === 'success') {
                 alert('Laporan berhasil dikirim ke HRD!');
-                setPesan(''); setWhatsapp(''); setFile(null); setFileName('');
+                setPesan(''); setTglKoreksi(''); setFile(null); setFileName('');
                 setRefreshTrigger(prev => prev + 1); 
             } else {
                 alert('Gagal mengirim laporan: ' + res.message);
@@ -1735,15 +1703,7 @@ function RemarkScreen({ user, setView }) {
         });
     };
 
-    const requestReportSort = (key, direction) => {
-        setReportSortConfig({ key, direction });
-    };
-
     const filteredRemarksTable = remarks.filter(item => {
-        if (isHRDOrAdmin && user.lokasi) {
-            const allowedLocations = user.lokasi.split(',').map(l => l.trim());
-            // Filter lokasi logic placeholder
-        }
         return Object.keys(reportColumnFilters).every(key => {
             const selectedValues = reportColumnFilters[key];
             if (!selectedValues || selectedValues.length === 0) return true;
@@ -1765,12 +1725,34 @@ function RemarkScreen({ user, setView }) {
         return sortableItems;
     }, [filteredRemarksTable, reportSortConfig]);
 
+    const requestReportSort = (key, direction) => {
+        setReportSortConfig({ key, direction });
+    };
+
+    // Show Columns Logic
+    const showResponseColumns = sortedRemarksTable.some(item => item.status === 'Done');
+
     // --- EXPORT FUNCTION ---
     const generateExcel = () => {
-        const tableHead = ["No", "Waktu", "Nama", "Divisi", "Jenis", "Keterangan", "No WA", "Status", "Respon HRD", "Waktu Respon"];
-        const tableBody = sortedRemarksTable.map((item, index) => [
-            index + 1, item.waktu, item.nama, item.divisi, item.kategori, item.pesan, item.whatsapp, item.status, item.respon, item.waktuRespon
-        ]);
+        let tableHead = ["No", "Waktu Lapor", "Tgl Koreksi", "Nama", "Divisi", "Jenis", "Keterangan", "Status"];
+        
+        if (showResponseColumns) {
+            tableHead.push("Respon HRD", "Waktu Respon");
+        }
+
+        const tableBody = sortedRemarksTable.map((item, index) => {
+            let row = [
+                index + 1, 
+                formatDateDisplay(item.waktu),       // [UPDATE] Format DD-MM-YYYY
+                formatDateDisplay(item.tglKoreksi),  // [UPDATE] Format DD-MM-YYYY
+                item.nama, item.divisi, item.kategori, item.pesan, item.status
+            ];
+            if (showResponseColumns) {
+                row.push(item.respon, formatDateDisplay(item.waktuRespon)); // [UPDATE] Format DD-MM-YYYY
+            }
+            return row;
+        });
+
         const worksheet = XLSX.utils.aoa_to_sheet([tableHead, ...tableBody]);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan_Masuk");
@@ -1784,10 +1766,24 @@ function RemarkScreen({ user, setView }) {
         doc.setFontSize(8);
         doc.text(`Total Data: ${sortedRemarksTable.length}`, 14, 20);
 
-        const tableColumn = ["No", "Waktu", "Nama", "Divisi", "Jenis", "Keterangan", "Status", "Respon"];
-        const tableRows = sortedRemarksTable.map((item, index) => [
-            index + 1, item.waktu, item.nama, item.divisi, item.kategori, item.pesan, item.status, item.respon
-        ]);
+        let tableColumn = ["No", "Waktu", "Tgl Koreksi", "Nama", "Divisi", "Jenis", "Keterangan", "Status"];
+        
+        if (showResponseColumns) {
+            tableColumn.push("Respon");
+        }
+
+        const tableRows = sortedRemarksTable.map((item, index) => {
+            let row = [
+                index + 1, 
+                formatDateDisplay(item.waktu),       // [UPDATE] Format DD-MM-YYYY
+                formatDateDisplay(item.tglKoreksi),  // [UPDATE] Format DD-MM-YYYY
+                item.nama, item.divisi, item.kategori, item.pesan, item.status
+            ];
+            if (showResponseColumns) {
+                row.push(item.respon);
+            }
+            return row;
+        });
 
         autoTable(doc, {
             head: [tableColumn], body: tableRows, startY: 25, theme: 'grid',
@@ -1888,12 +1884,14 @@ function RemarkScreen({ user, setView }) {
                     <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Edit className="w-4 h-4"/> Buat Laporan</h3>
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div>
-                            <label className="text-xs font-bold text-gray-700 block mb-1">No. WhatsApp *</label>
+                            <label className="text-xs font-bold text-gray-700 block mb-1">Tanggal Koreksi *</label>
                             <div className="relative">
-                                <Smartphone className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-                                <input type="tel" required className="w-full p-2.5 pl-10 border rounded-lg text-sm" placeholder="628xxxxxxxx" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} />
+                                <CalendarDays className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
+                                {/* State tglKoreksi untuk INPUT tetap YYYY-MM-DD agar valid di HTML input type="date" */}
+                                <input type="date" required className="w-full p-2.5 pl-10 border rounded-lg text-sm bg-white" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
                             </div>
                         </div>
+
                         <div>
                             <label className="text-xs font-bold text-gray-700 block mb-1">Jenis Koreksi/Laporan *</label>
                             <select className="w-full p-2.5 border rounded-lg text-sm bg-white" value={kategori} onChange={e => setKategori(e.target.value)}>
@@ -1938,30 +1936,34 @@ function RemarkScreen({ user, setView }) {
                             <thead className="sticky top-0 z-10 bg-gray-100 text-gray-700 font-normal uppercase border-b-2 border-gray-300 shadow-sm">
                                 <tr>
                                     <th className="p-2 border border-gray-300 text-center w-10 align-top font-bold bg-gray-100">No</th>
-                                    
-                                    {/* KOLOM ACTION DIPINDAH KESINI */}
                                     <th className="p-2 border border-gray-300 text-center w-20 align-top font-bold bg-gray-100">Action</th>
                                     
-                                    <ReportFilterHeader label="Waktu" field="waktu" width="w-24" />
+                                    <ReportFilterHeader label="Waktu Lapor" field="waktu" width="w-24" />
+                                    <ReportFilterHeader label="Tgl Koreksi" field="tglKoreksi" width="w-24" />
                                     <ReportFilterHeader label="Nama" field="nama" width="w-32" />
                                     <ReportFilterHeader label="Divisi" field="divisi" width="w-24" />
                                     <ReportFilterHeader label="Jenis" field="kategori" width="w-28" />
                                     <ReportFilterHeader label="Keterangan" field="pesan" width="w-48" />
                                     <th className="p-2 border border-gray-300 text-center w-16 align-top font-bold bg-gray-100">Lampiran</th>
                                     <ReportFilterHeader label="Status" field="status" width="w-20" />
-                                    <ReportFilterHeader label="Respon HRD" field="respon" width="w-32" />
-                                    <ReportFilterHeader label="Waktu Respon" field="waktuRespon" width="w-24" />
+
+                                    {/* [DYNAMIC] Header Respon: Hanya muncul jika ada Status DONE */}
+                                    {showResponseColumns && (
+                                        <>
+                                            <ReportFilterHeader label="Respon HRD" field="respon" width="w-32" />
+                                            <ReportFilterHeader label="Waktu Respon" field="waktuRespon" width="w-24" />
+                                        </>
+                                    )}
                                 </tr>
                             </thead>
                             <tbody className="text-gray-800 text-xs bg-white font-normal divide-y divide-gray-200">
                                 {sortedRemarksTable.length === 0 ? (
-                                    <tr><td colSpan="11" className="p-8 text-center text-gray-400 italic font-normal bg-gray-50">Tidak ada data laporan.</td></tr>
+                                    <tr><td colSpan={showResponseColumns ? "12" : "10"} className="p-8 text-center text-gray-400 italic font-normal bg-gray-50">Tidak ada data laporan.</td></tr>
                                 ) : (
                                     sortedRemarksTable.map((item, idx) => (
                                         <tr key={idx} className="hover:bg-blue-50 transition-colors group">
                                             <td className="p-2 border border-gray-200 text-center font-medium bg-gray-50/50">{idx + 1}</td>
                                             
-                                            {/* TOMBOL ACTION DISINI */}
                                             <td className="p-2 border border-gray-200 text-center">
                                                 {item.status === 'Open' ? (
                                                     <button onClick={() => handleMarkDone(item.uuid)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm flex items-center justify-center gap-1 w-full transition active:scale-95">
@@ -1970,7 +1972,8 @@ function RemarkScreen({ user, setView }) {
                                                 ) : <span className="text-green-600 font-bold">✔</span>}
                                             </td>
 
-                                            <td className="p-2 border border-gray-200 text-center font-mono text-[10px] text-gray-500">{item.waktu}</td>
+                                            <td className="p-2 border border-gray-200 text-center font-mono text-[10px] text-gray-500">{formatDateDisplay(item.waktu)}</td>
+                                            <td className="p-2 border border-gray-200 text-center text-blue-600 font-medium">{formatDateDisplay(item.tglKoreksi)}</td>
                                             <td className="p-2 border border-gray-200 font-bold text-gray-700">{item.nama}</td>
                                             <td className="p-2 border border-gray-200 text-gray-600">{item.divisi}</td>
                                             <td className="p-2 border border-gray-200 text-purple-700 font-medium">{item.kategori}</td>
@@ -1987,8 +1990,14 @@ function RemarkScreen({ user, setView }) {
                                                     {item.status}
                                                 </span>
                                             </td>
-                                            <td className="p-2 border border-gray-200 text-blue-800 font-medium">{item.respon}</td>
-                                            <td className="p-2 border border-gray-200 text-center text-[10px] text-gray-500">{item.waktuRespon}</td>
+
+                                            {/* [DYNAMIC] Kolom Respon: Hanya muncul jika ada Status DONE */}
+                                            {showResponseColumns && (
+                                                <>
+                                                    <td className="p-2 border border-gray-200 text-blue-800 font-medium">{item.respon}</td>
+                                                    <td className="p-2 border border-gray-200 text-center text-[10px] text-gray-500">{formatDateDisplay(item.waktuRespon)}</td>
+                                                </>
+                                            )}
                                         </tr>
                                     ))
                                 )}
@@ -2006,7 +2015,7 @@ function RemarkScreen({ user, setView }) {
                             <div className="flex justify-between items-start mb-1">
                                 <div>
                                     <h4 className="font-bold text-gray-800 text-sm">{item.nama} <span className="font-normal text-xs text-gray-500">({item.divisi})</span></h4>
-                                    <p className="text-[10px] text-gray-400">{item.waktu}</p>
+                                    <p className="text-[10px] text-gray-400">{formatDateDisplay(item.waktu)}</p>
                                 </div>
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${item.status === 'Done' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
                                     {item.status}
@@ -2014,19 +2023,20 @@ function RemarkScreen({ user, setView }) {
                             </div>
                             
                             <div className="bg-gray-50 p-2 rounded text-xs text-gray-700 mt-2 mb-2 border border-gray-100">
-                                <p className="font-bold text-purple-700 mb-1">{item.kategori}</p>
-                                <p className="italic">"{item.pesan}"</p>
-                                {isHRDOrAdmin && (
-                                    <div className="mt-2 flex items-center gap-2">
-                                        <a href={`https://wa.me/${String(item.whatsapp || '').replace(/^0/, '62')}`} target="_blank" rel="noreferrer" className="bg-green-500 text-white px-2 py-1 rounded text-[10px] flex items-center gap-1 hover:bg-green-600 no-underline">
-                                            <MessageCircle className="w-3 h-3"/> Chat WA
-                                        </a>
-                                        <span className="text-gray-500">{item.whatsapp}</span>
+                                {item.tglKoreksi && (
+                                    <div className="mb-1 pb-1 border-b border-gray-200 flex items-center gap-1.5">
+                                        <CalendarDays className="w-3 h-3 text-blue-500"/>
+                                        <span className="font-bold text-gray-600"></span>
+                                        {/* [UPDATE] Format DD-MM-YYYY di sini */}
+                                        <span className="font-mono text-blue-700">{formatDateDisplay(item.tglKoreksi)}</span>
                                     </div>
                                 )}
+                                <p className="font-bold text-purple-700 mb-1">{item.kategori}</p>
+                                <p className="italic">"{item.pesan}"</p>
                             </div>
 
-                            {item.respon && item.respon !== '' && (
+                            {/* [UPDATE] KARTU RESPON HANYA MUNCUL JIKA STATUS DONE */}
+                            {item.status === 'Done' && item.respon && item.respon !== '' && (
                                 <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mt-3 relative overflow-hidden">
                                     <div className="absolute top-0 right-0 p-2 opacity-10"><Info className="w-12 h-12 text-blue-500" /></div>
                                     <div className="flex justify-between items-center relative z-10 mb-2">
@@ -2037,7 +2047,8 @@ function RemarkScreen({ user, setView }) {
                                         {item.waktuRespon && item.waktuRespon !== '-' && (
                                             <div className="flex items-center gap-1 bg-white/60 px-2 py-1 rounded-full border border-blue-100 shadow-sm">
                                                 <Clock className="w-3 h-3 text-blue-400" />
-                                                <span className="text-[10px] text-blue-600 font-bold font-mono">{item.waktuRespon}</span>
+                                                {/* [UPDATE] Format DD-MM-YYYY di sini */}
+                                                <span className="text-[10px] text-blue-600 font-bold font-mono">{formatDateDisplay(item.waktuRespon)}</span>
                                             </div>
                                         )}
                                     </div>
