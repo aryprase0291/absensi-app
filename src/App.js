@@ -54,7 +54,7 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.9";
+  const CLIENT_VERSION = "1.0.10";
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
@@ -626,7 +626,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) {
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font
           -bold uppercase tracking-widest">
-              Version {masterData?.appVersion || '1.0.9'} | &copy; {new Date().getFullYear()}
+              Version {masterData?.appVersion || '1.0.10'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
