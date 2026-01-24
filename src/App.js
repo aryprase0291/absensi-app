@@ -2,52 +2,17 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-
-import { 
-  Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, 
-  Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, 
-  Briefcase, FileText, AlertTriangle, X, 
-  File as FileIcon, Filter, CheckSquare, Users, Eye, 
-  ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, 
-  MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck,
-  Printer, FileSpreadsheet, Loader2, CalendarDays, DoorOpen, DoorClosed, 
-  CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone,
-  
-} from 'lucide-react';
-
-import { SCRIPT_URL } from './config/constants';
-import { TIMEOUT_DURATION } from './config/constants';
+import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, Briefcase, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, DoorOpen, DoorClosed, CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone } from 'lucide-react';
+import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 
-// --- HELPER FORMAT TANGGAL GLOBAL ---
-const formatDateIndo = (d) => { 
-  if (!d || d === '-') return '-'; 
-  try { 
-    return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); 
-  } catch (e) { return d; } 
-};
+    // HELPER FORMAT TANGGAL GLOBAL
+const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
+const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
+const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar, 'Tukar Shift': CalendarCheck, 'Off': CalendarCheck };
+const COLOR_MAP = {'Hadir': 'bg-green-500', 'Pulang': 'bg-red-500', 'Ijin': 'bg-yellow-500', 'Sakit': 'bg-orange-500', 'Lembur': 'bg-purple-500', 'Dinas': 'bg-indigo-500', 'Cuti': 'bg-pink-500', 'Tukar Shift': 'bg-teal-500', 'Off': 'bg-gray-500'};// Tambahkan Warna untuk Off
 
-const formatDateShort = (d) => { 
-  if (!d || d === '-') return '-'; 
-  try { 
-    return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); 
-  } catch (e) { return d; } 
-};
-
-const ICON_MAP = {
-  'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 
-  'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar, 
-  'Tukar Shift': CalendarCheck, 'Off': CalendarCheck // Tambahkan Icon untuk Off
-};
-
-const COLOR_MAP = {
-  'Hadir': 'bg-green-500', 'Pulang': 'bg-red-500', 'Ijin': 'bg-yellow-500', 
-  'Sakit': 'bg-orange-500', 'Lembur': 'bg-purple-500', 'Dinas': 'bg-indigo-500', 
-  'Cuti': 'bg-pink-500',
-  'Tukar Shift': 'bg-teal-500', 'Off': 'bg-gray-500' // Tambahkan Warna untuk Off
-};
-
-// --- MAIN APP COMPONENT ---
+    // MAIN APP COMPONENT
 export default function AppAbsensi() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('login'); 
@@ -58,322 +23,84 @@ export default function AppAbsensi() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
- // --- LOGIKA CEK UPDATE (DIPERBAIKI: BLOCKING UI) ---
-  useEffect(() => {
-    const checkUpdate = async () => {
-      try {
-        const res = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'check_version' })
-        });
-        const data = await res.json();
-        
-        if (data.result === 'success') {
-          const serverVersion = data.version;
-          
-          // Jika versi Server berbeda dengan Client
-          if (serverVersion !== CLIENT_VERSION) {
-             console.log(`Update ditemukan: v${CLIENT_VERSION} -> v${serverVersion}`);
-             
-             // Trigger Blocking UI
-             setNewVersion(serverVersion);
-             setUpdateAvailable(true); 
-          }
-        }
-      } catch (e) {
-        console.error("Gagal cek versi", e);
-      }
-    };
+    //----LOGIKA CEK UPDATE (DIPERBAIKI: BLOCKING UI)----
+useEffect(() => { const checkUpdate = async () => { try { const data = await (await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })).json(); if (data.result === 'success' && data.version !== CLIENT_VERSION) { console.log(`Update: v${CLIENT_VERSION}->v${data.version}`); setNewVersion(data.version); setUpdateAvailable(true); } } catch (e) { console.error("Gagal cek versi", e); } }; checkUpdate(); }, []);
 
-    checkUpdate();
-  }, []);
+    //----LOGIKA AUTO LOGIN / RESTORE SESSION----
+useEffect(() => { const u = localStorage.getItem('app_user'), m = localStorage.getItem('app_master_data'); if (u) { setUser(JSON.parse(u)); if (m) setMasterData(JSON.parse(m)); setView('dashboard'); } }, []);
 
-  // Fungsi Eksekusi Update (Membersihkan Cache)
-  const performUpdate = () => {
-      // 1. Hapus semua LocalStorage & SessionStorage agar bersih
-      localStorage.clear();
-      sessionStorage.clear();
+    //----FUNGSI EKSEKUSI UPDATE (MEMBERSIHKAN CACHE)----
+const performUpdate = () => { localStorage.clear(); sessionStorage.clear(); if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())); window.location.href = window.location.href.split('?')[0] + '?v=' + newVersion + '&t=' + Date.now(); };
 
-      // 2. Cache Busting yang agresif (Unregister Service Worker)
-      if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(registrations) {
-              for(let registration of registrations) {
-                  registration.unregister();
-              }
-          });
-      }
+    //----FUNGSI LOGOUT / KELUAR APLIKASI----
+const handleLogout = useCallback(() => { setUser(null); setMasterData({ menus: [], roles: [], divisions: [], shifts: [] }); setView('login'); localStorage.removeItem('app_user'); localStorage.removeItem('app_master_data'); sessionStorage.removeItem('announcement_shown'); if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); }, []);
 
-      // 3. Reload Halaman dengan parameter waktu untuk memaksa browser mengambil file baru
-      const newUrl = window.location.href.split('?')[0] + '?v=' + newVersion + '&t=' + new Date().getTime();
-      window.location.href = newUrl;
-  };
+    //----RESET TIMER OTOMATIS LOGOUT----
+const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); if (user) logoutTimerRef.current = setTimeout(() => { alert("Sesi Anda berakhir karena tidak ada aktivitas selama 10 menit."); handleLogout(); }, TIMEOUT_DURATION); }, [user, handleLogout]);
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem('app_user');
-    const storedMasterData = localStorage.getItem('app_master_data');
-    if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      setUser(parsedUser);
-      if (storedMasterData) setMasterData(JSON.parse(storedMasterData));
-      setView('dashboard');
-    }
-  }, []);
+    // LISTENER AKTIVITAS USER (AUTO-LOGOUT)
+useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart']; ev.forEach(e => window.addEventListener(e, resetTimer)); return () => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); ev.forEach(e => window.removeEventListener(e, resetTimer)); }; }, [user, resetTimer]);
 
-  const handleLogout = useCallback(() => {
-    setUser(null);
-    setMasterData({ menus: [], roles: [], divisions: [], shifts: [] });
-    setView('login');
-    localStorage.removeItem('app_user');
-    localStorage.removeItem('app_master_data');
-    sessionStorage.removeItem('announcement_shown');
-    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-  }, []);
+    // FUNGSI HANDLER LOGIN & PENYIMPANAN SESI
+const handleLogin = (userData, rawMasterData) => { const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift') }; setMasterData(p); setUser(userData); setView('dashboard'); localStorage.setItem('app_user', JSON.stringify(userData)); localStorage.setItem('app_master_data', JSON.stringify(p)); };
 
-  //----RESET TIMER OTOMATIS LOGOUT----
-  const resetTimer = useCallback(() => {
-    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-    if (user) {
-      logoutTimerRef.current = setTimeout(() => {
-        // [UBAH PESAN MENJADI 10 MENIT]
-        alert("Sesi Anda berakhir karena tidak ada aktivitas selama 10 menit.");
-        handleLogout();
-      }, TIMEOUT_DURATION);
-    }
-  }, [user, handleLogout]);
+    // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
+return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{view!=='login'&&view!=='dashboard'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='form'?'Form':(view==='history'?'Riwayat':'Lainnya')}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div></div></div>);}
 
-  useEffect(() => {
-    if (!user) return; 
-    resetTimer();
-    const events = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    events.forEach(event => window.addEventListener(event, resetTimer));
-    return () => {
-      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-      events.forEach(event => window.removeEventListener(event, resetTimer));
-    };
-  }, [user, resetTimer]);
+    // KOMPONEN JAM ANALOG
+const AnalogClock = ({ time }) => { const s = time.getSeconds(), m = time.getMinutes(), h = time.getHours(); const sD = (s/60)*360, mD = (m/60)*360+(s/60)*6, hD = ((h%12)/12)*360+(m/60)*30; return (<div className="relative w-28 h-28 flex items-center justify-center bg-white rounded-full shadow-inner border-4 border-slate-100">{[...Array(12)].map((_, i) => { const n = i+1, r = n*30; return (<div key={n} className="absolute w-full h-full text-center pt-1" style={{transform:`rotate(${r}deg)`}}><span className="inline-block text-[10px] font-bold text-slate-400" style={{transform:`rotate(-${r}deg)`}}>{n}</span></div>); })}{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-0.5 h-1 bg-slate-200 rounded-full" style={{transform:`rotate(${i*30}deg) translate(0, -38px)`}}></div>))}<div className="absolute w-1.5 h-7 bg-slate-800 rounded-full origin-bottom z-10" style={{transform:`rotate(${hD}deg)`, bottom:'50%'}}></div><div className="absolute w-1 h-9 bg-blue-500 rounded-full origin-bottom z-10" style={{transform:`rotate(${mD}deg)`, bottom:'50%'}}></div><div className="absolute w-0.5 h-10 bg-red-500 rounded-full origin-bottom z-10" style={{transform:`rotate(${sD}deg)`, bottom:'50%'}}></div><div className="absolute w-2.5 h-2.5 bg-slate-800 rounded-full z-20 border-2 border-white"></div></div>); };
 
-  const handleLogin = (userData, rawMasterData) => {
-    const menus = rawMasterData.filter(m => m.kategori === 'Menu');
-    const roles = rawMasterData.filter(m => m.kategori === 'Role');
-    const divisions = rawMasterData.filter(m => m.kategori === 'Divisi');
-    const shifts = rawMasterData.filter(m => m.kategori === 'Shift');
-    
-    const processedMasterData = { menus, roles, divisions, shifts };
-    
-    setMasterData(processedMasterData);
-    setUser(userData);
-    setView('dashboard');
-    localStorage.setItem('app_user', JSON.stringify(userData));
-    localStorage.setItem('app_master_data', JSON.stringify(processedMasterData));
-  };
+    // DASHBOARD SCREEN (CLICKABLE STATS)
+function Dashboard({ user, setUser, setView, handleLogout, masterData }) { const [time, setTime] = useState(new Date()); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
 
-  return (
-    <div className="min-h-screen bg-gray-100 font-sans text-slate-800">
-      <div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">
-        
-        {/* --- FITUR FORCE UPDATE (BLOCKING SCREEN) --- */}
-        {updateAvailable && (
-            <div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
-                <div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full">
-                    <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                        <RefreshCcw className="w-10 h-10 text-blue-600" />
-                    </div>
-                    <h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2>
-                    <p className="text-slate-500 text-sm mb-6">
-                        Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>
-                        Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.
-                    </p>
-                    
-                    <button 
-                        onClick={performUpdate}
-                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"
-                    >
-                        <RefreshCcw className="w-5 h-5 animate-spin" />
-                        Update Sekarang
-                    </button>
-                    <p className="text-[10px] text-slate-400 mt-4">
-                        *Aplikasi akan dimuat ulang secara otomatis.
-                    </p>
-                </div>
-            </div>
-        )}
+    // LOGIC FETCH PENGUMUMAN / INFO HRD
+useEffect(() => { (async () => { if(sessionStorage.getItem('announcement_shown')) return; try { const d = await (await fetch(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'get_latest_announcement'})})).json(); if(d.result==='success'&&d.data){ setNewsContent(d.data); setShowNews(true); } } catch(e){ console.error(e); } })(); }, []);
+  
+    // LOGIC TIMER / DETAK JAM REAL-TIME
+useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
-        {/* HEADER UTAMA: Hanya muncul jika BUKAN Login DAN BUKAN Dashboard (karena Dashboard punya header sendiri) */}
-        {view !== 'login' && view !== 'dashboard' && (
-            <div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative">
-            <div className="flex items-center gap-2">
-                <button onClick={() => setView('dashboard')} className="flex items-center gap-2">
-                   <Activity className="w-6 h-6" />
-                   {/* TEXT ABSENSI ONLINE DIHAPUS SESUAI REQUEST */}
-                   <span className="font-bold text-lg">Menu {view === 'form' ? 'Form' : (view === 'history' ? 'Riwayat' : 'Lainnya')}</span>
-                </button>
-            </div>
-            {/* Tombol Logout & Password di sini DIHAPUS agar tidak double */}
-            </div>
-        )}
+    // LOGIC FETCH STATISTIK DASHBOARD
+useEffect(() => { const f = async () => { setLoadingStats(true); try { const d = await (await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) })).json(); if (d.result === 'success') { const n = {}; Object.keys(d.stats).forEach(k => n[k.toLowerCase()] = d.stats[k]); setStats({ ...d.stats, ...n }); } } catch (e) { console.error("Gagal"); } finally { setLoadingStats(false); } }; if (user) f(); }, [user]);
 
-        <div className="p-0">
-          {view === 'login' && <LoginScreen onLogin={handleLogin} />}
-          {/* Dashboard menerima prop setView untuk navigasi */}
-          {view === 'dashboard' && <Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} />}
-          
-          {/* ... (View lainnya TETAP SAMA) ... */}
-          {view === 'form' && <AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData} />}
-          {view === 'history' && <HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData} />}
-          {view === 'db_absen' && <DbAbsenScreen user={user} setView={setView} />}
-          {view === 'admin' && <AdminPanel user={user} setView={setView} masterData={masterData} />}
-          {view === 'approval' && <ApprovalScreen user={user} setView={setView} />}
-          {view === 'ganti_password' && <ChangePasswordScreen user={user} setView={setView} />}
-          {view === 'remark' && <RemarkScreen user={user} setView={setView} />}
-          {view === 'input_shift' && <ShiftScheduleScreen user={user} setView={setView} masterData={masterData} />}
-          {view === 'analysis' && <AnalysisScreen user={user} setView={setView} />}
-        </div>
-      </div>
-    </div>
-  );
+    // FUNGSI KLIK STATISTIK (NAVIGASI FILTER)
+const handleStatClick = (c) => { localStorage.setItem('dbAbsenFilter', c); setView('db_absen'); };
+
+    // LOGIKA PERSIAPAN DATA DASHBOARD
+if (!user) return null;
+const availableMenus = masterData.menus || [];
+
+    // FILTER MENU BERDASARKAN HAK AKSES USER
+const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter(item => user.akses.includes(item.value)) : availableMenus;
+
+    // NORMALISASI ROLE USER
+const userRole = (user.role || '').toLowerCase();
+
+    // PENENTUAN HAK AKSES (FLAGS)
+const canApprove = ['admin', 'hrd', 'manager'].includes(userRole);
+const canAccessPanel = userRole === 'admin' && userRole !== 'hrd';
+const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
+const isShiftWorker = userRole === 'karyawan_shift';
+
+    // LOGIKA SAPAAN BERDASARKAN WAKTU
+const hour = time.getHours();
+let greeting = 'Selamat Pagi';
+
+if (hour >= 11 && hour < 15) { 
+    greeting = 'Selamat Siang'; 
+} else if (hour >= 15 && hour < 18) { 
+    greeting = 'Selamat Sore'; 
+} else if (hour >= 18) { 
+    greeting = 'Selamat Malam'; 
 }
 
+    // FORMAT TANGGAL BAHASA INDONESIA
+const dateOptions = { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' };
+const dateString = time.toLocaleDateString('id-ID', dateOptions);
 
-
-// --- KOMPONEN JAM ANALOG ---
-const AnalogClock = ({ time }) => {
-  const seconds = time.getSeconds();
-  const minutes = time.getMinutes();
-  const hours = time.getHours();
-
-  const secondDeg = (seconds / 60) * 360;
-  const minuteDeg = (minutes / 60) * 360 + (seconds / 60) * 6;
-  const hourDeg = ((hours % 12) / 12) * 360 + (minutes / 60) * 30;
-
-  return (
-    <div className="relative w-28 h-28 flex items-center justify-center bg-white rounded-full shadow-inner border-4 border-slate-100">
-      {/* Angka Jam 1-12 */}
-      {[...Array(12)].map((_, i) => {
-        const num = i + 1;
-        const rotation = num * 30;
-        return (
-          <div
-            key={num}
-            className="absolute w-full h-full text-center pt-1"
-            style={{ transform: `rotate(${rotation}deg)` }}
-          >
-            <span
-              className="inline-block text-[10px] font-bold text-slate-400"
-              style={{ transform: `rotate(-${rotation}deg)` }}
-            >
-              {num}
-            </span>
-          </div>
-        );
-      })}
-
-      {/* Dial Markers (Titik Kecil) */}
-      {[...Array(12)].map((_, i) => (
-        <div key={i} className="absolute w-0.5 h-1 bg-slate-200 rounded-full" 
-             style={{ transform: `rotate(${i * 30}deg) translate(0, -38px)` }}></div>
-      ))}
-      
-      {/* Jarum Jam */}
-      <div className="absolute w-1.5 h-7 bg-slate-800 rounded-full origin-bottom z-10"
-           style={{ transform: `rotate(${hourDeg}deg)`, bottom: '50%' }}></div>
-      {/* Jarum Menit */}
-      <div className="absolute w-1 h-9 bg-blue-500 rounded-full origin-bottom z-10"
-           style={{ transform: `rotate(${minuteDeg}deg)`, bottom: '50%' }}></div>
-      {/* Jarum Detik */}
-      <div className="absolute w-0.5 h-10 bg-red-500 rounded-full origin-bottom z-10"
-           style={{ transform: `rotate(${secondDeg}deg)`, bottom: '50%' }}></div>
-      
-      {/* Titik Tengah */}
-      <div className="absolute w-2.5 h-2.5 bg-slate-800 rounded-full z-20 border-2 border-white"></div>
-    </div>
-  );
-};
-
-// --- DASHBOARD SCREEN (CLICKABLE STATS) ---
-function Dashboard({ user, setUser, setView, handleLogout, masterData }) { 
-  const [time, setTime] = useState(new Date());
-  const [stats, setStats] = useState({ 
-    total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, 
-    total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0,
-    total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-'
-  });
-  const [loadingStats, setLoadingStats] = useState(true);
-  const [showNews, setShowNews] = useState(false);
-  const [newsContent, setNewsContent] = useState(null);
-
-  // --- PERBAIKAN 2: Tambahkan Logic Fetch Announcement ---
-  useEffect(() => {
-    const fetchAnnouncement = async () => {
-      // Cek apakah user sudah melihat info ini di sesi ini (agar tidak muncul terus menerus saat refresh)
-      const hasSeen = sessionStorage.getItem('announcement_shown');
-      if (hasSeen) return;
-
-      try {
-        const res = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'get_latest_announcement' })
-        });
-        const data = await res.json();
-        
-        if (data.result === 'success' && data.data) {
-          setNewsContent(data.data);
-          setShowNews(true);
-        }
-      } catch (e) {
-        console.error("Gagal load info hrd", e);
-      }
-    };
-    
-    fetchAnnouncement();
-  }, []);
-
-  useEffect(() => { const timer = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(timer); }, []);
-
-  // FETCH STATS
-  useEffect(() => { 
-    const fetchStats = async () => { 
-      setLoadingStats(true); 
-      try { 
-        const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) }); 
-        const data = await res.json(); 
-        if (data.result === 'success') { 
-          const normalizedStats = {}; 
-          Object.keys(data.stats).forEach(key => { normalizedStats[key.toLowerCase()] = data.stats[key]; }); 
-          setStats({ ...data.stats, ...normalizedStats }); 
-        } 
-      } catch (e) { console.error("Gagal"); } finally { setLoadingStats(false); }
-    }; 
-    if (user) fetchStats(); 
-  }, [user]);
-
-  // --- FUNGSI KLIK STATISTIK ---
-  const handleStatClick = (filterCode) => {
-      localStorage.setItem('dbAbsenFilter', filterCode);
-      setView('db_absen');
-  };
-
-  const checkExecutionTime = async () => { /* ... Logic Ping ... */ };
-  useEffect(() => { checkExecutionTime(); }, []);
-
-  if (!user) return null; 
-
-  const availableMenus = masterData.menus || [];
-  const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter(item => user.akses.includes(item.value)) : availableMenus; 
-  const userRole = user.role ? String(user.role).toLowerCase() : '';
-  const canApprove = ['admin', 'hrd', 'manager'].includes(userRole);
-  const canAccessPanel = userRole === 'admin' && userRole !== 'hrd';
-  const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
-  const isShiftWorker = userRole === 'karyawan_shift';
-
-  const hour = time.getHours();
-  let greeting = 'Selamat Pagi';
-  if (hour >= 11 && hour < 15) { greeting = 'Selamat Siang'; }
-  else if (hour >= 15 && hour < 18) { greeting = 'Selamat Sore'; }
-  else if (hour >= 18) { greeting = 'Selamat Malam'; }
-
-  const dateOptions = { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' };
-  const dateString = time.toLocaleDateString('id-ID', dateOptions);
-  const Skeleton = ({ className }) => ( <div className={`bg-gray-200 animate-pulse rounded ${className}`}></div> );
+    // KOMPONEN HELPER LOADING (SKELETON)
+const Skeleton = ({ className }) => (
+    <div className={`bg-gray-200 animate-pulse rounded ${className}`}></div>
+);
 
   // --- RENDER UI ---
   return ( 
@@ -1589,6 +1316,8 @@ function RemarkScreen({ user, setView }) {
     const [reportColumnFilters, setReportColumnFilters] = useState({});
     const [reportSortConfig, setReportSortConfig] = useState({ key: null, direction: 'asc' });
     const [activeReportFilter, setActiveReportFilter] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10); // Default 10 baris
 
     // --- HELPER FORMAT TANGGAL (DD-MM-YYYY) ---
     const formatDateDisplay = (value) => {
@@ -4210,20 +3939,8 @@ function DbAbsenScreen({ user, setView }) {
 
   const clearFilter = () => { setFilterStart(''); setFilterEnd(''); setFilterStatus('All'); };
 
-  // --- [BARU] FUNGSI HANDLE KLIK TOMBOL AJUKAN ---
-  const handleAjukanIjin = (item) => {
-    // 1. Parsing Jam Kerja (Contoh: "08:00 - 17:00")
-    let jMulai = "";
-    let jSelesai = "";
-    const jamKerja = item.jamKerja || "";
-    
-    if (jamKerja.includes("-")) {
-        const parts = jamKerja.split("-");
-        if (parts.length === 2) {
-            jMulai = parts[0].trim();
-            jSelesai = parts[1].trim();
-        }
-    }
+  // --- FUNGSI HANDLE KLIK TOMBOL AJUKAN (PARSING JAM) ---
+const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerja||""; if(jk.includes("-")){ const p=jk.split("-"); if(p.length===2){ jMulai=p[0].trim(); jSelesai=p[1].trim(); } }
 
     // 2. Parsing Tanggal
     let tanggalYMD = "";
@@ -4443,27 +4160,5 @@ function DbAbsenScreen({ user, setView }) {
   );
 }
 
-// Pastikan helper formatTimeOnly tersedia
-function formatTimeOnly(val) {
-    if (!val || val === '-' || val === 'FALSE') return '-';
-    // Jika formatnya string ISO Tanggal (contoh: 1899-12-29T17:25:48.000Z)
-    if (typeof val === 'string' && val.includes('T')) {
-        try {
-            const date = new Date(val);
-            if (isNaN(date.getTime())) return val;
-            return date.toLocaleTimeString('id-ID', {
-                hour: '2-digit', 
-                minute: '2-digit', 
-                hour12: false
-            }).replace(/\./g, ':');
-        } catch (e) { 
-            return val;
-        }
-    }
-    
-    // Jika formatnya sudah jam (contoh: 08:30:00) potong detiknya
-    if (typeof val === 'string' && val.includes(':')) {
-        return val.substring(0, 5);
-    }
-    return val;
-}
+// --- HELPER FORMAT WAKTU (HH:MM) ---
+function formatTimeOnly(v){if(!v||v==='-'||v==='FALSE')return'-';if(typeof v==='string'){if(v.includes('T')){try{const d=new Date(v);return isNaN(d)?v:d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',hour12:false}).replace(/\./g,':')}catch(e){return v}}if(v.includes(':'))return v.substring(0,5)}return v}
