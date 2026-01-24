@@ -3506,38 +3506,6 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         </div>
       </div>
 
-      {canViewAll && (
-         <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-lg shadow-slate-200 mb-4 ring-1 ring-black/5">
-             <button onClick={() => setIsFilterExpanded(!isFilterExpanded)} className="flex items-center justify-between w-full font-bold text-sm hover:text-blue-200 transition-colors">
-                <div className="flex items-center gap-2"><Users className="w-4 h-4 text-blue-400"/> Filter Karyawan ({selectedUserIds.length > 0 ? selectedUserIds.length : 'Semua di ' + locationFilter})</div>
-                {isFilterExpanded ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}
-            </button>
-            {isFilterExpanded && (
-                <div className="mt-4 bg-slate-700/50 p-4 rounded-xl max-h-[400px] overflow-y-auto animate-in slide-in-from-top-2 border border-slate-600">
-                    {isSuperAdmin && (
-                        <div className="mb-4 bg-slate-900/50 p-3 rounded-lg border border-slate-600">
-                             <label className="text-[10px] text-slate-400 block mb-1 font-bold uppercase tracking-wider">Pilih Lokasi</label>
-                             <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className="w-full p-2 text-xs font-bold text-slate-200 bg-slate-800 rounded-lg border border-slate-600 focus:ring-2 focus:ring-blue-500 outline-none"><option value="All">Semua Lokasi</option><option value="Surabaya">Surabaya</option><option value="Jakarta">Jakarta</option></select>
-                        </div>
-                    )}
-                    <div className="mb-3 relative">
-                        <input type="text" placeholder="Cari Nama Karyawan..." value={searchUser} onChange={(e) => setSearchUser(e.target.value)} className="w-full p-2.5 pl-9 text-xs font-medium text-white bg-slate-600 rounded-lg border-none focus:ring-2 focus:ring-blue-500 placeholder-slate-400" />
-                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3"/>
-                    </div>
-                    <button onClick={selectAllUsers} className="text-[10px] font-bold text-blue-300 mb-3 hover:text-white uppercase tracking-wider transition-colors">{selectedUserIds.length > 0 ? 'Reset Pilihan' : 'Pilih Semua'}</button>
-                    <div className="space-y-1">
-                        {allUsers.filter(u => u.nama.toLowerCase().includes(searchUser.toLowerCase())).map(u => (
-                            <label key={u.id} className="flex items-center gap-3 text-sm cursor-pointer hover:bg-slate-600/80 p-2 rounded-lg transition-colors">
-                                <input type="checkbox" checked={selectedUserIds.includes(u.id)} onChange={() => toggleUserSelection(u.id)} className="w-4 h-4 rounded text-blue-500 bg-slate-700 border-slate-500 focus:ring-offset-slate-800" />
-                                <span className="flex-1 font-medium text-slate-200">{u.nama}</span>
-                            </label>
-                        ))}
-                    </div>
-                </div>
-            )}
-         </div>
-      )}
-
       {/* --- KARTU FILTER --- */}
       <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 mb-3">
         <div className="flex items-center gap-2 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider"><Filter className="w-3.5 h-3.5 text-slate-400" /> Filter Data</div>
