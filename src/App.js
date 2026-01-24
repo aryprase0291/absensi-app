@@ -3506,7 +3506,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         </div>
       </div>
 
-      {canViewAll && (
+      {/* {canViewAll && (
          <div className="bg-slate-800 text-white p-4 rounded-2xl shadow-lg shadow-slate-200 mb-4 ring-1 ring-black/5">
              <button onClick={() => setIsFilterExpanded(!isFilterExpanded)} className="flex items-center justify-between w-full font-bold text-sm hover:text-blue-200 transition-colors">
                 <div className="flex items-center gap-2"><Users className="w-4 h-4 text-blue-400"/> Filter Karyawan ({selectedUserIds.length > 0 ? selectedUserIds.length : 'Semua di ' + locationFilter})</div>
@@ -3536,7 +3536,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                 </div>
             )}
          </div>
-      )}
+      )} */}
 
       {/* --- KARTU FILTER --- */}
       <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 mb-3">
