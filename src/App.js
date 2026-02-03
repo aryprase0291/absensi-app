@@ -2431,7 +2431,7 @@ const handleDecision = async (uuid, decision, namaUser) => {
         <div className="flex items-center justify-between mb-6">
           <div>
               <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Approval</h2>
-              <p className="text-[10px] text-slate-500 font-medium">Menunggu persetujuan Anda</p>
+              <p className="text-[10px] text-slate-500 font-medium">Menunggu persetujuan HRD</p>
           </div>
           <BackButton onClick={() => setView('dashboard')} />
         </div>
