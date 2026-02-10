@@ -2774,6 +2774,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                   col_date: formatDateDDMMYYYY(g.tanggal),
                   col_userId: g.idAkun, 
                   col_payroll: g.noPayroll,
+                  
               }));
           } else {
               let sourceData = (reportCategory === 'RunningShift') ? shiftReport : history;
@@ -3045,8 +3046,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                       <div className="relative">
                         <select value={reportCategory} onChange={(e) => setReportCategory(e.target.value)} className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-full cursor-pointer outline-none transition-all shadow-sm">
                             <option value="General">Laporan Absensi</option>
-                            {canViewAll && <option value="RunningShift">Running Shift</option>}
-                            {canViewAll && <option value="Tally">Absen Online</option>}
+                            <option value="RunningShift">Running Shift</option>}
+                            <option value="Tally">Absen Online</option>}
                         </select>
                         <ChevronDown className="w-3 h-3 text-indigo-400 absolute right-3 top-2 pointer-events-none"/>
                       </div>
