@@ -2771,9 +2771,9 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
               finalData = Object.values(groupedMap).map(g => ({ 
                   ...g, 
                   catatan: g.catatanList.join('; '), 
-                  col_date: formatDateIndo(g.waktu),
+                  col_date: formatDateDDMMYYYY(g.tanggal),
                   col_userId: g.idAkun, 
-                  col_payroll: g.noPayroll || '-' 
+                  col_payroll: g.noPayroll,
               }));
           } else {
               let sourceData = (reportCategory === 'RunningShift') ? shiftReport : history;
@@ -2894,8 +2894,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         tableHead = ["No", "UserID", "PAYROLL", "Nama", "Posisi", "Tanggal Shift", "Jam Kerja", "Waktu Input"];
         tableBody = dataToExport.map((item, index) => [ index + 1, item.col_userId, item.col_payroll, item.nama, item.divisi || '-', item.col_date, item.shiftLabel, item.col_time ]);
     } else if (reportCategory === 'Tally') {
-        tableHead = ["No", "UserID", "PAYROLL", "Nama", "Posisi", "Tanggal", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
-        tableBody = dataToExport.map((item, index) => [ index + 1, item.col_userId, item.col_payroll, item.nama, item.divisi || '-', item.col_date, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]);
+        tableHead = ["No", "UserID", "PAYROLL", "Nama", "Tanggal", "Posisi", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
+        tableBody = dataToExport.map((item, index) => [ index + 1, item.col_userId, item.col_payroll, item.nama, item.col_date, item.divisi || '-', item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]);
     } else {
         tableHead = ["No", "UserID", "PAYROLL", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
         tableBody = dataToExport.map((item, index) => [ index + 1, item.col_userId, item.col_payroll, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval ]);
@@ -2923,8 +2923,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         tableColumn = ["No", "UserID", "PAYROLL", "Nama", "Posisi", "Tanggal Shift", "Jam Kerja", "Waktu Input"];
         sortedReportTable.forEach((item, index) => { tableRows.push([index + 1, item.col_userId, item.col_payroll, item.nama, item.divisi || '-', item.col_date, item.shiftLabel, item.col_time]); });
     } else if (reportCategory === 'Tally') {
-        tableColumn = ["No", "UserID", "PAYROLL", "Nama", "Posisi", "Tanggal", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
-        sortedReportTable.forEach((item, index) => { tableRows.push([ index + 1, item.col_userId, item.col_payroll, item.nama, item.divisi, item.col_date, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]); });
+        tableColumn = ["No", "UserID", "PAYROLL", "Nama", "Tanggal", "Posisi", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
+        sortedReportTable.forEach((item, index) => { tableRows.push([ index + 1, item.col_userId, item.col_payroll, item.nama, item.col_date, item.divisi, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]); });
     } else {
         tableColumn = ["No", "UserID", "PAYROLL", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
         sortedReportTable.forEach((item, index) => { tableRows.push([index + 1, item.col_userId, item.col_payroll, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval]); });
@@ -3046,7 +3046,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                         <select value={reportCategory} onChange={(e) => setReportCategory(e.target.value)} className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-full cursor-pointer outline-none transition-all shadow-sm">
                             <option value="General">Laporan Absensi</option>
                             {canViewAll && <option value="RunningShift">Running Shift</option>}
-                            {canViewAll && <option value="Tally">Absen Tally</option>}
+                            {canViewAll && <option value="Tally">Absen Online</option>}
                         </select>
                         <ChevronDown className="w-3 h-3 text-indigo-400 absolute right-3 top-2 pointer-events-none"/>
                       </div>
@@ -3110,8 +3110,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                             <ReportFilterHeader label="UserID" field="col_userId" />
                                             <ReportFilterHeader label="PAYROLL" field="col_payroll" />
                                             <ReportFilterHeader label="NAMA" field="nama" width="min-w-[140px]"/>
-                                            <ReportFilterHeader label="Posisi" field="divisi" />
                                             <ReportFilterHeader label="Tanggal" field="col_date" />
+                                            <ReportFilterHeader label="Posisi" field="divisi" />
                                             <ReportFilterHeader label="Masuk" field="masuk" />
                                             <ReportFilterHeader label="Pulang" field="pulang" />
                                             <ReportFilterHeader label="Standby" field="standby" />
@@ -3158,8 +3158,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                                 <td className="px-2 py-1.5 text-[11px] font-mono border border-gray-300 align-top">{item.col_userId}</td>
                                                 <td className="px-2 py-1.5 text-[11px] font-mono border border-gray-300 align-top">{item.col_payroll}</td>
                                                 <td className="px-2 py-1.5 text-[11px] font-bold border border-gray-300 align-top">{item.nama}</td>
-                                                <td className="px-2 py-1.5 text-[11px] border border-gray-300 align-top">{item.divisi}</td>
                                                 <td className="px-2 py-1.5 text-[11px] text-center border border-gray-300 align-top">{item.col_date}</td>
+                                                <td className="px-2 py-1.5 text-[11px] border border-gray-300 align-top">{item.divisi}</td>
                                                 <td className="px-2 py-1.5 text-[11px] font-bold text-center text-emerald-700 bg-emerald-50/50 border border-gray-300 align-top">{item.masuk}</td>
                                                 <td className="px-2 py-1.5 text-[11px] font-bold text-center text-red-700 bg-red-50/50 border border-gray-300 align-top">{item.pulang}</td>
                                                 <td className="px-2 py-1.5 text-[11px] font-bold text-center text-amber-700 bg-amber-50/50 border border-gray-300 align-top">{item.standby}</td>
