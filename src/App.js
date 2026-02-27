@@ -19,7 +19,7 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.11";
+  const CLIENT_VERSION = "1.0.12";
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
@@ -27,13 +27,30 @@ export default function AppAbsensi() {
 useEffect(() => { const checkUpdate = async () => { try { const data = await (await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })).json(); if (data.result === 'success' && data.version !== CLIENT_VERSION) { console.log(`Update: v${CLIENT_VERSION}->v${data.version}`); setNewVersion(data.version); setUpdateAvailable(true); } } catch (e) { console.error("Gagal cek versi", e); } }; checkUpdate(); }, []);
 
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
-useEffect(() => { const u = localStorage.getItem('app_user'), m = localStorage.getItem('app_master_data'); if (u) { setUser(JSON.parse(u)); if (m) setMasterData(JSON.parse(m)); setView('dashboard'); } }, []);
+useEffect(() => { 
+  // UBAH: localStorage menjadi sessionStorage
+  const u = sessionStorage.getItem('app_user'), m = sessionStorage.getItem('app_master_data'); 
+  if (u) { 
+    setUser(JSON.parse(u)); 
+    if (m) setMasterData(JSON.parse(m)); 
+    setView('dashboard'); 
+  } 
+}, []);
 
     //----FUNGSI EKSEKUSI UPDATE (MEMBERSIHKAN CACHE)----
 const performUpdate = () => { localStorage.clear(); sessionStorage.clear(); if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())); window.location.href = window.location.href.split('?')[0] + '?v=' + newVersion + '&t=' + Date.now(); };
 
     //----FUNGSI LOGOUT / KELUAR APLIKASI----
-const handleLogout = useCallback(() => { setUser(null); setMasterData({ menus: [], roles: [], divisions: [], shifts: [] }); setView('login'); localStorage.removeItem('app_user'); localStorage.removeItem('app_master_data'); sessionStorage.removeItem('announcement_shown'); if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); }, []);
+const handleLogout = useCallback(() => { 
+  setUser(null); 
+  setMasterData({ menus: [], roles: [], divisions: [], shifts: [] }); 
+  setView('login'); 
+  // UBAH: localStorage menjadi sessionStorage
+  sessionStorage.removeItem('app_user'); 
+  sessionStorage.removeItem('app_master_data'); 
+  sessionStorage.removeItem('announcement_shown'); 
+  if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); 
+}, []);
 
     //----RESET TIMER OTOMATIS LOGOUT----
 const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); if (user) logoutTimerRef.current = setTimeout(() => { alert("Sesi Anda berakhir karena tidak ada aktivitas selama 10 menit."); handleLogout(); }, TIMEOUT_DURATION); }, [user, handleLogout]);
@@ -42,7 +59,15 @@ const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(
 useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart']; ev.forEach(e => window.addEventListener(e, resetTimer)); return () => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); ev.forEach(e => window.removeEventListener(e, resetTimer)); }; }, [user, resetTimer]);
 
     // FUNGSI HANDLER LOGIN & PENYIMPANAN SESI
-const handleLogin = (userData, rawMasterData) => { const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift') }; setMasterData(p); setUser(userData); setView('dashboard'); localStorage.setItem('app_user', JSON.stringify(userData)); localStorage.setItem('app_master_data', JSON.stringify(p)); };
+const handleLogin = (userData, rawMasterData) => { 
+  const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift') };
+  setMasterData(p); 
+  setUser(userData); 
+  setView('dashboard'); 
+  // UBAH: localStorage menjadi sessionStorage
+  sessionStorage.setItem('app_user', JSON.stringify(userData)); 
+  sessionStorage.setItem('app_master_data', JSON.stringify(p)); 
+};
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
 return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{view!=='login'&&view!=='dashboard'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='form'?'Form':(view==='history'?'Riwayat':'Lainnya')}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div></div></div>);}
@@ -2174,7 +2199,9 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
         alert(data.message);
         if (data.newSisaCuti !== undefined) {
            const updatedUser = { ...user, sisaCuti: data.newSisaCuti };
-           setUser(updatedUser); localStorage.setItem('app_user', JSON.stringify(updatedUser));
+           setUser(updatedUser); 
+           // UBAH: localStorage menjadi sessionStorage
+           sessionStorage.setItem('app_user', JSON.stringify(updatedUser));
         }
         setEditItem(null); setView(isEditMode ? 'history' : 'dashboard');
       } else { alert(data.message); }
