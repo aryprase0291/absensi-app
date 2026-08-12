@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, Briefcase, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone } from 'lucide-react';
+import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 import ImportDbAbsen from './screens/ImportDbAbsen';
@@ -121,8 +121,12 @@ const fetchApi = async (url, opts = {}, percobaan = 1) => {
     // HELPER FORMAT TANGGAL GLOBAL
 const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
 const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
-const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar, 'Tukar Shift': CalendarCheck, 'Off': CalendarCheck };
-const COLOR_MAP = {'Hadir': 'bg-green-500', 'Pulang': 'bg-red-500', 'Ijin': 'bg-yellow-500', 'Sakit': 'bg-orange-500', 'Lembur': 'bg-purple-500', 'Dinas': 'bg-indigo-500', 'Cuti': 'bg-pink-500', 'Tukar Shift': 'bg-teal-500', 'Off': 'bg-gray-500'};// Tambahkan Warna untuk Off
+// Ikon dipilih per makna, bukan per kemiripan bentuk:
+// Sakit = medis (bukan segitiga peringatan), Tukar Shift = panah dua arah
+// (dulu memakai ikon kalender yang sama persis dengan Off).
+const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': ClipboardList, 'Sakit': HeartPulse, 'Lembur': Timer, 'Dinas': PlaneTakeoff, 'Cuti': Palmtree, 'Tukar Shift': ArrowLeftRight, 'Off': Coffee };
+// Tint lembut + ikon berwarna. Blok warna penuh bikin 4 kartu saling berebut perhatian.
+const COLOR_MAP = {'Hadir': 'bg-emerald-50 text-emerald-600', 'Pulang': 'bg-rose-50 text-rose-600', 'Ijin': 'bg-amber-50 text-amber-600', 'Sakit': 'bg-red-50 text-red-600', 'Lembur': 'bg-violet-50 text-violet-600', 'Dinas': 'bg-sky-50 text-sky-600', 'Cuti': 'bg-teal-50 text-teal-600', 'Tukar Shift': 'bg-indigo-50 text-indigo-600', 'Off': 'bg-slate-100 text-slate-500'};
 
     // MAIN APP COMPONENT
 export default function AppAbsensi() {
@@ -464,28 +468,41 @@ const Skeleton = ({ className }) => (
       </div>
 
       {/* --- MENU SHORTCUT --- */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide"> 
-        <button onClick={() => setView('history')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-blue-600 font-bold hover:bg-blue-50 transition active:scale-95">
-            <History className="w-5 h-5" /><span className="text-[10px]">Riwayat</span>
-        </button> 
-         <button onClick={() => setView('db_absen')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-indigo-600 font-bold hover:bg-indigo-50 transition active:scale-95">
-            <Fingerprint className="w-5 h-5" /> <span className="text-[10px]">Data Mesin</span>
-        </button>
-        <button onClick={() => setView('remark')} className={`flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 font-bold transition active:scale-95 ${isHRDOrAdmin ? 'text-purple-600 hover:bg-purple-50' : 'text-orange-600 hover:bg-orange-50'}`}>
-            <MessageSquare className="w-5 h-5" />
-            <span className="text-[10px]">{isHRDOrAdmin ? 'Respon Laporan' : 'Lapor HRD'}</span>
-        </button>
-        {canApprove && (
-            <button onClick={() => setView('approval')} className="flex-1 min-w-[90px] bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-1 text-green-600 font-bold hover:bg-green-50 transition active:scale-95">
-                <Users className="w-5 h-5" /><span className="text-[10px]">Approval</span>
+      {/* Satu bar tersegmentasi. Versi lama memakai kartu terpisah dengan warna teks
+          berbeda-beda + scroll horizontal, jadi scrollbar-nya ikut terlihat di layar kecil. */}
+      <div className="mb-6 bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+        <div className={`grid divide-x divide-slate-100 ${canApprove && canAccessPanel ? 'grid-cols-5' : (canApprove || canAccessPanel ? 'grid-cols-4' : 'grid-cols-3')}`}>
+
+            <button onClick={() => setView('history')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                <History className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Riwayat</span>
             </button>
-        )}
-         {canAccessPanel && ( 
-            <button onClick={() => setView('admin')} className="flex-1 min-w-[90px] bg-slate-800 text-white p-3 rounded-xl shadow-sm flex flex-col items-center justify-center gap-1 font-bold hover:bg-slate-700 transition active:scale-95">
-                <Settings className="w-5 h-5" /><span className="text-[10px]">Panel</span>
-            </button> 
-        )} 
-      </div> 
+
+            <button onClick={() => setView('db_absen')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                <Fingerprint className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Data mesin</span>
+            </button>
+
+            <button onClick={() => setView('remark')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                <MessageSquareText className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">{isHRDOrAdmin ? 'Respon' : 'Lapor HRD'}</span>
+            </button>
+
+            {canApprove && (
+                <button onClick={() => setView('approval')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                    <UsersRound className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                    <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Approval</span>
+                </button>
+            )}
+
+            {canAccessPanel && (
+                <button onClick={() => setView('admin')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                    <SlidersHorizontal className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                    <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Panel</span>
+                </button>
+            )}
+        </div>
+      </div>
 
       {/* --- MENU INPUT SHIFT --- */}
       {isShiftWorker && (
@@ -506,40 +523,57 @@ const Skeleton = ({ className }) => (
          </div>
       )}
 
-      {/* --- MENU ABSENSI GRID --- */}
-      <h3 className="font-bold text-slate-700 mb-3 px-1 flex items-center gap-2 text-sm">
-          <ScanFace className="w-4 h-4 text-blue-500"/> Menu e-Form
-      </h3> 
+      {/* --- MENU ABSENSI (DAFTAR) --- */}
+      {/* Dulu grid kartu dengan blob dekoratif dan subjudul "Pengajuan Form" yang
+          diulang di tiap kartu. Sekarang jadi daftar: kolom kanan dipakai untuk
+          sisa kuota, informasi yang sebelumnya baru muncul setelah tombol mati. */}
+      <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight mb-2.5 px-1">
+          Pengajuan e-Form
+      </h3>
 
-      <div className="grid grid-cols-2 gap-3 flex-1"> 
-        {allowedMenus.map((item) => { 
-            const Icon = ICON_MAP[item.value] || Star; 
-            const colorClass = COLOR_MAP[item.value] || 'bg-blue-400';
-            const isCutiEmpty = item.value === 'Cuti' && (parseInt(user.sisaCuti) || 0) < 1;
-            const isIjinFull = item.value === 'Ijin' && (stats.ijin_count || 0) >= 4;
+      <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden divide-y divide-slate-100">
+        {allowedMenus.map((item) => {
+            const Icon = ICON_MAP[item.value] || Star;
+            const toneClass = COLOR_MAP[item.value] || 'bg-slate-100 text-slate-500';
+            const sisaCuti = parseInt(user.sisaCuti) || 0;
+            const ijinTerpakai = stats.ijin_count || 0;
+            const isCutiEmpty = item.value === 'Cuti' && sisaCuti < 1;
+            const isIjinFull = item.value === 'Ijin' && ijinTerpakai >= 4;
             const isDisabled = isCutiEmpty || isIjinFull;
-            return ( 
-                <button 
-                    key={item.value} 
-                    disabled={isDisabled} 
-                    onClick={() => { 
-                        if(isCutiEmpty) { alert('Sisa Cuti Anda Habis (0).'); return; }
-                        if(isIjinFull) { alert('Pengajuan IJIN Maksimal 4x.'); return; }
-                        localStorage.setItem('absenType', item.value); 
-                        setView('form'); 
-                     }} 
-                    className={`bg-white p-3 rounded-xl shadow-sm border border-gray-100 transition-all duration-300 text-left group relative overflow-hidden transform 
-                    ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:-translate-y-1 hover:shadow-md'}`}
-                 > 
-                    <div className={`absolute -right-4 -bottom-4 w-16 h-16 rounded-full opacity-10 group-hover:scale-150 transition duration-500 ${colorClass}`}></div>
-                    <div className={`${colorClass} w-9 h-9 rounded-lg flex items-center justify-center text-white mb-2 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition`}>
-                       <Icon className="w-4 h-4" />
-                     </div> 
-                    <h4 className="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition">{item.label}</h4> 
-                    <p className="text-[9px] text-gray-400 mt-0.5">{(isCutiEmpty ? 'Sisa CUTI Habis' : (isIjinFull ? 'Limit IJIN Tercapai' : 'Pengajuan Form'))}</p> 
-                 </button> 
-            ) 
-        })} 
+
+            let meta = null;
+            if (item.value === 'Cuti')      meta = isCutiEmpty ? 'Kuota habis' : `Sisa ${sisaCuti} hari`;
+            else if (item.value === 'Ijin') meta = isIjinFull ? 'Limit tercapai' : `${ijinTerpakai} dari 4 terpakai`;
+
+            return (
+                <button
+                    key={item.value}
+                    disabled={isDisabled}
+                    onClick={() => {
+                        localStorage.setItem('absenType', item.value);
+                        setView('form');
+                     }}
+                    className={`w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors
+                    ${isDisabled ? 'cursor-not-allowed' : 'hover:bg-slate-50 active:bg-slate-100'}`}
+                 >
+                    <span className={`w-9 h-9 shrink-0 rounded-[10px] flex items-center justify-center ${isDisabled ? 'bg-slate-100 text-slate-300' : toneClass}`}>
+                       <Icon className="w-[17px] h-[17px]" strokeWidth={1.75} />
+                     </span>
+
+                    <span className={`flex-1 text-[14px] font-medium tracking-tight ${isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>
+                        {item.label}
+                    </span>
+
+                    {meta && (
+                        <span className={`text-[11px] tabular-nums ${isDisabled ? 'font-medium text-rose-600' : 'text-slate-400'}`}>
+                            {meta}
+                        </span>
+                    )}
+
+                    <ChevronRight className={`w-4 h-4 shrink-0 ${isDisabled ? 'text-slate-200' : 'text-slate-300'}`} strokeWidth={2} />
+                 </button>
+            )
+        })}
       </div>
 
       {/* --- FOOTER --- */}
@@ -3618,7 +3652,11 @@ function AdminPanel({ user, setView, masterData }) {
   );
 
   const switchTab = (tabName) => { setActiveTab(tabName); setIsMenuOpen(false); };
-  
+
+  // Satu gaya input untuk seluruh panel — sebelumnya tiap tab memakai
+  // padding, radius, dan warna border yang berbeda-beda.
+  const inputCls = "w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-shadow focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5";
+
   const getPageTitle = () => {
       switch(activeTab) {
           case 'user': return 'Tambah User Baru';
@@ -3634,96 +3672,104 @@ function AdminPanel({ user, setView, masterData }) {
     <div className="p-4 h-full overflow-y-auto pb-20 bg-gray-50 min-h-screen">
       
       {/* HEADER */}
-      <div className="flex items-center justify-between mb-6 relative z-40">
-        <div>
-            <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Admin Panel</h2>
-            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide mt-1">{getPageTitle()}</p>
+      <div className="flex items-start justify-between mb-5 relative z-40">
+        <div className="pt-0.5">
+            <p className="text-[11px] font-medium text-slate-400 tracking-tight">Admin panel</p>
+            <h2 className="text-[19px] font-semibold text-slate-900 tracking-tight leading-tight">{getPageTitle()}</h2>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
             <BackButton onClick={() => setView('dashboard')} />
 
             {/* DROPDOWN MENU */}
             <div className="relative">
-                <button 
+                <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="flex items-center gap-2 bg-slate-800 text-white pl-4 pr-3 py-2.5 rounded-xl font-bold text-xs shadow-lg shadow-slate-200 active:scale-95 transition-all hover:bg-slate-700"
+                    aria-expanded={isMenuOpen}
+                    className={`flex items-center gap-2 pl-3.5 pr-2.5 py-2.5 rounded-xl text-[13px] font-medium border transition-colors
+                        ${isMenuOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
                 >
-                    <Menu className="w-4 h-4" /> Menu
-                    <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${isMenuOpen ? 'rotate-180' : ''}`} />
+                    Menu
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMenuOpen ? 'rotate-180' : ''}`} strokeWidth={2} />
                 </button>
 
                 {isMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top-right">
-                        <div className="p-1 bg-white">
-                            
-                            {/* 1. Tambah User */}
-                            <button onClick={() => switchTab('user')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'user' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-gray-50'}`}>
-                                <div className={`p-2 rounded-lg ${activeTab === 'user' ? 'bg-blue-100' : 'bg-gray-100'}`}><UserPlus className="w-4 h-4"/></div>
-                                Tambah User Baru
-                            </button>
-                            
-                            {/* 2. Master User (Reset) */}
-                            <button onClick={() => switchTab('master_user')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'master_user' ? 'bg-rose-50 text-rose-600' : 'text-slate-600 hover:bg-gray-50'}`}>
-                                <div className={`p-2 rounded-lg ${activeTab === 'master_user' ? 'bg-rose-100' : 'bg-gray-100'}`}><ShieldCheck className="w-4 h-4"/></div>
-                                Master User (Reset)
+                    <div className="absolute right-0 top-full mt-2 w-[248px] bg-white rounded-xl border border-slate-200 shadow-lg shadow-slate-900/5 overflow-hidden animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+
+                        {/* Dikelompokkan per urusan: pengguna, lalu data, lalu komunikasi.
+                            Sebelumnya enam item berderet tanpa pemisah. */}
+                        <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Pengguna</p>
+
+                        <button onClick={() => switchTab('user')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'user' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                            <UserRoundPlus className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'user' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                            <span className="flex-1 leading-tight">Tambah user baru</span>
+                            {activeTab === 'user' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                        </button>
+
+                        <button onClick={() => switchTab('master_user')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'master_user' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                            <KeyRound className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'master_user' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                            <span className="flex-1 leading-tight">Reset password user</span>
+                            {activeTab === 'master_user' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                        </button>
+
+                        {user.role === 'admin' && (
+                        <>
+                            <p className="px-3.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 border-t border-slate-100 mt-1">Data</p>
+
+                            <button onClick={() => setView('analysis')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-600 hover:bg-slate-50 transition-colors">
+                                <ChartColumn className="w-[17px] h-[17px] shrink-0 text-slate-400" strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Analisa data</span>
                             </button>
 
-                            {/* 3. Analisa Data (LINK KE SCREEN LAIN) - INI YANG HILANG KEMARIN */}
-                            {user.role === 'admin' && (
-                                <button onClick={() => setView('analysis')} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-gray-50 rounded-xl transition-all">
-                                    <div className="p-2 rounded-lg bg-gray-100 text-rose-600"><FileSpreadsheet className="w-4 h-4"/></div>
-                                    Analisa Data
-                                </button>
-                            )}
-
-                            {/* 4. Master Data */}
-                            {user.role === 'admin' && (
-                                <button onClick={() => switchTab('master')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'master' ? 'bg-purple-50 text-purple-600' : 'text-slate-600 hover:bg-gray-50'}`}>
-                                    <div className={`p-2 rounded-lg ${activeTab === 'master' ? 'bg-purple-100' : 'bg-gray-100'}`}><Database className="w-4 h-4"/></div>
-                                    Master Data
-                                </button>
-                            )}
-                            
-                            {/* 5. Import dbabsen (admin saja) */}
-                            {user.role === 'admin' && (
-                                <button onClick={() => switchTab('import_db')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'import_db' ? 'bg-emerald-50 text-emerald-600' : 'text-slate-600 hover:bg-gray-50'}`}>
-                                    <div className={`p-2 rounded-lg ${activeTab === 'import_db' ? 'bg-emerald-100' : 'bg-gray-100'}`}><Upload className="w-4 h-4"/></div>
-                                    Import Data Mesin Absen
-                                </button>
-                            )}
-
-                            {/* 6. Info HRD */}
-                            <button onClick={() => switchTab('news')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'news' ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-gray-50'}`}>
-                                <div className={`p-2 rounded-lg ${activeTab === 'news' ? 'bg-orange-100' : 'bg-gray-100'}`}><Megaphone className="w-4 h-4"/></div>
-                                Info HRD
+                            <button onClick={() => switchTab('master')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'master' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <Database className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'master' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Master data</span>
+                                {activeTab === 'master' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
                             </button>
-                        </div>
+
+                            <button onClick={() => switchTab('import_db')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'import_db' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <FileUp className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'import_db' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Import data mesin absen</span>
+                                {activeTab === 'import_db' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+                        </>
+                        )}
+
+                        <p className="px-3.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 border-t border-slate-100 mt-1">Komunikasi</p>
+
+                        <button onClick={() => switchTab('news')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 mb-1 text-[13px] text-left transition-colors ${activeTab === 'news' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                            <Megaphone className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'news' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                            <span className="flex-1 leading-tight">Info HRD</span>
+                            {activeTab === 'news' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                        </button>
                     </div>
                 )}
             </div>
         </div>
       </div>
-      
+
       {isMenuOpen && <div className="fixed inset-0 z-30 bg-transparent" onClick={() => setIsMenuOpen(false)} />}
 
       {/* KONTEN TAB: MASTER USER */}
       {activeTab === 'master_user' && (
         <div className="animate-in fade-in duration-300">
-           <div className="relative mb-4">
-              <input type="text" placeholder="Cari User..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
-              <Search className="w-5 h-5 text-gray-400 absolute left-3 top-3" />
+           <div className="relative mb-3">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} />
+              <input type="text" placeholder="Cari nama atau ID finger" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`${inputCls} pl-9`} />
            </div>
-           {loadingList ? ( <div className="text-center py-10"><Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto"/></div> ) : (
-             <div className="space-y-3">
+           {loadingList ? ( <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin"/></div> ) : (
+             <div className="bg-white rounded-2xl border border-slate-200/70 divide-y divide-slate-100 overflow-hidden">
+               {filteredUsers.length === 0 && (
+                  <p className="px-4 py-10 text-center text-[13px] text-slate-400">Tidak ada user yang cocok.</p>
+               )}
                {filteredUsers.map((u, idx) => (
-                 <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                    <div>
-                       <h4 className="font-bold text-slate-800">{u.nama}</h4>
-                       <div className="flex items-center gap-2 mt-1"><span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 font-bold">{u.username}</span></div>
+                 <div key={idx} className="flex items-center gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                       <p className="text-[14px] font-medium text-slate-900 tracking-tight truncate">{u.nama}</p>
+                       <p className="text-[11px] text-slate-400 tabular-nums mt-0.5">ID {u.username}</p>
                     </div>
-                    <button onClick={() => handleResetPassword(u.uuid, u.nama)} disabled={loading} className="flex items-center gap-1 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-xs font-bold border border-red-100 hover:bg-red-100 active:scale-95 shadow-sm">
-                      <RefreshCcw className="w-4 h-4" /> Reset
+                    <button onClick={() => handleResetPassword(u.uuid, u.nama)} disabled={loading} className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-rose-600 hover:border-rose-200 active:bg-slate-100 disabled:opacity-50 transition-colors">
+                      <RefreshCcw className="w-3.5 h-3.5" strokeWidth={1.75} /> Reset
                     </button>
                  </div>
                ))}
@@ -3734,51 +3780,120 @@ function AdminPanel({ user, setView, masterData }) {
 
       {/* KONTEN TAB: TAMBAH USER */}
       {activeTab === 'user' && (
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
-          <form onSubmit={handleAddUser} className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-               <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Nama Karyawan" />
-               <input required type="email" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} placeholder="Email" />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="ID Finger" />
-              <input required type="text" className="w-full p-2.5 border rounded-lg text-sm bg-gray-50 focus:bg-white" value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Password" />
-            </div>
-            <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-              <label className="text-xs font-bold text-gray-700 block mb-1">Email Approval</label>
-              <input type="email" className="w-full p-2 border rounded bg-white text-sm" value={userData.emailAtasan} onChange={e => setUserData({...userData, emailAtasan: e.target.value})} placeholder="manager@email.com" />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-                <select className="w-full p-2 border rounded text-sm" value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>{masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}</select>
-                <select className="w-full p-2 border rounded text-sm" value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>{masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}</select>
-            </div>
-            <div className="bg-gray-50 p-3 rounded border border-gray-200">
-                <label className="text-xs font-bold text-gray-700 block mb-2">Akses Lokasi</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {LIST_LOKASI.map((loc) => ( <label key={loc} className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={userData.lokasi && userData.lokasi.includes(loc)} onChange={() => handleLocationChange(loc)} className="w-3 h-3 text-blue-600 rounded" />{loc}</label> ))}
+        <div className="animate-in fade-in duration-300">
+          {/* Setiap kolom kini punya label tetap. Sebelumnya nama kolom hanya ada
+              di placeholder, jadi hilang begitu kolomnya diisi. */}
+          <form onSubmit={handleAddUser} className="bg-white rounded-2xl border border-slate-200/70 divide-y divide-slate-100 overflow-hidden">
+
+            <div className="p-4 space-y-3.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Identitas</p>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Nama karyawan</label>
+                        <input required type="text" className={inputCls} value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Budi Santoso" />
+                    </div>
+                    <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Email</label>
+                        <input required type="email" className={inputCls} value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} placeholder="budi@jpt.co.id" />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">ID finger</label>
+                        <input required type="text" className={`${inputCls} tabular-nums`} value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="1024" />
+                    </div>
+                    <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Password awal</label>
+                        <input required type="text" className={inputCls} value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Minimal 6 karakter" />
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Email atasan untuk approval</label>
+                    <input type="email" className={inputCls} value={userData.emailAtasan} onChange={e => setUserData({...userData, emailAtasan: e.target.value})} placeholder="manager@jpt.co.id" />
+                    <p className="mt-1.5 text-[11px] text-slate-400">Kosongkan bila pengajuan user ini tidak perlu approval.</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Divisi</label>
+                        <select className={inputCls} value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>{masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}</select>
+                    </div>
+                    <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Role</label>
+                        <select className={inputCls} value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>{masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}</select>
+                    </div>
                 </div>
             </div>
-            <div className="border p-3 rounded-lg bg-gray-50">
-              <label className="text-xs font-bold text-gray-700 block mb-2">Akses Menu:</label>
-              <div className="grid grid-cols-2 gap-2">
-                {masterData.menus.map(item => ( <label key={item.value} className="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" checked={userData.akses.includes(item.value)} onChange={() => handleCheckboxChange(item.value)} className="w-3 h-3 text-blue-600 rounded" />{item.label}</label> ))}
-              </div>
+
+            <div className="p-4">
+                <div className="flex items-baseline justify-between mb-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Akses lokasi</p>
+                    <span className="text-[11px] text-slate-400 tabular-nums">{(userData.lokasi || []).length} dipilih</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
+                  {LIST_LOKASI.map((loc) => (
+                    <label key={loc} className="flex items-center gap-2.5 py-1.5 text-[13px] text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={userData.lokasi && userData.lokasi.includes(loc)} onChange={() => handleLocationChange(loc)} className="w-4 h-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
+                        {loc}
+                    </label>
+                  ))}
+                </div>
             </div>
-            <button type="submit" disabled={loading} className="w-full bg-slate-800 text-white py-3 rounded-lg font-bold hover:bg-slate-700 transition">{loading ? 'Menyimpan...' : 'Simpan User Baru'}</button>
+
+            <div className="p-4">
+                <div className="flex items-baseline justify-between mb-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Akses menu</p>
+                    <span className="text-[11px] text-slate-400 tabular-nums">{(userData.akses || []).length} dipilih</span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                  {masterData.menus.map(item => (
+                    <label key={item.value} className="flex items-center gap-2.5 py-1.5 text-[13px] text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={userData.akses.includes(item.value)} onChange={() => handleCheckboxChange(item.value)} className="w-4 h-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
+                        {item.label}
+                    </label>
+                  ))}
+                </div>
+            </div>
+
+            <div className="p-4 bg-slate-50/60">
+                <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 active:bg-slate-950 disabled:opacity-60 transition-colors">
+                    {loading && <Loader2 className="w-4 h-4 animate-spin"/>}
+                    {loading ? 'Menyimpan…' : 'Simpan user baru'}
+                </button>
+            </div>
           </form>
         </div>
       )}
 
       {/* KONTEN TAB: MASTER DATA */}
       {activeTab === 'master' && (
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
-          <form onSubmit={handleAddMaster} className="space-y-4">
-            <select className="w-full p-2 border rounded" value={masterInput.kategori} onChange={e => setMasterInput({...masterInput, kategori: e.target.value})}>
-                <option value="Menu">Menu Absensi</option><option value="Role">Role User</option><option value="Divisi">Divisi</option><option value="Shift">Jam Shift</option>
-            </select>
-            <input required type="text" className="w-full p-2 border rounded" value={masterInput.value} onChange={e => setMasterInput({...masterInput, value: e.target.value})} placeholder="Value" />
-            <input required type="text" className="w-full p-2 border rounded" value={masterInput.label} onChange={e => setMasterInput({...masterInput, label: e.target.value})} placeholder="Label" />
-            <button type="submit" disabled={loading} className="w-full bg-purple-700 text-white py-3 rounded-lg font-bold hover:bg-purple-800">{loading ? 'Simpan...' : 'Tambah'}</button>
+        <div className="animate-in fade-in duration-300">
+          <form onSubmit={handleAddMaster} className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+            <div className="p-4 space-y-3.5">
+                <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Kategori</label>
+                    <select className={inputCls} value={masterInput.kategori} onChange={e => setMasterInput({...masterInput, kategori: e.target.value})}>
+                        <option value="Menu">Menu absensi</option><option value="Role">Role user</option><option value="Divisi">Divisi</option><option value="Shift">Jam shift</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Value</label>
+                    <input required type="text" className={inputCls} value={masterInput.value} onChange={e => setMasterInput({...masterInput, value: e.target.value})} placeholder="Nilai yang disimpan sistem" />
+                </div>
+                <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Label</label>
+                    <input required type="text" className={inputCls} value={masterInput.label} onChange={e => setMasterInput({...masterInput, label: e.target.value})} placeholder="Teks yang dilihat pengguna" />
+                </div>
+            </div>
+            <div className="p-4 pt-0">
+                <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-60 transition-colors">
+                    {loading && <Loader2 className="w-4 h-4 animate-spin"/>}
+                    {loading ? 'Menyimpan…' : 'Tambah data'}
+                </button>
+            </div>
           </form>
         </div>
       )}
@@ -3790,9 +3905,20 @@ function AdminPanel({ user, setView, masterData }) {
 
       {/* KONTEN TAB: INFO HRD */}
       {activeTab === 'news' && (
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
-          <textarea className="w-full border p-3 rounded-xl text-sm mb-4" rows="5" placeholder="Info HRD..." value={newsInput} onChange={(e) => setNewsInput(e.target.value)}></textarea>
-          <button onClick={handleAddAnnouncement} disabled={loading} className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 rounded-lg font-bold shadow-lg">{loading ? 'Mengirim...' : 'Terbitkan'}</button>
+        <div className="animate-in fade-in duration-300">
+          <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+            <div className="p-4">
+                <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Isi pengumuman</label>
+                <textarea className={`${inputCls} resize-y leading-relaxed`} rows="6" placeholder="Tulis informasi yang akan tampil di dashboard semua karyawan…" value={newsInput} onChange={(e) => setNewsInput(e.target.value)}></textarea>
+                <p className="mt-1.5 text-[11px] text-slate-400">Muncul sebagai popup satu kali per sesi login.</p>
+            </div>
+            <div className="p-4 pt-0">
+                <button onClick={handleAddAnnouncement} disabled={loading || !newsInput.trim()} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-40 transition-colors">
+                    {loading && <Loader2 className="w-4 h-4 animate-spin"/>}
+                    {loading ? 'Menerbitkan…' : 'Terbitkan'}
+                </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
