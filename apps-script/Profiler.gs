@@ -12,6 +12,12 @@
 // tidak ada perubahan data apa pun di spreadsheet.
 // =======================================================
 
+// Logger.log Apps Script TIDAK mendukung penentu lebar seperti %-16s —
+// format seperti itu akan tercetak mentah dan argumennya hilang.
+// Jadi perataan kolom dibuat manual.
+function _profPad(v, n)  { let s = String(v); while (s.length < n) s += ' '; return s; }
+function _profPadL(v, n) { let s = String(v); while (s.length < n) s = ' ' + s; return s; }
+
 /**
  * Jalankan ini. Mengukur semua sekaligus.
  */
@@ -45,13 +51,13 @@ function PROFILE_SHEETS() {
   let totalSel = 0;
   let totalMs = 0;
 
-  Logger.log('%-16s %8s %6s %10s %9s', 'SHEET', 'BARIS', 'KOL', 'SEL', 'BACA(ms)');
+  Logger.log(_profPad('SHEET',16) + _profPadL('BARIS',8) + _profPadL('KOL',6) + _profPadL('SEL',10) + _profPadL('BACA(ms)',9));
   Logger.log('-'.repeat(64));
 
   daftar.forEach(function (nama) {
     const sh = ss.getSheetByName(nama);
     if (!sh) {
-      Logger.log('%-16s %s', nama, '<< TIDAK DITEMUKAN >>');
+      Logger.log(_profPad(nama,16) + '<< TIDAK DITEMUKAN >>');
       return;
     }
 
@@ -66,11 +72,11 @@ function PROFILE_SHEETS() {
     totalSel += sel;
     totalMs += ms;
 
-    Logger.log('%-16s %8s %6s %10s %9s', nama, baris, kol, sel, ms);
+    Logger.log(_profPad(nama,16) + _profPadL(baris,8) + _profPadL(kol,6) + _profPadL(sel,10) + _profPadL(ms,9));
   });
 
   Logger.log('-'.repeat(64));
-  Logger.log('%-16s %8s %6s %10s %9s', 'TOTAL', '', '', totalSel, totalMs);
+  Logger.log(_profPad('TOTAL',16) + _profPadL('',8) + _profPadL('',6) + _profPadL(totalSel,10) + _profPadL(totalMs,9));
   Logger.log('');
   Logger.log('Catatan: kalau "dbabsen" jauh lebih lambat dari sheet lain');
   Logger.log('padahal barisnya tidak jauh berbeda, itu tanda kolom A:S');

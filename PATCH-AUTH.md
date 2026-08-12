@@ -1,5 +1,36 @@
 # Menutup Celah Autentikasi — Panduan Deploy
 
+> ## STATUS per 12 Agustus 2026
+>
+> Dikerjakan langsung di editor Apps Script project
+> `1oYW7sjoFGFTdBd06oIIPkwnr_18YkIEWSks2FSEwYI0eTUgq2SgsEPAh`:
+>
+> | Langkah | Status |
+> |---|---|
+> | 1 · Frontend (`fetchApi` + versi 1.0.13) | **selesai**, sudah di-push |
+> | 2 · `Auth.gs` dipasang di editor | **selesai** — 388 baris, SHA `a79863620869` |
+> | 3 · Patch `Kode.gs` | **selesai** — 2.832 baris, SHA `a61739d951ab` |
+> | 0 · `PREFLIGHT_CEK_ROLE()` | **selesai** — `HASIL: aman untuk lanjut deploy.` |
+> | 4 · `SETUP_GENERATE_SECRET()` | **BELUM** — harus Anda jalankan |
+> | 5 · Deploy versi baru | **BELUM** — harus Anda lakukan |
+>
+> Kode sudah **disimpan** tapi **belum di-deploy**, jadi user belum terpengaruh
+> sama sekali. Web App masih menjalankan versi lama.
+>
+> Verifikasi penempatan gerbang auth di `Kode.gs`:
+> `const action = data.action;` baris 84 → `authorizeRequest(data)` baris 93 →
+> routing `ping` baris 104 → routing `login` baris 123. Gerbang berada sebelum
+> seluruh routing, dan hanya ada satu.
+>
+> **Hasil sensus role** (dari `PREFLIGHT_CEK_ROLE`):
+> `admin` 4 · `hrd` 4 · `karyawan` 136 · `karyawan_shift` 87 · `kayawan` 73 ·
+> `manager` 0.
+>
+> ⚠️ **`kayawan` (73 orang) adalah salah tulis** dari `karyawan`. Tidak
+> berbahaya untuk patch ini — keduanya sama-sama user biasa sehingga hak
+> aksesnya identik — tapi sebaiknya dirapikan di sheet `Users` sebelum ada
+> logika yang membedakan per-role.
+
 Menutup temuan P0 di `AUDIT-SISTEM.md`: `doPost` menerima action apa pun tanpa
 memverifikasi pemanggil, dan role dibaca dari `data.roleRequester` yang dikirim
 klien sehingga bisa dipalsukan.

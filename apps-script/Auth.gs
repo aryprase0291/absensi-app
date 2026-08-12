@@ -332,7 +332,7 @@ function PREFLIGHT_CEK_ROLE() {
     const status = istimewa[r]
       ? 'punya hak khusus di tabel izin'
       : 'user biasa (hanya action bertanda *)';
-    Logger.log('%-20s %5s orang   -> %s', r, hitung[r], status);
+    Logger.log(('  ' + r + '                        ').slice(0, 24) + ('     ' + hitung[r]).slice(-5) + ' orang   -> ' + status);
   });
 
   Logger.log('');
