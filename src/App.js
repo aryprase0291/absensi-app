@@ -55,12 +55,15 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.13";
+  // JANGAN naikkan ini sebelum Apps Script di-deploy dengan APP_VERSION yang sama.
+  // Kalau frontend lebih baru dari backend, layar "Update Tersedia" akan
+  // memblokir semua user dan reload tidak menyelesaikan apa pun.
+  const CLIENT_VERSION = "1.0.12";
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
     //----LOGIKA CEK UPDATE (DIPERBAIKI: BLOCKING UI)----
-useEffect(() => { const checkUpdate = async () => { try { const data = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })).json(); if (data.result === 'success' && data.version !== CLIENT_VERSION) { console.log(`Update: v${CLIENT_VERSION}->v${data.version}`); setNewVersion(data.version); setUpdateAvailable(true); } } catch (e) { console.error("Gagal cek versi", e); } }; checkUpdate(); }, []);
+useEffect(() => { const checkUpdate = async () => { try { const data = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })).json(); if (data.result === 'success' && data.version !== CLIENT_VERSION) { const sudahCoba = new URLSearchParams(window.location.search).get('v'); if (sudahCoba === data.version) { console.warn(`Versi tetap tidak cocok setelah reload (client v${CLIENT_VERSION}, server v${data.version}). Tidak memblokir agar aplikasi tetap bisa dipakai.`); return; } console.log(`Update: v${CLIENT_VERSION}->v${data.version}`); setNewVersion(data.version); setUpdateAvailable(true); } } catch (e) { console.error("Gagal cek versi", e); } }; checkUpdate(); }, []);
 
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
 useEffect(() => { 
@@ -414,7 +417,7 @@ const Skeleton = ({ className }) => (
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font
           -bold uppercase tracking-widest">
-              Version {masterData?.appVersion || '1.0.13'} | &copy; {new Date().getFullYear()}
+              Version {masterData?.appVersion || '1.0.12'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
