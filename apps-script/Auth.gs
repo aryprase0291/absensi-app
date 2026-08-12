@@ -86,9 +86,12 @@ function _getSecret() {
 function createAuthToken(u) {
   const payload = {
     u: String(u.id),
-    r: String(u.role || '').toLowerCase(),
-    d: String(u.divisi || ''),
-    l: String(u.lokasi || 'All'),
+    // .trim() WAJIB: kalau sel Role di sheet Users berisi "admin " dengan
+    // spasi di belakang, tanpa trim si admin akan terkunci dari semua
+    // action admin. Kasus ini sangat mudah terjadi pada data hasil ketik manual.
+    r: String(u.role || '').trim().toLowerCase(),
+    d: String(u.divisi || '').trim(),
+    l: String(u.lokasi || 'All').trim(),
     e: new Date().getTime() + TOKEN_LIFETIME_MS
   };
 
@@ -214,7 +217,7 @@ function authorizeRequest(data) {
     return { ok: false, message: 'SESI_HABIS' };
   }
 
-  const role = String(auth.r || '').toLowerCase();
+  const role = String(auth.r || '').trim().toLowerCase();
   if (rule !== '*' && rule.indexOf(role) === -1) {
     return { ok: false, message: 'Akses ditolak untuk role Anda.' };
   }
@@ -253,6 +256,16 @@ function authorizeRequest(data) {
     data.divisi = auth.d;
   }
 
+  // handleGetUserListSimple memakai data.lokasi sebagai batas wilayah
+  // si peminta. Tanpa penimpaan ini, karyawan biasa cukup mengirim
+  // lokasi:'All' untuk memperoleh daftar nama SELURUH karyawan.
+  // Nilai dari token identik dengan yang dikirim App.js
+  // (`lokasi: user.lokasi || 'All'`), jadi perilaku normal tidak berubah.
+  // Penyaringan tetap lewat data.filterLokasi yang memang pilihan UI.
+  if (action === 'get_user_list_simple') {
+    data.lokasi = auth.l || 'All';
+  }
+
   // handleGetHistory memakai requestorLokasi sebagai penyaring lokasi.
   // Hanya super admin (admin dengan lokasi 'All') boleh memilih lokasi
   // secara bebas; sisanya dipaksa ke lokasi miliknya sendiri.
@@ -264,4 +277,111 @@ function authorizeRequest(data) {
   }
 
   return { ok: true, auth: auth };
+}
+
+// =======================================================
+// PEMERIKSAAN SEBELUM DEPLOY — JALANKAN SEBELUM KE PRODUKSI
+// =======================================================
+
+/**
+ * Read-only. Mencocokkan role yang benar-benar ada di sheet Users
+ * dengan tabel izin ACTION_ROLES.
+ *
+ * Tujuannya mencegah satu risiko nyata: kalau ada role di sheet yang
+ * tidak terdaftar di tabel izin (misal 'pimpinan', 'spv', atau 'manager'
+ * yang ternyata ditulis 'Manager Ops'), user itu akan kehilangan akses ke
+ * menu approval / admin begitu patch aktif.
+ *
+ * JALANKAN INI DULU sebelum deploy ke produksi, dan baca log-nya.
+ */
+function PREFLIGHT_CEK_ROLE() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
+  if (!sheet) { Logger.log('Sheet Users tidak ditemukan.'); return; }
+
+  const rows = sheet.getDataRange().getValues();
+
+  // Role yang mendapat hak istimewa di ACTION_ROLES
+  const istimewa = {};
+  Object.keys(ACTION_ROLES).forEach(function (a) {
+    const r = ACTION_ROLES[a];
+    if (r !== '*') r.forEach(function (x) { istimewa[x] = true; });
+  });
+
+  const hitung = {};
+  const spasiNakal = [];
+  const kosong = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const mentah = rows[i][5];
+    const nama = rows[i][3];
+    const asli = String(mentah === null || mentah === undefined ? '' : mentah);
+    const bersih = asli.trim().toLowerCase();
+
+    if (bersih === '') { kosong.push((i + 1) + ' · ' + nama); continue; }
+    if (asli !== asli.trim()) spasiNakal.push((i + 1) + ' · ' + nama + ' · "' + asli + '"');
+
+    hitung[bersih] = (hitung[bersih] || 0) + 1;
+  }
+
+  Logger.log('='.repeat(60));
+  Logger.log('ROLE YANG ADA DI SHEET USERS');
+  Logger.log('='.repeat(60));
+
+  const daftar = Object.keys(hitung).sort();
+  daftar.forEach(function (r) {
+    const status = istimewa[r]
+      ? 'punya hak khusus di tabel izin'
+      : 'user biasa (hanya action bertanda *)';
+    Logger.log('%-20s %5s orang   -> %s', r, hitung[r], status);
+  });
+
+  Logger.log('');
+  Logger.log('-'.repeat(60));
+
+  // Role di tabel izin yang tidak dipakai siapa pun
+  const tidakTerpakai = Object.keys(istimewa).filter(function (r) { return !hitung[r]; });
+  if (tidakTerpakai.length) {
+    Logger.log('CATATAN: role ini ada di tabel izin tapi tidak dipakai user mana pun:');
+    Logger.log('  ' + tidakTerpakai.join(', '));
+    Logger.log('  (tidak berbahaya — hanya berarti aturannya menganggur)');
+    Logger.log('');
+  }
+
+  // Yang perlu ditindak
+  let aman = true;
+
+  if (spasiNakal.length) {
+    aman = false;
+    Logger.log('!! PERLU DIBERESKAN — role berisi spasi di depan/belakang:');
+    spasiNakal.forEach(function (x) { Logger.log('   baris ' + x); });
+    Logger.log('   Sudah diamankan oleh .trim() di kode, tapi sebaiknya');
+    Logger.log('   dirapikan di sheet agar tidak membingungkan.');
+    Logger.log('');
+  }
+
+  if (kosong.length) {
+    aman = false;
+    Logger.log('!! PERLU DIBERESKAN — user tanpa role (akan jadi user biasa):');
+    kosong.forEach(function (x) { Logger.log('   baris ' + x); });
+    Logger.log('');
+  }
+
+  // Role tak dikenal yang TERLIHAT seperti seharusnya punya hak khusus
+  const curiga = daftar.filter(function (r) {
+    if (istimewa[r]) return false;
+    return /admin|hrd|manager|pimpinan|spv|supervisor|kepala|direk|owner/.test(r);
+  });
+  if (curiga.length) {
+    aman = false;
+    Logger.log('!! PERIKSA — role ini TIDAK punya hak khusus di tabel izin,');
+    Logger.log('   padahal namanya terdengar seperti jabatan berwenang:');
+    curiga.forEach(function (r) { Logger.log('   "' + r + '" (' + hitung[r] + ' orang)'); });
+    Logger.log('   Kalau mereka memang perlu akses approval/admin, tambahkan');
+    Logger.log('   nama role tersebut ke ACTION_ROLES di Auth.gs SEBELUM deploy.');
+    Logger.log('');
+  }
+
+  Logger.log('='.repeat(60));
+  Logger.log(aman ? 'HASIL: aman untuk lanjut deploy.' : 'HASIL: ada yang perlu diperiksa dulu (lihat di atas).');
+  Logger.log('='.repeat(60));
 }

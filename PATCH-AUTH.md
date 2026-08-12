@@ -40,8 +40,34 @@ perlu diubah satu per satu.
 > (scope). Penimpaan hanya dilakukan pada action yang memang memakainya sebagai
 > scope. Kalau ini diseragamkan, record absensi akan rusak.
 
-Diuji dengan 37 skenario (token dipalsukan, kedaluwarsa, expiry diperpanjang,
-eskalasi role, pemalsuan field) — semuanya lolos.
+Diuji dengan 46 skenario (token dipalsukan, kedaluwarsa, expiry diperpanjang,
+eskalasi role, pemalsuan field, role berspasi) — semuanya lolos.
+
+---
+
+## Langkah 0 · Pre-flight ⚠️ JANGAN DILEWATI
+
+Satu risiko nyata sebelum ke produksi: **kalau ada role di sheet `Users` yang
+tidak terdaftar di `ACTION_ROLES`, user itu kehilangan akses** ke menu approval
+atau admin begitu patch aktif.
+
+Tabel izin saya susun dari `App.js` (`admin`, `hrd`, `manager`). Tapi data
+nyata di sheet Anda belum saya lihat seluruhnya — bisa saja ada `pimpinan`,
+`spv`, atau `Manager Ops`.
+
+Setelah menempel `Auth.gs`, jalankan **`PREFLIGHT_CEK_ROLE()`** (read-only,
+tidak mengubah apa pun). Fungsi ini melaporkan:
+
+- semua role yang benar-benar dipakai + jumlah orangnya
+- role yang punya spasi di depan/belakang (mis. `"admin "`)
+- user tanpa role
+- role yang **namanya terdengar berwenang tapi tidak ada di tabel izin** —
+  ini yang paling penting
+
+Kalau muncul role berwenang yang belum terdaftar, tambahkan dulu ke
+`ACTION_ROLES` di `Auth.gs` **sebelum** deploy.
+
+Log harus berakhir dengan `HASIL: aman untuk lanjut deploy.`
 
 ---
 
@@ -182,6 +208,31 @@ fetch('URL_WEB_APP_ANDA', {
 
 Sebelum patch: mengembalikan **seluruh data karyawan**.
 Setelah patch: `{ result: 'error', code: 'AUTH_REQUIRED', ... }`
+
+---
+
+## Rollback — kalau ada yang tidak beres
+
+Ini jaring pengaman yang membuat penerapan ke produksi relatif tenang: Apps
+Script menyimpan setiap versi deployment.
+
+**Deploy › Kelola deployment** → pensil → Versi: pilih **versi sebelumnya**
+→ **Deploy**. Backend kembali seperti semula dalam hitungan detik, tanpa perlu
+menyentuh kode.
+
+Frontend tidak perlu di-rollback — bundle 1.0.13 mengirim field `token` yang
+akan diabaikan begitu saja oleh backend versi lama.
+
+Dua sifat yang membantu:
+
+- **Menyimpan kode di editor tidak mengubah apa pun bagi user.** Web App
+  menjalankan versi yang di-*deploy*, bukan yang tersimpan. Jadi Anda bisa
+  menempel `Auth.gs`, mematut-matut patch, dan menjalankan
+  `PREFLIGHT_CEK_ROLE()` dengan aman — user tidak terpengaruh sampai Anda
+  menekan Deploy.
+- **Waktu penerapan.** Hindari jam masuk dan jam pulang kantor. Saat deploy,
+  user yang sedang membuka aplikasi akan melihat layar "Update Tersedia" dan
+  harus reload sekali.
 
 ---
 
