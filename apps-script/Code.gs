@@ -629,25 +629,55 @@ function handleSendRemark(data) {
   return ContentService.createTextOutput(JSON.stringify({ result: 'success' })).setMimeType(ContentService.MimeType.JSON);
 }
 
-// --- FUNGSI AMBIL DATA REMARK (MODIFIED: TGL KOREKSI) ---
+// --- FUNGSI AMBIL DATA REMARK (MODIFIED: TGL KOREKSI + BATAS BARIS) ---
+//
+// BATAS BARIS (Agu 2026): sheet Remarks sudah 600+ baris. Mengirim seluruhnya
+// sekaligus menghasilkan payload ~300-400 KB — request terberat kedua setelah
+// dbabsen, dan jenis request yang paling sering dibalas halaman HTML oleh
+// Google (lihat DIAGNOSA-LAMBAT.md). Default kini 200 terbaru; klien meminta
+// sisanya dengan muatSemua:true.
+const REMARKS_BATAS_DEFAULT = 200;
+
 function handleGetRemarks(data) {
   const sheet = SS.getSheetByName(SHEET_REMARKS);
-  if (!sheet) return ContentService.createTextOutput(JSON.stringify({ result: 'success', list: [] })).setMimeType(ContentService.MimeType.JSON);
-  
+  if (!sheet) {
+    // Dulu ini dibalas 'success' + list kosong, sehingga sheet yang hilang
+    // atau salah nama muncul di aplikasi sebagai "belum ada laporan".
+    return ContentService.createTextOutput(JSON.stringify({
+      result: 'success',
+      list: [],
+      total: 0,
+      sheetDitemukan: false,
+      message: 'Sheet "' + SHEET_REMARKS + '" tidak ditemukan.'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
   const rows = sheet.getDataRange().getValues();
   const list = [];
   const userRole = data.role ? String(data.role).toLowerCase() : '';
   const userId = String(data.userId);
+  const muatSemua = data.muatSemua === true;
+  const batas = muatSemua ? Infinity : REMARKS_BATAS_DEFAULT;
 
-  for (let i = 1; i < rows.length; i++) {
+  let total = 0; // jumlah baris hak-akses user ini, sebelum dipotong batas
+
+  // Ditelusuri dari BAWAH agar yang terpotong adalah baris TERLAMA, bukan
+  // yang terbaru. Hasilnya otomatis urut terbaru-dulu, jadi list.reverse()
+  // di versi lama tidak lagi diperlukan.
+  for (let i = rows.length - 1; i >= 1; i--) {
     const row = rows[i];
-    const rowUserId = String(row[2]); 
+    if (!row[0] && !row[2]) continue; // lewati baris kosong di bawah data
+
+    const rowUserId = String(row[2]);
     let include = false;
 
     if (userRole === 'admin' || userRole === 'hrd') include = true;
     else if (rowUserId === userId) include = true;
 
     if (include) {
+      total++;
+      if (list.length >= batas) continue; // tetap dihitung, tapi tidak dikirim
+
       // Format Tanggal Koreksi (Kolom Index 5)
       let rawTgl = row[5];
       let formattedTgl = '-';
@@ -672,9 +702,15 @@ function handleGetRemarks(data) {
       });
     }
   }
-  
-  list.reverse();
-  return ContentService.createTextOutput(JSON.stringify({ result: 'success', list: list })).setMimeType(ContentService.MimeType.JSON);
+
+  // list sudah urut terbaru-dulu (hasil penelusuran dari bawah).
+  return ContentService.createTextOutput(JSON.stringify({
+    result: 'success',
+    list: list,
+    total: total,                       // total di server; klien pakai untuk tombol "Muat Semua"
+    dibatasi: list.length < total,      // true = masih ada sisa yang belum dikirim
+    sheetDitemukan: true
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // --- FUNGSI UPDATE STATUS (DONE) & RESPON ---

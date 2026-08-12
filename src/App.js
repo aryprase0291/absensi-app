@@ -1535,7 +1535,16 @@ function RemarkScreen({ user, setView }) {
     const [loading, setLoading] = useState(false);
     const [remarks, setRemarks] = useState([]);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
-    
+
+    // STATUS PENGAMBILAN DATA
+    // Sebelum ini, gagal-ambil dan benar-benar-kosong tampil PERSIS SAMA
+    // ("Belum ada data laporan"), sehingga request yang gagal terlihat
+    // seperti sheet yang kosong. Tiga state ini memisahkan keduanya.
+    const [remarksLoading, setRemarksLoading] = useState(true);
+    const [remarksError, setRemarksError] = useState('');
+    const [remarksTotal, setRemarksTotal] = useState(null); // total di server (bisa > yang dimuat)
+    const [muatSemua, setMuatSemua] = useState(false);
+
     // VIEW MODE STATE
     const [viewMode, setViewMode] = useState('list'); 
 
@@ -1577,20 +1586,52 @@ function RemarkScreen({ user, setView }) {
     }, [activeReportFilter]);
 
     useEffect(() => {
+        let dibatalkan = false;
+
         const fetchRemarks = async () => {
+            setRemarksLoading(true);
+            setRemarksError('');
             try {
                 const res = await fetchApi(SCRIPT_URL, {
                     method: 'POST',
-                    body: JSON.stringify({ action: 'get_remarks', userId: user.id, role: userRole })
+                    body: JSON.stringify({
+                        action: 'get_remarks',
+                        userId: user.id,
+                        role: userRole,
+                        // Backend membatasi jumlah baris yang dikirim (default 200 terbaru).
+                        // Seluruh isi sheet Remarks sekaligus berukuran ~300-400 KB dan
+                        // itulah request yang paling sering dibalas HTML oleh Google.
+                        muatSemua: muatSemua
+                    })
                 });
                 const data = await res.json();
+                if (dibatalkan) return;
+
                 if (data.result === 'success') {
-                    setRemarks(data.list);
+                    setRemarks(Array.isArray(data.list) ? data.list : []);
+                    setRemarksTotal(typeof data.total === 'number' ? data.total : null);
+                    // Sheet tidak ditemukan tetap dibalas 'success' oleh backend lama.
+                    // Kalau backend baru mengirim sheetDitemukan:false, tampilkan apa adanya.
+                    if (data.sheetDitemukan === false) {
+                        setRemarksError('Sheet "Remarks" tidak ditemukan di spreadsheet backend. Periksa nama tab-nya.');
+                    }
+                } else {
+                    // INI yang dulu hilang: pesan error dari fetchApi
+                    // (RESPONS_BUKAN_JSON, FORBIDDEN, dsb) dibuang begitu saja.
+                    setRemarksError(data.message || 'Gagal mengambil data laporan dari server.');
                 }
-            } catch (e) { console.error("Gagal load remark"); }
+            } catch (e) {
+                if (dibatalkan) return;
+                console.error('Gagal load remark:', e);
+                setRemarksError('Tidak bisa menghubungi server. Periksa koneksi lalu coba lagi.');
+            } finally {
+                if (!dibatalkan) setRemarksLoading(false);
+            }
         };
         fetchRemarks();
-    }, [user.id, userRole, refreshTrigger]);
+
+        return () => { dibatalkan = true; };
+    }, [user.id, userRole, refreshTrigger, muatSemua]);
 
     const handleFileChange = (e) => {
         const selectedFile = e.target.files[0];
@@ -1817,9 +1858,62 @@ function RemarkScreen({ user, setView }) {
 
     // LOGIC SWITCH STYLE
     const isTableMode = viewMode === 'table' && isHRDOrAdmin;
-    const containerClass = isTableMode 
-        ? "fixed inset-0 z-[50] bg-white flex flex-col" 
+    const containerClass = isTableMode
+        ? "fixed inset-0 z-[50] bg-white flex flex-col"
         : "p-4 h-full overflow-y-auto pb-20 bg-gray-50";
+
+    // --- PANEL STATUS PENGAMBILAN DATA ---
+    // Dipakai di kedua mode (list & tabel) supaya sumber kegagalan yang sama
+    // tidak lagi muncul sebagai dua "layar kosong" yang berbeda.
+    const StatusPanel = () => {
+        if (remarksLoading) {
+            return (
+                <div className="flex items-center justify-center gap-2 py-6 text-gray-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-xs font-medium">Memuat data laporan...</span>
+                </div>
+            );
+        }
+        if (remarksError) {
+            return (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 my-3">
+                    <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                            <p className="text-xs font-bold text-red-700 mb-1">Data laporan gagal dimuat</p>
+                            <p className="text-[11px] text-red-600 leading-relaxed">{remarksError}</p>
+                            <p className="text-[10px] text-red-500 mt-1 italic">
+                                Ini BUKAN berarti tidak ada laporan — data di server tidak berhasil diambil.
+                            </p>
+                            <button
+                                onClick={() => setRefreshTrigger(t => t + 1)}
+                                className="mt-2 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition"
+                            >
+                                <RefreshCcw className="w-3 h-3" /> Coba Lagi
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        // Sukses, tapi server masih menyimpan lebih banyak daripada yang dimuat
+        if (!muatSemua && remarksTotal !== null && remarksTotal > remarks.length) {
+            return (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 my-3 flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-blue-800 font-medium">
+                        Menampilkan {remarks.length} laporan terbaru dari total {remarksTotal}.
+                    </span>
+                    <button
+                        onClick={() => setMuatSemua(true)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0 transition"
+                    >
+                        Muat Semua
+                    </button>
+                </div>
+            );
+        }
+        return null;
+    };
 
     return (
         <div className={containerClass}>
@@ -1893,6 +1987,11 @@ function RemarkScreen({ user, setView }) {
             {/* --- MODE TABEL (FULL SCREEN WEB REPORT) --- */}
             {isHRDOrAdmin && viewMode === 'table' ? (
                 <div className="flex-1 flex flex-col overflow-hidden bg-white">
+                    {/* Status panel juga muncul di mode tabel — dulu mode ini
+                        tidak punya indikator apa pun saat request gagal. */}
+                    {(remarksLoading || remarksError || (!muatSemua && remarksTotal !== null && remarksTotal > remarks.length)) && (
+                        <div className="px-4 border-b border-gray-200"><StatusPanel /></div>
+                    )}
                     <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
                         <span className="text-xs font-bold text-gray-600">Total: {sortedRemarksTable.length} Data</span>
                         <div className="flex gap-2">
@@ -1928,7 +2027,12 @@ function RemarkScreen({ user, setView }) {
                             </thead>
                             <tbody className="text-gray-800 text-xs bg-white font-normal divide-y divide-gray-200">
                                 {sortedRemarksTable.length === 0 ? (
-                                    <tr><td colSpan={showResponseColumns ? "12" : "10"} className="p-8 text-center text-gray-400 italic font-normal bg-gray-50">Tidak ada data laporan.</td></tr>
+                                    <tr><td colSpan={showResponseColumns ? "12" : "10"} className="p-8 text-center text-gray-400 italic font-normal bg-gray-50">
+                                        {remarksLoading ? 'Memuat data laporan...'
+                                            : remarksError ? 'Data gagal dimuat — lihat pesan di atas.'
+                                            : remarks.length > 0 ? 'Tidak ada baris yang cocok dengan filter.'
+                                            : 'Tidak ada data laporan.'}
+                                    </td></tr>
                                 ) : (
                                     sortedRemarksTable.map((item, idx) => (
                                         <tr key={idx} className="hover:bg-blue-50 transition-colors group">
@@ -1978,8 +2082,16 @@ function RemarkScreen({ user, setView }) {
             ) : (
                 /* --- MODE LIST CARD (NORMAL VIEW) --- */
                 <div className="space-y-3">
-                    {filteredRemarksTable.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Belum ada data laporan.</p>}
-                    
+                    <StatusPanel />
+
+                    {/* Pesan kosong hanya boleh muncul kalau pengambilan data
+                        benar-benar BERHASIL dan hasilnya memang nol baris. */}
+                    {!remarksLoading && !remarksError && filteredRemarksTable.length === 0 && (
+                        <p className="text-gray-400 text-sm text-center py-4">
+                            {remarks.length > 0 ? 'Tidak ada laporan yang cocok dengan filter.' : 'Belum ada data laporan.'}
+                        </p>
+                    )}
+
                     {filteredRemarksTable.map((item, idx) => (
                         <div key={idx} className={`bg-white p-4 rounded-xl shadow-sm border-l-4 relative ${item.status === 'Done' ? 'border-l-green-500' : 'border-l-yellow-500'}`}>
                             <div className="flex justify-between items-start mb-1">
@@ -3275,8 +3387,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                       <div className="relative">
                         <select value={reportCategory} onChange={(e) => setReportCategory(e.target.value)} className="appearance-none pl-4 pr-8 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-full cursor-pointer outline-none transition-all shadow-sm">
                             <option value="General">Laporan Absensi</option>
-                            <option value="RunningShift">Running Shift</option>}
-                            <option value="Tally">Absen Online</option>}
+                            <option value="RunningShift">Running Shift</option>
+                            <option value="Tally">Absen Online</option>
                         </select>
                         <ChevronDown className="w-3 h-3 text-indigo-400 absolute right-3 top-2 pointer-events-none"/>
                       </div>
