@@ -815,27 +815,15 @@ function handleLogin(data) {
   const userRows = sheetUsers.getDataRange().getValues();
 
   // 1. AMBIL DATA MASTER (Agar menu E-Form Muncul)
-  const sheetMaster = SS.getSheetByName(SHEET_MASTER);
-  let masterData = [];
-  
-  if (sheetMaster) {
-     const mRows = sheetMaster.getDataRange().getValues();
-     if(mRows.length > 1) {
-        // Ambil data mulai baris ke-2
-        masterData = mRows.slice(1).map(row => ({ 
-            kategori: row[0], 
-            value: row[1], 
-            label: row[2] 
-        }));
-     }
-  }
+  // DARI CACHE (lihat Cache.gs). Dulu membaca sheet MasterData PENUH di
+  // setiap login. Isinya hampir tidak pernah berubah.
+  const masterData = getMasterDataCached();
 
   // 2. AMBIL DATA MASTER CUTI (Agar Sisa Cuti Akurat)
-  const sheetMasterCuti = SS.getSheetByName("MASTER-CUTI"); 
-  let masterCutiData = [];
-  if (sheetMasterCuti) {
-    masterCutiData = sheetMasterCuti.getDataRange().getValues();
-  }
+  // DARI CACHE, dan sebagai PETA noPayroll -> {terpakai,bersama,tersedia},
+  // bukan seluruh sheet. Dulu membaca MASTER-CUTI PENUH hanya untuk
+  // mengambil satu baris.
+  const petaCuti = getPetaCutiCached();
 
   // 3. CARI USER
   // Perbandingan ketat (=== dan dibungkus String) agar tidak ada
@@ -853,12 +841,13 @@ function handleLogin(data) {
     let cutiTerpakai = 0;
     let cutiBersama = 0;
     
-    // Cek di Master Cuti berdasarkan NIK/Payroll
-    const rowCuti = masterCutiData.find(r => String(r[1]) === noPayroll);
+    // Cek di Master Cuti berdasarkan NIK/Payroll.
+    // Dulu .find() menyisir seluruh baris; sekarang lookup langsung ke peta.
+    const rowCuti = petaCuti[noPayroll.trim()];
     if (rowCuti) {
-       cutiTerpakai = rowCuti[22] || 0; 
-       cutiBersama = rowCuti[23] || 0;  
-       cutiTersedia = rowCuti[24] || 0; 
+       cutiTerpakai = rowCuti.terpakai || 0;
+       cutiBersama = rowCuti.bersama || 0;
+       cutiTersedia = rowCuti.tersedia || 0;
     } else {
        // Fallback ke data user jika tidak ada di Master Cuti
        cutiTersedia = foundUser[8] || 0;
@@ -1112,9 +1101,9 @@ function handleGetStats(data) {
     const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
     const rowsDb = sheetDb ? sheetDb.getDataRange().getValues() : [];
 
-    // [UPDATE] Ambil Data MASTER-CUTI
-    const sheetMasterCuti = SS.getSheetByName("MASTER-CUTI"); // Pastikan nama sheet sesuai
-    const rowsMasterCuti = sheetMasterCuti ? sheetMasterCuti.getDataRange().getValues() : [];
+    // [UPDATE] Ambil Data MASTER-CUTI — DARI CACHE (lihat Cache.gs).
+    // Dulu membaca sheet MASTER-CUTI PENUH di setiap pemanggilan get_stats.
+    const petaCuti = getPetaCutiCached();
 
     // Init Counters
     let stats = {
@@ -1166,15 +1155,15 @@ function handleGetStats(data) {
 
         // [UPDATE] LOGIKA BARU: AMBIL DARI MASTER-CUTI BERDASARKAN NIK
         if (userNik && userNik !== '-') {
-            // Cari baris di Master Cuti yang Payroll-nya (Kolom B/Index 1) sama dengan userNik
-            const rowCuti = rowsMasterCuti.find(r => String(r[1]) === userNik);
-            
+            // Lookup langsung ke peta, bukan menyisir seluruh baris
+            const rowCuti = petaCuti[userNik];
+
             if (rowCuti) {
                 // Kolom W (Index 22) -> Dashboard: CUTI DIAMBIL
-                stats.total_cuti = rowCuti[22] || 0; 
-                
+                stats.total_cuti = rowCuti.terpakai || 0;
+
                 // Kolom X (Index 23) -> Dashboard: CUTI BERSAMA
-                stats.total_cuti_bersama = rowCuti[23] || 0;
+                stats.total_cuti_bersama = rowCuti.bersama || 0;
             }
         }
     }
