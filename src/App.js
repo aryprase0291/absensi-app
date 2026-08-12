@@ -6,6 +6,42 @@ import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, 
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 
+// ============================================================
+// HELPER API — menyisipkan token login ke setiap request
+//
+// Backend (Apps Script) kini menolak request tanpa token yang sah.
+// Token disimpan di dalam objek user pada sessionStorage saat login.
+//
+// Apps Script tidak bisa mengirim status HTTP 401, jadi kegagalan auth
+// dikenali dari body JSON: { result:'error', code:'AUTH_REQUIRED' }.
+// ============================================================
+const fetchApi = async (url, opts = {}) => {
+  let body = opts.body;
+  try {
+    const o = JSON.parse(body);
+    const saved = sessionStorage.getItem('app_user');
+    if (saved) {
+      const u = JSON.parse(saved);
+      if (u && u.token) o.token = u.token;
+    }
+    body = JSON.stringify(o);
+  } catch (e) { /* body bukan JSON — biarkan apa adanya */ }
+
+  const res = await fetch(url, { ...opts, body });
+
+  // Intip respons tanpa mengganggu pembacaan oleh pemanggil
+  try {
+    const peek = await res.clone().json();
+    if (peek && peek.code === 'AUTH_REQUIRED') {
+      sessionStorage.clear();
+      alert('Sesi Anda sudah berakhir. Silakan login ulang.');
+      window.location.reload();
+    }
+  } catch (e) { /* bukan JSON — abaikan */ }
+
+  return res;
+};
+
     // HELPER FORMAT TANGGAL GLOBAL
 const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
 const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
@@ -19,12 +55,12 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  const CLIENT_VERSION = "1.0.12";
+  const CLIENT_VERSION = "1.0.13";
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
     //----LOGIKA CEK UPDATE (DIPERBAIKI: BLOCKING UI)----
-useEffect(() => { const checkUpdate = async () => { try { const data = await (await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })).json(); if (data.result === 'success' && data.version !== CLIENT_VERSION) { console.log(`Update: v${CLIENT_VERSION}->v${data.version}`); setNewVersion(data.version); setUpdateAvailable(true); } } catch (e) { console.error("Gagal cek versi", e); } }; checkUpdate(); }, []);
+useEffect(() => { const checkUpdate = async () => { try { const data = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })).json(); if (data.result === 'success' && data.version !== CLIENT_VERSION) { console.log(`Update: v${CLIENT_VERSION}->v${data.version}`); setNewVersion(data.version); setUpdateAvailable(true); } } catch (e) { console.error("Gagal cek versi", e); } }; checkUpdate(); }, []);
 
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
 useEffect(() => { 
@@ -79,13 +115,13 @@ const AnalogClock = ({ time }) => { const s = time.getSeconds(), m = time.getMin
 function Dashboard({ user, setUser, setView, handleLogout, masterData }) { const [time, setTime] = useState(new Date()); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
 
     // LOGIC FETCH PENGUMUMAN / INFO HRD
-useEffect(() => { (async () => { if(sessionStorage.getItem('announcement_shown')) return; try { const d = await (await fetch(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'get_latest_announcement'})})).json(); if(d.result==='success'&&d.data){ setNewsContent(d.data); setShowNews(true); } } catch(e){ console.error(e); } })(); }, []);
+useEffect(() => { (async () => { if(sessionStorage.getItem('announcement_shown')) return; try { const d = await (await fetchApi(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'get_latest_announcement'})})).json(); if(d.result==='success'&&d.data){ setNewsContent(d.data); setShowNews(true); } } catch(e){ console.error(e); } })(); }, []);
   
     // LOGIC TIMER / DETAK JAM REAL-TIME
 useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
     // LOGIC FETCH STATISTIK DASHBOARD
-useEffect(() => { const f = async () => { setLoadingStats(true); try { const d = await (await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) })).json(); if (d.result === 'success') { const n = {}; Object.keys(d.stats).forEach(k => n[k.toLowerCase()] = d.stats[k]); setStats({ ...d.stats, ...n }); } } catch (e) { console.error("Gagal"); } finally { setLoadingStats(false); } }; if (user) f(); }, [user]);
+useEffect(() => { const f = async () => { setLoadingStats(true); try { const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) })).json(); if (d.result === 'success') { const n = {}; Object.keys(d.stats).forEach(k => n[k.toLowerCase()] = d.stats[k]); setStats({ ...d.stats, ...n }); } } catch (e) { console.error("Gagal"); } finally { setLoadingStats(false); } }; if (user) f(); }, [user]);
 
     // FUNGSI KLIK STATISTIK (NAVIGASI FILTER)
 const handleStatClick = (c) => { localStorage.setItem('dbAbsenFilter', c); setView('db_absen'); };
@@ -378,7 +414,7 @@ const Skeleton = ({ className }) => (
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font
           -bold uppercase tracking-widest">
-              Version {masterData?.appVersion || '1.0.11'} | &copy; {new Date().getFullYear()}
+              Version {masterData?.appVersion || '1.0.13'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
@@ -493,7 +529,7 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
     const fetchShiftHistory = useCallback(async () => {
         setLoadingHistory(true);
         try {
-            const res = await fetch(SCRIPT_URL, {
+            const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'get_shift_history', 
@@ -537,7 +573,7 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
         if(!window.confirm("Yakin ingin menghapus jadwal shift ini?")) return;
         setLoading(true);
         try {
-            const res = await fetch(SCRIPT_URL, {
+            const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'delete_shift_schedule',
@@ -613,7 +649,7 @@ function ShiftScheduleScreen({ user, setView, masterData }) {
         };
 
         try {
-            const res = await fetch(SCRIPT_URL, {
+            const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });
@@ -833,7 +869,7 @@ function AnalysisScreen({ user, setView }) {
         // setSortConfig({ key: null, direction: 'asc' });
 
         try {
-            const res = await fetch(SCRIPT_URL, {
+            const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'get_analysis_data',
@@ -861,7 +897,7 @@ function AnalysisScreen({ user, setView }) {
 
         setLoading(true);
         try {
-            const res = await fetch(SCRIPT_URL, {
+            const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'process_approval',
@@ -1377,7 +1413,7 @@ function RemarkScreen({ user, setView }) {
     useEffect(() => {
         const fetchRemarks = async () => {
             try {
-                const res = await fetch(SCRIPT_URL, {
+                const res = await fetchApi(SCRIPT_URL, {
                     method: 'POST',
                     body: JSON.stringify({ action: 'get_remarks', userId: user.id, role: userRole })
                 });
@@ -1405,7 +1441,7 @@ function RemarkScreen({ user, setView }) {
         e.preventDefault();
         setLoading(true);
         try {
-            const res = await fetch(SCRIPT_URL, {
+            const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'send_remark', 
@@ -1433,7 +1469,7 @@ function RemarkScreen({ user, setView }) {
         if (responseText === null || responseText.trim() === "") return; 
 
         try {
-            const res = await fetch(SCRIPT_URL, {
+            const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
                 body: JSON.stringify({ action: 'update_remark_status', uuid, response: responseText })
             }).then(r => r.json());
@@ -2193,7 +2229,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           jamSelesai: finalJamSelesai
       };
 
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.result === 'success') { 
         alert(data.message);
@@ -2359,7 +2395,7 @@ function ApprovalScreen({ user, setView }) {
   const fetchApprovalList = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(SCRIPT_URL, { 
+      const res = await fetchApi(SCRIPT_URL, { 
         method: 'POST', 
         body: JSON.stringify({ 
             action: 'get_approval_list', 
@@ -2406,7 +2442,7 @@ const handleDecision = async (uuid, decision, namaUser) => {
 
     try {
         // 5. Kirim ke Server
-        const res = await fetch(SCRIPT_URL, { 
+        const res = await fetchApi(SCRIPT_URL, { 
             method: 'POST', 
             body: JSON.stringify({ 
                 action: 'process_approval', 
@@ -2663,7 +2699,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
   const fetchUsers = async () => {
     try {
-        const res = await fetch(SCRIPT_URL, { 
+        const res = await fetchApi(SCRIPT_URL, { 
             method: 'POST', 
             body: JSON.stringify({ action: 'get_user_list_simple', lokasi: user.lokasi || 'All', filterLokasi: locationFilter }) 
         });
@@ -2682,7 +2718,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         requestorLokasi: isSuperAdmin ? locationFilter : (user.lokasi || 'All'), 
         targetUserIds: canViewAll ? selectedUserIds : [] 
       };
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.result === 'success') setHistory(data.history);
     } catch (e) { alert('Gagal ambil data history'); } finally { setLoading(false); }
@@ -2692,7 +2728,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     if (reportCategory !== 'RunningShift') return;
     setIsReportLoading(true);
     try {
-       const res = await fetch(SCRIPT_URL, {
+       const res = await fetchApi(SCRIPT_URL, {
           method: 'POST',
           body: JSON.stringify({ action: 'get_shift_history', userId: user.id, role: user.role })
        });
@@ -2731,7 +2767,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     
     setIsReportLoading(true);
     try {
-        const res = await fetch(SCRIPT_URL, {
+        const res = await fetchApi(SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify({
                 action: 'update_status_absen', // Pastikan backend punya handler ini
@@ -2967,13 +3003,13 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     if (!window.confirm(`Kirim ulang email approval untuk ${item.tipe} (${detailTanggal})?`)) return;
     setSendingEmail(true);
     try {
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'request_approval_email', uuid: item.uuid, scriptUrl: SCRIPT_URL }) });
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'request_approval_email', uuid: item.uuid, scriptUrl: SCRIPT_URL }) });
       const data = await res.json(); 
       if (data.result === 'success') alert("Sukses! " + data.message); else alert("Gagal: " + data.message);
     } catch (e) { alert("Gagal kirim email: " + e.message); } finally { setSendingEmail(false); }
   };
   const handleDelete = async (uuid) => { if (!window.confirm('Yakin hapus data ini?')) return;
-    try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) });
+    try { const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'delete_absen', uuid }) });
     const data = await res.json(); if (data.result === 'success') { alert('Berhasil dihapus'); fetchHistory(); } else { alert(data.message); } } catch (e) { alert('Gagal hapus'); } };
   const handleEdit = (item) => { setEditItem(item); localStorage.setItem('absenType', item.tipe); setView('form'); };
   const isEditable = (waktuStr, status) => { if (status === 'Approved' || status === 'Rejected') return false;
@@ -3388,7 +3424,7 @@ function AdminPanel({ user, setView, masterData }) {
   const fetchAdminUserList = async () => {
     setLoadingList(true);
     try {
-      const res = await fetch(SCRIPT_URL, {
+      const res = await fetchApi(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({ action: 'get_user_list_admin', roleRequester: user.role })
       });
@@ -3406,7 +3442,7 @@ function AdminPanel({ user, setView, masterData }) {
     if(!window.confirm(`Reset password "${namaUser}" jadi "123"?`)) return;
     setLoading(true);
     try {
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'reset_password_user', roleRequester: user.role, targetUuid: uuid }) });
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'reset_password_user', roleRequester: user.role, targetUuid: uuid }) });
       const data = await res.json();
       alert(data.message);
     } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
@@ -3424,14 +3460,14 @@ function AdminPanel({ user, setView, masterData }) {
   const handleAddUser = async (e) => {
     e.preventDefault(); setLoading(true);
     try {
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_user', roleRequester: user.role, ...userData }) }).then(r => r.json());
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_user', roleRequester: user.role, ...userData }) }).then(r => r.json());
       if(res.result === 'success') { alert('User Ditambahkan!'); setUserData({ username: '', password: '', nama: '', email: '', divisi: 'Staff', role: 'karyawan', akses: [], noPayroll: '', sisaCuti: '', perusahaan: '', statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya' }); } 
       else { alert(res.message); }
     } catch(e) { alert('Error koneksi'); } finally { setLoading(false); }
   };
   const handleAddMaster = async (e) => { 
     e.preventDefault(); setLoading(true);
-    try { const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_master', roleRequester: user.role, ...masterInput }) }).then(r=>r.json());
+    try { const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_master', roleRequester: user.role, ...masterInput }) }).then(r=>r.json());
       if(res.result === 'success') { alert('Data Ditambah!'); setMasterInput({ kategori: 'Menu', value: '', label: '' }); } else alert(res.message); 
     } catch(e) { alert('Error'); } finally { setLoading(false); } 
   };
@@ -3439,7 +3475,7 @@ function AdminPanel({ user, setView, masterData }) {
     if (!newsInput.trim()) return alert("Isi kosong!");
     setLoading(true);
     try {
-      const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_announcement', roleRequester: user.role, isi: newsInput }) }).then(r => r.json());
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_announcement', roleRequester: user.role, isi: newsInput }) }).then(r => r.json());
       if (res.result === 'success') { alert("Terbit!"); setNewsInput(''); } else { alert(res.message); }
     } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
   };
@@ -3628,7 +3664,7 @@ function LoginScreen({ onLogin }) {
     e.preventDefault(); 
     setLoading(true);
     try { 
-      const response = await fetch(SCRIPT_URL, { 
+      const response = await fetchApi(SCRIPT_URL, { 
         method: 'POST', 
         body: JSON.stringify({ action: 'login', username, password }) 
       });
@@ -3783,7 +3819,7 @@ function ChangePasswordScreen({ user, setView }) {
     e.preventDefault(); 
     setLoading(true);
     try { 
-      const res = await fetch(SCRIPT_URL, { 
+      const res = await fetchApi(SCRIPT_URL, { 
         method: 'POST', 
         body: JSON.stringify({ action: 'ganti_password', id: user.id, oldPassword, newPassword }) 
       }).then(r => r.json());
@@ -3879,7 +3915,7 @@ function DbAbsenScreen({ user, setView }) {
   useEffect(() => {
     const fetchStats = async () => {
         try {
-            const res = await fetch(SCRIPT_URL, { 
+            const res = await fetchApi(SCRIPT_URL, { 
                 method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) 
             });
             const data = await res.json();
@@ -3893,7 +3929,7 @@ function DbAbsenScreen({ user, setView }) {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await fetch(SCRIPT_URL, { 
+        const res = await fetchApi(SCRIPT_URL, { 
             method: 'POST', 
             body: JSON.stringify({ action: 'get_db_absen', userId: user.id, noPayroll: user.noPayroll }) 
         });
