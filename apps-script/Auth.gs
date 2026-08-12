@@ -188,7 +188,10 @@ const ACTION_ROLES = {
   'tambah_user': ['admin'],
   'tambah_master': ['admin'],
   'delete_absensi': ['admin'],
-  'update_absensi': ['admin']
+  'update_absensi': ['admin'],
+
+  // Menimpa isi sheet dbabsen — sengaja admin saja, tanpa HRD.
+  'import_db_absen': ['admin']
 };
 
 /**

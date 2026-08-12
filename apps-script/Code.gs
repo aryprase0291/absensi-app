@@ -116,6 +116,7 @@ function doPost(e) {
     if (action === 'get_user_list_admin') return handleGetUserListAdmin(data); // Ambil list user lengkap
     if (action === 'reset_password_user') return handleResetPasswordUser(data); // Reset password
     if (action === 'get_analysis_data') return handleGetAnalysisData(data);
+    if (action === 'import_db_absen') return handleImportDbAbsen(data); // lihat ImportDbAbsen.gs
     if (action === 'delete_absensi') return handleDeleteAbsensi(data);
     if (action === 'update_absensi') return handleUpdateAbsensi(data);
 

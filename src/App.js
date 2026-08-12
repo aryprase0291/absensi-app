@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, Briefcase, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, DoorOpen, DoorClosed, CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
+import ImportDbAbsen from './screens/ImportDbAbsen';
 
 // ============================================================
 // HELPER API — token login + penanganan respons HTML dari Google
@@ -3591,6 +3592,7 @@ function AdminPanel({ user, setView, masterData }) {
           case 'user': return 'Tambah User Baru';
           case 'master_user': return 'Master User (Reset)';
           case 'master': return 'Master Data';
+          case 'import_db': return 'Import Data Mesin Absen';
           case 'news': return 'Broadcast Info HRD';
           default: return 'Admin Panel';
       }
@@ -3651,7 +3653,15 @@ function AdminPanel({ user, setView, masterData }) {
                                 </button>
                             )}
                             
-                            {/* 5. Info HRD */}
+                            {/* 5. Import dbabsen (admin saja) */}
+                            {user.role === 'admin' && (
+                                <button onClick={() => switchTab('import_db')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'import_db' ? 'bg-emerald-50 text-emerald-600' : 'text-slate-600 hover:bg-gray-50'}`}>
+                                    <div className={`p-2 rounded-lg ${activeTab === 'import_db' ? 'bg-emerald-100' : 'bg-gray-100'}`}><Upload className="w-4 h-4"/></div>
+                                    Import Data Mesin Absen
+                                </button>
+                            )}
+
+                            {/* 6. Info HRD */}
                             <button onClick={() => switchTab('news')} className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-bold rounded-xl transition-all ${activeTab === 'news' ? 'bg-orange-50 text-orange-600' : 'text-slate-600 hover:bg-gray-50'}`}>
                                 <div className={`p-2 rounded-lg ${activeTab === 'news' ? 'bg-orange-100' : 'bg-gray-100'}`}><Megaphone className="w-4 h-4"/></div>
                                 Info HRD
@@ -3739,6 +3749,11 @@ function AdminPanel({ user, setView, masterData }) {
             <button type="submit" disabled={loading} className="w-full bg-purple-700 text-white py-3 rounded-lg font-bold hover:bg-purple-800">{loading ? 'Simpan...' : 'Tambah'}</button>
           </form>
         </div>
+      )}
+
+      {/* KONTEN TAB: IMPORT dbabsen */}
+      {activeTab === 'import_db' && user.role === 'admin' && (
+        <ImportDbAbsen user={user} />
       )}
 
       {/* KONTEN TAB: INFO HRD */}
