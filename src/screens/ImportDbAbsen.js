@@ -1,9 +1,16 @@
 // =======================================================
 // TAB "IMPORT dbabsen" DI ADMIN PANEL
 //
-// Alur: pilih file .xlsx hasil download mesin absen -> file dibaca di
-// browser -> ditampilkan pratinjau -> baru dikirim ke Apps Script
-// secara bertahap (chunk) -> backend menimpa sheet dbabsen.
+// Alur: pilih satu atau beberapa file .xlsx hasil download mesin absen ->
+// file dibaca di browser -> seluruh isinya digabung jadi satu kumpulan
+// baris -> ditampilkan pratinjau -> baru dikirim ke Apps Script secara
+// bertahap (chunk) -> backend menimpa sheet dbabsen.
+//
+// Beberapa file digabung SEBELUM dikirim, bukan diimpor satu per satu.
+// Alasannya: kalau tiap file jadi satu import sendiri, import kedua yang
+// gagal meninggalkan dbabsen dalam keadaan setengah jadi. Dengan digabung,
+// tetap berlaku jaminan yang sama seperti satu file — sheet baru disentuh
+// pada potongan terakhir.
 //
 // Catatan penting soal pengiriman: action 'import_db_absen' adalah
 // action TULIS, jadi permintaan yang gagal TIDAK BOLEH diulang otomatis.
@@ -14,7 +21,7 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
-  Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Loader2, X, Info
+  Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Loader2, X, Info, Plus
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import { parseWorkbook, KOLOM_SUMBER, JUMLAH_KOLOM, IDX } from './importDbAbsenParser';
@@ -60,48 +67,69 @@ function tglTampil(ymd) {
   return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : ymd;
 }
 
+/** Identitas file, supaya file yang sama tidak terbaca dua kali. */
+function kunciFile(f) {
+  return `${f.name}|${f.size}|${f.lastModified}`;
+}
+
+/** Satu File -> daftar sheet siap dilempar ke parseWorkbook(). */
+async function bacaSatuFile(file) {
+  const buf = await file.arrayBuffer();
+  // cellDates:true -> sel tanggal & jam jadi objek Date, sisanya
+  // dibiarkan mentah supaya normalisasi kita yang menentukan.
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+
+  return wb.SheetNames.map((nama) => ({
+    file: file.name,
+    nama,
+    aoa: XLSX.utils.sheet_to_json(wb.Sheets[nama], {
+      header: 1, raw: true, defval: '', blankrows: false
+    })
+  }));
+}
+
 export default function ImportDbAbsen({ user }) {
-  const [namaFile, setNamaFile] = useState('');
-  const [hasil, setHasil] = useState(null);        // hasil parseWorkbook
+  const [daftarFile, setDaftarFile] = useState([]);  // File[]
+  const [hasil, setHasil] = useState(null);          // hasil parseWorkbook
   const [mode, setMode] = useState('upsert');
   const [konfirmasi, setKonfirmasi] = useState('');
   const [membaca, setMembaca] = useState(false);
   const [mengirim, setMengirim] = useState(false);
   const [progres, setProgres] = useState(0);
-  const [pesan, setPesan] = useState(null);        // { tipe, teks }
+  const [pesan, setPesan] = useState(null);          // { tipe, teks }
   const [ringkasanServer, setRingkasanServer] = useState(null);
   const inputRef = useRef(null);
 
-  const reset = () => {
-    setNamaFile(''); setHasil(null); setKonfirmasi('');
-    setProgres(0); setPesan(null); setRingkasanServer(null);
+  const kosongkanInput = () => {
+    // Tanpa ini, memilih file yang sama dua kali berturut-turut tidak
+    // memicu onChange sama sekali.
     if (inputRef.current) inputRef.current.value = '';
   };
 
-  const handlePilihFile = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
+  const reset = () => {
+    setDaftarFile([]); setHasil(null); setKonfirmasi('');
+    setProgres(0); setPesan(null); setRingkasanServer(null);
+    kosongkanInput();
+  };
 
+  /**
+   * Seluruh daftar dibaca ulang dari nol setiap kali berubah, bukan
+   * ditambal. Lebih boros sedikit, tapi hasil pratinjau selalu cocok
+   * dengan daftar yang terlihat — termasuk setelah satu file dihapus.
+   */
+  const bacaSemua = async (files) => {
     setMembaca(true);
     setPesan(null);
     setRingkasanServer(null);
     setHasil(null);
-    setNamaFile(file.name);
 
     try {
-      const buf = await file.arrayBuffer();
-      // cellDates:true -> sel tanggal & jam jadi objek Date, sisanya
-      // dibiarkan mentah supaya normalisasi kita yang menentukan.
-      const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+      const semuaSheet = [];
+      for (const f of files) {
+        semuaSheet.push(...await bacaSatuFile(f));
+      }
 
-      const sheets = wb.SheetNames.map((nama) => ({
-        nama,
-        aoa: XLSX.utils.sheet_to_json(wb.Sheets[nama], {
-          header: 1, raw: true, defval: '', blankrows: false
-        })
-      }));
-
-      const parsed = parseWorkbook(sheets);
+      const parsed = parseWorkbook(semuaSheet);
 
       if (parsed.baris.length === 0) {
         setPesan({
@@ -113,9 +141,39 @@ export default function ImportDbAbsen({ user }) {
       setHasil(parsed);
     } catch (err) {
       setPesan({ tipe: 'error', teks: 'Gagal membaca file: ' + err.message });
+      setHasil(null);
     } finally {
       setMembaca(false);
     }
+  };
+
+  const handlePilihFile = async (e) => {
+    const dipilih = Array.from(e.target.files || []);
+    kosongkanInput();
+    if (dipilih.length === 0) return;
+
+    const sudahAda = new Set(daftarFile.map(kunciFile));
+    const baru = dipilih.filter((f) => !sudahAda.has(kunciFile(f)));
+
+    if (baru.length === 0) {
+      setPesan({ tipe: 'error', teks: 'File itu sudah ada di daftar.' });
+      return;
+    }
+
+    const gabungan = [...daftarFile, ...baru];
+    setDaftarFile(gabungan);
+    await bacaSemua(gabungan);
+  };
+
+  const handleHapusFile = async (f) => {
+    const sisa = daftarFile.filter((x) => kunciFile(x) !== kunciFile(f));
+    setDaftarFile(sisa);
+    if (sisa.length === 0) {
+      setHasil(null);
+      setPesan(null);
+      return;
+    }
+    await bacaSemua(sisa);
   };
 
   const handleImport = async () => {
@@ -126,9 +184,10 @@ export default function ImportDbAbsen({ user }) {
       return;
     }
 
+    const asal = daftarFile.length > 1 ? `${daftarFile.length} file` : 'file ini';
     const kalimat = mode === 'replace'
-      ? `SELURUH isi sheet dbabsen akan dihapus dan diganti ${hasil.baris.length} baris dari file ini. Lanjutkan?`
-      : `${hasil.baris.length} baris akan dimasukkan. Baris lama dengan NIK + tanggal yang sama akan ditimpa, sisanya tetap. Lanjutkan?`;
+      ? `SELURUH isi sheet dbabsen akan dihapus dan diganti ${hasil.baris.length} baris dari ${asal}. Lanjutkan?`
+      : `${hasil.baris.length} baris dari ${asal} akan dimasukkan. Baris lama dengan NIK + tanggal yang sama akan ditimpa, sisanya tetap. Lanjutkan?`;
     if (!window.confirm(kalimat)) return;
 
     const sessionId = buatSessionId();
@@ -182,6 +241,8 @@ export default function ImportDbAbsen({ user }) {
   }
 
   const adaData = hasil && hasil.baris.length > 0;
+  const adaFile = daftarFile.length > 0;
+  const banyakFile = daftarFile.length > 1;
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
@@ -191,9 +252,10 @@ export default function ImportDbAbsen({ user }) {
         <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
         <div className="text-xs text-slate-600 leading-relaxed">
           <p className="font-bold text-blue-800 mb-1">Import data mesin absen</p>
-          Upload file <strong>.xlsx</strong> hasil download mesin absen. Isinya akan
+          Upload file <strong>.xlsx</strong> hasil download mesin absen — boleh
+          beberapa file sekaligus, isinya digabung jadi satu import. Hasilnya
           ditulis sebagai nilai statis ke sheet <code className="bg-white px-1 rounded">dbabsen</code>,
-          menggantikan formula IMPORTRANGE. Semua sheet di dalam file akan dibaca
+          menggantikan formula IMPORTRANGE. Semua sheet di dalam tiap file dibaca
           otomatis; sheet tanpa kolom NIK./Tanggal/Symbol dilewati.
         </div>
       </div>
@@ -205,6 +267,7 @@ export default function ImportDbAbsen({ user }) {
             ref={inputRef}
             type="file"
             accept=".xlsx,.xls,.csv"
+            multiple
             onChange={handlePilihFile}
             disabled={membaca || mengirim}
             className="hidden"
@@ -212,24 +275,64 @@ export default function ImportDbAbsen({ user }) {
           <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition-all">
             {membaca ? (
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+            ) : adaFile ? (
+              <Plus className="w-8 h-8 text-slate-400 mx-auto" />
             ) : (
               <FileSpreadsheet className="w-8 h-8 text-slate-400 mx-auto" />
             )}
             <p className="mt-2 text-sm font-bold text-slate-700">
-              {namaFile || 'Pilih file Excel'}
+              {adaFile ? 'Tambah file lagi' : 'Pilih file Excel'}
             </p>
             <p className="text-[11px] text-slate-400 mt-1">
-              {membaca ? 'Membaca file...' : 'Klik untuk memilih (.xlsx / .xls / .csv)'}
+              {membaca
+                ? 'Membaca file...'
+                : 'Klik untuk memilih — boleh pilih beberapa sekaligus (.xlsx / .xls / .csv)'}
             </p>
           </div>
         </label>
 
-        {namaFile && !mengirim && (
+        {adaFile && (
+          <div className="mt-3 space-y-1.5">
+            {daftarFile.map((f) => {
+              const ringkas = hasil && hasil.perFile.find((p) => p.nama === f.name);
+              return (
+                <div
+                  key={kunciFile(f)}
+                  className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-slate-400 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-700 truncate">{f.name}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {membaca
+                        ? 'membaca...'
+                        : ringkas
+                          ? `${ringkas.diterima} baris · ${ringkas.sheets} sheet` +
+                            (ringkas.dilewati > 0 ? ` · ${ringkas.dilewati} dilewati` : '')
+                          : 'tidak ada baris terbaca'}
+                    </p>
+                  </div>
+                  {!mengirim && !membaca && (
+                    <button
+                      onClick={() => handleHapusFile(f)}
+                      title="Hapus file ini dari daftar"
+                      className="text-slate-400 hover:text-red-600 shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {adaFile && !mengirim && (
           <button
             onClick={reset}
             className="mt-3 text-xs text-slate-500 hover:text-red-600 flex items-center gap-1 font-bold"
           >
-            <X className="w-3 h-3" /> Bersihkan
+            <X className="w-3 h-3" /> Bersihkan semua
           </button>
         )}
       </div>
@@ -237,7 +340,14 @@ export default function ImportDbAbsen({ user }) {
       {/* PRATINJAU */}
       {hasil && (
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 space-y-4">
-          <h3 className="font-extrabold text-slate-800 text-sm">Pratinjau</h3>
+          <h3 className="font-extrabold text-slate-800 text-sm">
+            Pratinjau
+            {banyakFile && (
+              <span className="ml-1.5 font-medium text-slate-400">
+                gabungan {daftarFile.length} file
+              </span>
+            )}
+          </h3>
 
           <div className="grid grid-cols-2 gap-2">
             <Kotak label="Baris terbaca" nilai={hasil.baris.length} />
@@ -250,10 +360,15 @@ export default function ImportDbAbsen({ user }) {
             <div className="text-xs">
               <p className="font-bold text-slate-600 mb-1">Per sheet</p>
               <div className="space-y-1">
-                {hasil.perSheet.map((s) => (
-                  <div key={s.nama} className="flex justify-between bg-gray-50 px-3 py-1.5 rounded-lg">
-                    <span className="text-slate-700 font-medium">{s.nama}</span>
-                    <span className="text-slate-500">
+                {hasil.perSheet.map((s, i) => (
+                  <div key={i} className="flex justify-between gap-2 bg-gray-50 px-3 py-1.5 rounded-lg">
+                    <span className="text-slate-700 font-medium truncate">
+                      {banyakFile && s.file && (
+                        <span className="text-slate-400 font-normal">{s.file} · </span>
+                      )}
+                      {s.nama}
+                    </span>
+                    <span className="text-slate-500 shrink-0">
                       {s.diterima} baris
                       {s.dilewati > 0 && <span className="text-amber-600"> · {s.dilewati} dilewati</span>}
                     </span>
@@ -264,10 +379,35 @@ export default function ImportDbAbsen({ user }) {
           )}
 
           {hasil.duplikat > 0 && (
-            <Peringatan>
-              {hasil.duplikat} baris punya kombinasi NIK + tanggal yang sama dengan
-              baris lain di file ini. Yang tertulis terakhir yang akan dipakai.
-            </Peringatan>
+            <div>
+              <Peringatan>
+                {hasil.duplikat} baris punya kombinasi NIK + tanggal yang sama dengan
+                baris lain{banyakFile ? ' di kumpulan file ini' : ' di file ini'}. Yang
+                dibaca belakangan dipakai, yang sebelumnya dibuang — jadi angka
+                "baris terbaca" di atas sudah bersih dari duplikat.
+              </Peringatan>
+
+              <details className="text-xs mt-2">
+                <summary className="cursor-pointer font-bold text-amber-700">
+                  Lihat {hasil.duplikat} baris yang bertabrakan
+                </summary>
+                <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                  {hasil.bentrok.slice(0, 50).map((b, i) => (
+                    <div key={i} className="bg-amber-50 border border-amber-100 px-2 py-1 rounded">
+                      <span className="font-bold">{b.nik} · {tglTampil(b.tanggal)}</span>
+                      <div className="text-slate-500">
+                        dibuang: {b.lama}
+                        <br />
+                        dipakai: {b.baru}
+                      </div>
+                    </div>
+                  ))}
+                  {hasil.bentrok.length > 50 && (
+                    <p className="text-slate-400">...dan {hasil.bentrok.length - 50} lainnya</p>
+                  )}
+                </div>
+              </details>
+            </div>
           )}
 
           {hasil.dilewati.length > 0 && (
@@ -278,7 +418,9 @@ export default function ImportDbAbsen({ user }) {
               <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
                 {hasil.dilewati.slice(0, 50).map((d, i) => (
                   <div key={i} className="bg-amber-50 border border-amber-100 px-2 py-1 rounded">
-                    <span className="font-bold">{d.sheet} baris {d.baris}</span> — {d.alasan}
+                    <span className="font-bold">
+                      {banyakFile && d.file ? `${d.file} · ` : ''}{d.sheet} baris {d.baris}
+                    </span> — {d.alasan}
                     <div className="text-slate-400 truncate">{d.cuplikan}</div>
                   </div>
                 ))}
@@ -340,8 +482,9 @@ export default function ImportDbAbsen({ user }) {
             <div className="text-xs">
               <p className="font-bold text-slate-800">Ganti seluruh isi dbabsen</p>
               <p className="text-slate-500 mt-0.5">
-                Semua baris lama dibuang. Pakai ini hanya kalau file berisi
-                seluruh data yang Anda perlukan.
+                Semua baris lama dibuang. Pakai ini hanya kalau
+                {banyakFile ? ' kumpulan file ini berisi' : ' file ini berisi'} seluruh
+                data yang Anda perlukan.
               </p>
             </div>
           </label>

@@ -182,26 +182,37 @@ export function normalisasiBaris(row) {
 // -------------------------------------------------------
 
 /**
- * @param {Array<{nama:string, aoa:Array<Array<any>>}>} sheets
+ * Sheet boleh berasal dari beberapa file sekaligus. Isi `file` dipakai
+ * untuk pelaporan (pratinjau dan daftar bentrok) — parsing sendiri tidak
+ * peduli batas file, semuanya digabung jadi satu kumpulan baris.
+ *
+ * @param {Array<{nama:string, aoa:Array<Array<any>>, file?:string}>} sheets
  * @returns {{
  *   baris: Array<Array<string>>,
- *   dilewati: Array<{sheet:string, baris:number, alasan:string, cuplikan:string}>,
- *   perSheet: Array<{nama:string, diterima:number, dilewati:number, adaHeader:boolean}>,
+ *   dilewati: Array<{file:string, sheet:string, baris:number, alasan:string, cuplikan:string}>,
+ *   perSheet: Array<{file:string, nama:string, diterima:number, dilewati:number, adaHeader:boolean}>,
+ *   perFile: Array<{nama:string, diterima:number, dilewati:number, sheets:number}>,
+ *   bentrok: Array<{nik:string, tanggal:string, lama:string, baru:string}>,
  *   tanggalMin: string, tanggalMaks: string,
  *   jumlahNik: number, duplikat: number
  * }}
  */
 export function parseWorkbook(sheets) {
-  const baris = [];
   const dilewati = [];
   const perSheet = [];
   const nikSet = new Set();
-  const kunciSet = new Set();
+  const bentrok = [];
   let duplikat = 0;
   let tanggalMin = '';
   let tanggalMaks = '';
 
-  (sheets || []).forEach(({ nama, aoa }) => {
+  // Kunci 'NIK|tanggal' -> baris. Map menjaga urutan masuk, dan menulis
+  // ulang kunci yang sama berarti baris terakhir yang menang — persis
+  // seperti yang dijanjikan peringatan di layar.
+  const peta = new Map();
+
+  (sheets || []).forEach(({ nama, aoa, file }) => {
+    const namaFile = file || '';
     let adaHeader = false;
     let diterima = 0;
     let dilewatiSheet = 0;
@@ -224,13 +235,16 @@ export function parseWorkbook(sheets) {
 
       if (!n[IDX_NIK]) {
         dilewatiSheet++;
-        dilewati.push({ sheet: nama, baris: nomorBaris, alasan: 'NIK kosong', cuplikan: cuplikan(row) });
+        dilewati.push({
+          file: namaFile, sheet: nama, baris: nomorBaris,
+          alasan: 'NIK kosong', cuplikan: cuplikan(row)
+        });
         return;
       }
       if (!n[IDX_TANGGAL]) {
         dilewatiSheet++;
         dilewati.push({
-          sheet: nama, baris: nomorBaris,
+          file: namaFile, sheet: nama, baris: nomorBaris,
           alasan: 'Tanggal tidak terbaca: "' + String(row[IDX_TANGGAL] ?? '') + '"',
           cuplikan: cuplikan(row)
         });
@@ -238,33 +252,69 @@ export function parseWorkbook(sheets) {
       }
 
       const kunci = n[IDX_NIK] + '|' + n[IDX_TANGGAL];
-      if (kunciSet.has(kunci)) duplikat++;
-      kunciSet.add(kunci);
+      const asal = asalBaris(namaFile, nama, nomorBaris);
+
+      const sebelumnya = peta.get(kunci);
+      if (sebelumnya) {
+        duplikat++;
+        bentrok.push({
+          nik: n[IDX_NIK],
+          tanggal: n[IDX_TANGGAL],
+          lama: sebelumnya.asal,
+          baru: asal
+        });
+      }
+
+      // Menimpa kunci yang sama: baris terakhir yang dipakai.
+      peta.set(kunci, { row: n, asal });
 
       nikSet.add(n[IDX_NIK]);
       if (!tanggalMin || n[IDX_TANGGAL] < tanggalMin) tanggalMin = n[IDX_TANGGAL];
       if (!tanggalMaks || n[IDX_TANGGAL] > tanggalMaks) tanggalMaks = n[IDX_TANGGAL];
 
-      baris.push(n);
       diterima++;
     });
 
     // Sheet tanpa header sama sekali = sheet bantu, tidak perlu dilaporkan
     // sebagai masalah.
     if (adaHeader || diterima > 0) {
-      perSheet.push({ nama, diterima, dilewati: dilewatiSheet, adaHeader });
+      perSheet.push({ file: namaFile, nama, diterima, dilewati: dilewatiSheet, adaHeader });
     }
   });
 
   return {
-    baris,
+    baris: Array.from(peta.values(), (v) => v.row),
     dilewati,
     perSheet,
+    perFile: ringkasPerFile(perSheet),
+    bentrok,
     tanggalMin,
     tanggalMaks,
     jumlahNik: nikSet.size,
     duplikat
   };
+}
+
+function asalBaris(file, sheet, nomorBaris) {
+  return (file ? file + ' · ' : '') + sheet + ' baris ' + nomorBaris;
+}
+
+/** perSheet -> ringkasan per file, urut sesuai urutan file dipilih. */
+function ringkasPerFile(perSheet) {
+  const peta = new Map();
+
+  perSheet.forEach((s) => {
+    const kunci = s.file || '';
+    if (!peta.has(kunci)) {
+      peta.set(kunci, { nama: kunci, diterima: 0, dilewati: 0, sheets: 0 });
+    }
+    const f = peta.get(kunci);
+    f.diterima += s.diterima;
+    f.dilewati += s.dilewati;
+    f.sheets += 1;
+  });
+
+  return Array.from(peta.values());
 }
 
 function cuplikan(row) {

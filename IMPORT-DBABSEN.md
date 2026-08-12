@@ -58,7 +58,12 @@ tombol saja tidak bisa diakali.
 
 Yang sudah ditangani otomatis:
 
-- Semua sheet dalam file dibaca; sheet tanpa header NIK./Tanggal/Symbol
+- **Beberapa file boleh diimpor sekaligus.** Pilih beberapa file dalam satu
+  dialog, atau klik lagi untuk menambah ke daftar; tiap file bisa dihapus
+  satu per satu. Semuanya digabung jadi **satu** import — bukan diimpor
+  bergantian, karena import kedua yang gagal akan meninggalkan `dbabsen`
+  setengah jadi.
+- Semua sheet dalam tiap file dibaca; sheet tanpa header NIK./Tanggal/Symbol
   dilewati.
 - Baris header yang berulang di tengah file (efek paginasi mesin) dikenali
   dan dilewati, bukan ikut jadi data.
@@ -69,6 +74,10 @@ Yang sudah ditangani otomatis:
   **tidak** diutak-atik.
 - Baris tanpa NIK atau dengan tanggal tak terbaca dilewati **dan
   dilaporkan** di pratinjau, tidak dibuang diam-diam.
+- Kombinasi NIK + tanggal yang muncul lebih dari sekali — di satu file
+  maupun antar file — disaring: **yang dibaca belakangan yang dipakai**,
+  sesuai urutan file di daftar. Yang dibuang bisa dilihat di pratinjau
+  lengkap dengan file, sheet, dan nomor barisnya.
 
 ---
 
@@ -102,8 +111,8 @@ NIK + tanggal sama dengan file baru ditimpa; sisanya tetap. Ini yang
 dipakai untuk import rutin per periode.
 
 **Ganti seluruh isi.** Semua baris lama dibuang. Perlu mengetik `GANTI`
-untuk mengaktifkan tombol. Pakai hanya kalau file berisi seluruh data yang
-diperlukan.
+untuk mengaktifkan tombol. Pakai hanya kalau file — atau kumpulan file —
+berisi seluruh data yang diperlukan.
 
 ---
 
@@ -139,5 +148,6 @@ diperlukan.
 npx react-scripts test --testPathPattern=importDbAbsenParser --watchAll=false
 ```
 
-26 test mencakup normalisasi tanggal/jam, header berulang, multi-sheet,
-dan baris rusak — semua kasusnya diambil dari file draft asli.
+29 test mencakup normalisasi tanggal/jam, header berulang, multi-sheet,
+multi-file, penyaringan duplikat, dan baris rusak — semua kasusnya diambil
+dari file draft asli.

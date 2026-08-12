@@ -172,12 +172,63 @@ describe('parseWorkbook', () => {
     expect(hasil.dilewati[0].alasan).toBe('NIK kosong');
   });
 
-  test('duplikat NIK+tanggal dihitung', () => {
+  test('duplikat NIK+tanggal dibuang, hanya baris terakhir yang dipakai', () => {
+    const kedua = [...barisSalam];
+    kedua[7] = '09:15';   // Masuk berbeda, supaya bisa dibedakan
+
     const hasil = parseWorkbook([
-      { nama: 'NON-SHIFT', aoa: [HEADER, barisSalam, barisSalam] }
+      { nama: 'NON-SHIFT', aoa: [HEADER, barisSalam, kedua] }
     ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.duplikat).toBe(1);
+    expect(hasil.baris[0][7]).toBe('09:15');
+  });
+
+  test('duplikat antar file: file yang dibaca belakangan menang', () => {
+    const dariFileKedua = [...barisSalam];
+    dariFileKedua[7] = '06:45';
+
+    const hasil = parseWorkbook([
+      { file: 'juli.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, barisSalam, barisDede] },
+      { file: 'agustus.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, dariFileKedua] }
+    ]);
+
     expect(hasil.baris).toHaveLength(2);
     expect(hasil.duplikat).toBe(1);
+
+    const salam = hasil.baris.find((r) => r[1] === 'C0011');
+    expect(salam[7]).toBe('06:45');
+
+    expect(hasil.bentrok).toHaveLength(1);
+    expect(hasil.bentrok[0].lama).toContain('juli.xlsx');
+    expect(hasil.bentrok[0].baru).toContain('agustus.xlsx');
+  });
+
+  test('beberapa file digabung dan diringkas per file', () => {
+    const hasil = parseWorkbook([
+      { file: 'juli.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, barisSalam] },
+      { file: 'juli.xlsx', nama: 'SHIFT', aoa: [HEADER, barisSalam.map((v, i) => (i === 1 ? 'G0020' : v))] },
+      { file: 'agustus.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, barisDede] }
+    ]);
+
+    expect(hasil.baris).toHaveLength(3);
+    expect(hasil.perFile).toEqual([
+      { nama: 'juli.xlsx', diterima: 2, dilewati: 0, sheets: 2 },
+      { nama: 'agustus.xlsx', diterima: 1, dilewati: 0, sheets: 1 }
+    ]);
+  });
+
+  test('baris dilewati mencantumkan file asalnya', () => {
+    const rusak = [...barisSalam];
+    rusak[1] = '';
+
+    const hasil = parseWorkbook([
+      { file: 'agustus.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, rusak] }
+    ]);
+
+    expect(hasil.dilewati[0].file).toBe('agustus.xlsx');
+    expect(hasil.dilewati[0].alasan).toBe('NIK kosong');
   });
 
   test('data sebelum header pertama tidak ikut terbaca', () => {
