@@ -11,11 +11,31 @@
 > | 2 · `Auth.gs` dipasang di editor | **selesai** — 388 baris, SHA `a79863620869` |
 > | 3 · Patch `Kode.gs` | **selesai** — 2.832 baris, SHA `a61739d951ab` |
 > | 0 · `PREFLIGHT_CEK_ROLE()` | **selesai** — `HASIL: aman untuk lanjut deploy.` |
-> | 4 · `SETUP_GENERATE_SECRET()` | **BELUM** — harus Anda jalankan |
-> | 5 · Deploy versi baru | **BELUM** — harus Anda lakukan |
+> | 4 · `SETUP_GENERATE_SECRET()` | **selesai** — log: `Secret SUDAH ADA. Tidak diubah.` |
+> | 5 · Deploy versi baru | **selesai** — Versi 128, 12 Agu 2026 pukul 21.21 |
 >
-> Kode sudah **disimpan** tapi **belum di-deploy**, jadi user belum terpengaruh
-> sama sekali. Web App masih menjalankan versi lama.
+> **SUDAH AKTIF DI PRODUKSI sejak 12 Agu 2026 21.21.** Deployment ID (dan
+> karena itu URL Web App di `src/config/constants.js`) tidak berubah:
+> `AKfycbzUH1Q7iVAii82YGg_mObckPCZdMxd-bzjURra0VvaCulR0nS1PeE4HiGA-cRLVVDgD`.
+>
+> Uji langsung ke endpoint produksi setelah deploy:
+>
+> | Uji | Hasil |
+> |---|---|
+> | `get_user_list_admin` + `roleRequester:"admin"`, tanpa token | ditolak `AUTH_REQUIRED` |
+> | `reset_password_user` + `roleRequester:"admin"`, tanpa token | ditolak `AUTH_REQUIRED` |
+> | `get_user_list_admin` + token dipalsukan (payload admin, tanda tangan ngawur) | ditolak `AUTH_REQUIRED` |
+> | `check_version` (action publik) | `success`, versi `1.0.13` = `CLIENT_VERSION` |
+> | `login` dengan kredensial ngawur | `error`, "Username/Password salah!" |
+>
+> **Rollback bila ada masalah:** Terapkan → Kelola deployment → ikon pensil →
+> pilih **Versi 127** → Terapkan. URL tetap sama, jadi frontend tidak perlu
+> disentuh.
+>
+> Catatan: user yang sesinya masih terbuka dari sebelum deploy tidak punya token,
+> jadi request pertamanya dibalas `AUTH_REQUIRED` → `fetchApi` di `App.js`
+> otomatis membersihkan sessionStorage dan melempar mereka ke halaman login.
+> Ini perilaku yang diinginkan, bukan bug.
 >
 > Verifikasi penempatan gerbang auth di `Kode.gs`:
 > `const action = data.action;` baris 84 → `authorizeRequest(data)` baris 93 →

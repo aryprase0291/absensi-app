@@ -986,91 +986,14 @@ function handleDeleteAbsen(data) {
 }
 
 
-// --- FUNGSI GET HISTORY (PERBAIKAN: ID AKUN & PAYROLL) ---
-function handleGetHistory(data) {
-  const sheetAbsen = SS.getSheetByName(SHEET_ABSENSI);
-  const rowsAbsen = sheetAbsen.getDataRange().getValues();
-  
-  const sheetUser = SS.getSheetByName(SHEET_USERS);
-  const rowsUser = sheetUser.getDataRange().getValues();
-  
-  // 1. Mapping Data User (Untuk ambil Payroll & Nama & Divisi)
-  const userMap = {};
-  for (let u = 1; u < rowsUser.length; u++) {
-    // Key: User ID (Kolom A / Index 0)
-    userMap[String(rowsUser[u][0])] = {
-      noPayroll: rowsUser[u][7] || '-', // Ambil Payroll dari Kolom H (Index 7)
-      nama: rowsUser[u][3],             // Nama
-      divisi: rowsUser[u][4] || '-',    // Divisi
-      lokasi: rowsUser[u][13] || ''     // Lokasi
-    };
-  }
-
-  const history = [];
-  const requestorLokasi = data.requestorLokasi || 'All';
-
-  // Helper untuk filter view
-  const isTargeted = (idToCheck) => {
-    if (data.canViewAll && data.targetUserIds && Array.isArray(data.targetUserIds)) {
-      if (data.targetUserIds.length > 0) return data.targetUserIds.includes(String(idToCheck));
-      return true; 
-    }
-    return String(idToCheck) === String(data.userId);
-  };
-
-  // 2. Loop Data Absensi dari Bawah (Terbaru) ke Atas
-  for (let i = rowsAbsen.length - 1; i >= 1; i--) {
-    const row = rowsAbsen[i];
-    const rowUserId = String(row[2]); // Kolom C: User ID
-    
-    // Ambil data detail user dari Map
-    const userData = userMap[rowUserId] || { noPayroll: '-', nama: row[3], divisi: '-', lokasi: '' };
-    
-    // Filter Lokasi (Khusus Admin/HRD)
-    if (data.canViewAll && (!userData.lokasi || userData.lokasi === '')) continue;
-
-    if (isTargeted(rowUserId)) {
-      // Filter Lokasi Requestor
-      if (data.canViewAll && requestorLokasi !== 'All') {
-         if (String(userData.lokasi).toLowerCase() !== String(requestorLokasi).toLowerCase()) continue;
-      }
-
-      history.push({
-        uuid: row[0],
-        waktu: formatDate(row[1]),
-        
-        userId: rowUserId,       // User ID Asli
-        idAkun: rowUserId,       // [REQUEST] ID AKUN diisi dengan User ID
-        noPayroll: userData.noPayroll, // [REQUEST] PAYROLL diisi data dari Sheet Users
-        
-        nama: userData.nama,
-        divisi: userData.divisi,
-        tipe: row[4],
-        lokasi: row[5],
-        catatan: row[6],
-        foto: row[7],
-        
-        // Helper Format Tanggal & Jam
-        tglMulai: formatDateYMD(row[8]),   
-        tglSelesai: formatDateYMD(row[9]),
-        jamMulai: formatTimeSimple(row[10]),
-        jamSelesai: formatTimeSimple(row[11]),
-        
-        status: row[12] || 'Pending',
-        approver: row[13] || '-',
-        approvalTime: formatDate(row[14]),
-        lampiran: row[15] || '-',
-        alasan: row[16] || '-'
-      });
-    }
-    
-    // Batasan Data agar tidak loading lama
-    if (!data.canViewAll && history.length >= 50) break;
-    if (data.canViewAll && history.length >= 1000) break; // Naikkan limit untuk admin
-  }
-  
-  return responseJSON({ result: 'success', history: history });
-}
+// CATATAN DEDUP (12 Agustus 2026):
+// Di sini dulu ada deklarasi handleGetHistory yang KEDUA. Karena seluruh file .gs
+// berbagi satu global scope, deklarasi yang terakhir menang — jadi versi ini
+// sudah lama tidak pernah dieksekusi (dead code). Versi yang benar-benar
+// dipakai ada di bagian "FITUR SHIFT SCHEDULE" di bawah, dan frontend
+// (src/App.js) sudah menyesuaikan diri ke versi itu: `new Date(item.waktu)`
+// hanya bekerja kalau `waktu` dikirim mentah, bukan hasil formatDate().
+// Versi mati ini dihapus supaya tidak ada lagi yang mengeditnya dengan sia-sia.
 
 function handleGetUserListSimple(data) {
   const requestorLokasi = data.lokasi || 'All';
@@ -1735,7 +1658,11 @@ function handleGetHistory(data) {
         approvalTime: rowsAbsen[i][14] || '-',
         lampiran: rowsAbsen[i][15] || '-',
         alasan: rowsAbsen[i][16] || '-',
-        idAkun: rowsAbsen[i][21] || '-' // Backup jika ada di kolom history
+        // ID AKUN: pakai kolom V sheet Absensi kalau memang terisi; kalau kosong
+        // jatuh ke User ID (kolom C) supaya laporan tidak lagi menampilkan '-'.
+        // Sebelum perubahan ini kolom V hampir selalu kosong → kolom ID Akun
+        // di laporan praktis selalu '-'.
+        idAkun: rowsAbsen[i][21] || rowUserId
       });
     }
     if (!data.canViewAll && history.length >= 50) break;
@@ -1919,9 +1846,10 @@ function handleSubmitShiftSchedule(data) {
 // --- HELPER FUNCTIONS ---
 function getFolder() { const folders = DriveApp.getFoldersByName(FOLDER_NAME); return folders.hasNext() ? folders.next() : DriveApp.createFolder(FOLDER_NAME).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); }
 function responseJSON(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }
-function formatDate(d){ try { return new Date(d).toLocaleDateString('id-ID'); } catch(e){return d;} }
 function hitungDurasi(start, end) { const diff = Math.abs(end - start); const minutes = Math.floor(diff / 60000); return `${minutes} Menit`; }
-function formatDateYMD(dateInput) { try { const d = new Date(dateInput); if (isNaN(d.getTime())) return dateInput; const year = d.getFullYear(); const month = ('0' + (d.getMonth() + 1)).slice(-2); const day = ('0' + d.getDate()).slice(-2); return `${year}-${month}-${day}`; } catch (e) { return ''; } }
+// CATATAN DEDUP (12 Agustus 2026): dua deklarasi satu baris dihapus dari sini —
+// formatDate (toLocaleDateString id-ID) dan formatDateYMD. Keduanya ditimpa oleh
+// deklarasi bernama sama di bagian bawah file, jadi tidak pernah dieksekusi.
 
 //---POP UP INFO HRD--//
 function handleGetLatestAnnouncement() {
@@ -2319,65 +2247,11 @@ function extractAllTimes_Backend(val) {
   return str.length > 2 ? str.trim() : '-';
 }
 
-function formatDateYMD_Strict(dateInput) {
-  if (!dateInput) return '';
-  try {
-    const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return '';
-    return Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
-  } catch (e) { return ''; }
-}
-
-function formatDateDDMMYYYY(d) {
-  try {
-    const dateObj = new Date(d);
-    if (isNaN(dateObj.getTime())) return '-';
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const year = dateObj.getFullYear();
-    return `${day}-${month}-${year}`;
-  } catch (e) { return '-'; }
-}
-
-// ==========================================
-// HELPER FUNCTIONS (WAJIB ADA DI BAWAH)
-// ==========================================
-
-function isValidDate(d) {
-  if (!d) return false;
-  const date = new Date(d);
-  return !isNaN(date.getTime());
-}
-
-// Helper Format Tanggal Strict (YYYY-MM-DD)
-// Penting untuk mencocokkan tanggal mesin yang mungkin ada jamnya
-function formatDateYMD_Strict(dateInput) {
-  if (!dateInput) return '';
-  try {
-    const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return '';
-    return Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
-  } catch (e) {
-    return '';
-  }
-}
-
-// Helper Format Jam (HH:mm) untuk Kolom R
-function formatTimeOnly_Backend(val) {
-  if (!val || val === '-' || val === '') return '-';
-  
-  // Jika Date Object
-  if (Object.prototype.toString.call(val) === '[object Date]') {
-    return Utilities.formatDate(val, Session.getScriptTimeZone(), "HH:mm");
-  }
-  
-  // Jika String (misal "08:00:00")
-  const str = String(val).trim();
-  if (str.includes(':')) {
-    return str.substring(0, 5); // Ambil 5 karakter pertama
-  }
-  return str;
-}
+// CATATAN DEDUP (12 Agustus 2026): lima deklarasi duplikat dihapus dari sini —
+// formatDateYMD_Strict (2x), formatDateDDMMYYYY, isValidDate, formatTimeOnly_Backend.
+// Semuanya ditimpa oleh deklarasi bernama sama di bagian paling bawah file,
+// jadi tidak satu pun pernah dieksekusi. Isinya identik dengan yang di bawah,
+// sehingga penghapusan ini tidak mengubah perilaku sama sekali.
 
 
 // ==========================================
@@ -2435,20 +2309,9 @@ function formatDateYMD(dateVal) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// HELPER FORMAT DATE + TIME
-function formatDate(dateVal) {
-  if (!dateVal) return '-';
-  const d = new Date(dateVal);
-  if (isNaN(d.getTime())) return String(dateVal);
-  
-  // Format ke YYYY-MM-DD HH:mm:ss
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
-}
+// CATATAN DEDUP (12 Agustus 2026): deklarasi formatDate versi yyyy-MM-dd HH:mm
+// dihapus dari sini. Dia ditimpa oleh formatDate di bawah (dd-MM-yyyy HH:mm),
+// jadi tidak pernah dieksekusi — output yyyy-MM-dd itu ilusi saat baca kode.
 
 // HELPER FORMAT JAM SIMPLE (HH:mm)
 function formatTimeSimple(val) {
@@ -2462,19 +2325,11 @@ function formatTimeSimple(val) {
   return String(val).substring(0, 5);
 }
 
-// FORMAT TANGGAL + JAM (DD-MM-YYYY HH:mm)
-function formatDateTimeFull(d) {
-  try {
-    const dateObj = new Date(d);
-    if (isNaN(dateObj.getTime())) return d;
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const year = dateObj.getFullYear();
-    const h = String(dateObj.getHours()).padStart(2, '0');
-    const m = String(dateObj.getMinutes()).padStart(2, '0');
-    return `${day}-${month}-${year} ${h}:${m}`;
-  } catch (e) { return d; }
-}
+// CATATAN DEDUP (12 Agustus 2026): deklarasi formatDateTimeFull versi
+// "dd-MM-yyyy HH:mm" dihapus dari sini. Dia ditimpa oleh formatDateTimeFull
+// di bawah yang menghasilkan "12/8/2026 | 08:30", jadi tidak pernah dieksekusi.
+// Format mana yang sebaiknya dipakai di laporan = keputusan terpisah; dedup ini
+// sengaja tidak mengubah tampilan apa pun.
 
 // Helper 1: Memformat Jam (08:00)
 function formatJam(val) {
@@ -2519,22 +2374,9 @@ function formatDateStrict(d) {
   } catch (e) { return d; }
 }
 
-// --- HELPER TAMBAHAN: formatDateDDMMYYYY ---
-function formatDateDDMMYYYY(d) {
-  try {
-    const dateObj = new Date(d);
-    // Cek validitas tanggal
-    if (isNaN(dateObj.getTime())) return d;
-    
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const year = dateObj.getFullYear();
-    
-    return `${day}-${month}-${year}`;
-  } catch (e) { 
-    return d; 
-  }
-}
+// CATATAN DEDUP (12 Agustus 2026): deklarasi formatDateDDMMYYYY yang
+// mengembalikan nilai asli saat input tidak valid dihapus dari sini. Dia ditimpa
+// oleh formatDateDDMMYYYY di bawah yang mengembalikan '-', jadi tidak pernah jalan.
 
 // --- HELPER: Parse Jam ke Menit (Pastikan fungsi ini ada di paling bawah script) ---
 function parseTimeToMinutes(timeStr) {
