@@ -109,6 +109,14 @@ diperlukan.
 
 ## Yang perlu diperhatikan
 
+- **Kolom jam ditulis sebagai teks, bukan nilai jam.** `setValues()` di
+  Apps Script menafsirkan string `"08:06"` persis seperti diketik manual,
+  jadi isinya berubah jadi angka serial dan tampil sebagai `30/12/1899`
+  karena format kolomnya tanggal. Sebelum diganti import, kolom ini berisi
+  teks dan `handleGetDbAbsen()` meneruskannya apa adanya ke frontend —
+  jadi teks memang bentuk yang benar. `_importSetFormatKolom()` memasang
+  format `@` sebelum menulis; hanya kolom E (Tanggal) yang tetap Date.
+  Jangan hapus urutan ini: format harus dipasang **sebelum** `setValues`.
 - **Formula di A:S akan hilang** pada import pertama. Itu memang tujuannya,
   tapi buat salinan spreadsheet dulu sebelum mencoba pertama kali.
 - Setelah import dipakai rutin, **hapus trigger waktu `checkFormulaUpdates()`** —

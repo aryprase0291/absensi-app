@@ -186,8 +186,59 @@ function _importSiapkanSheetSementara(reset) {
   if (!sh) {
     sh = SS.insertSheet(IMPORT_TMP_SHEET);
     sh.hideSheet();
+    _importSetFormatKolom(sh, 1, sh.getMaxRows());
   }
   return sh;
+}
+
+/**
+ * Sheets menafsirkan string "08:06" sebagai NILAI JAM begitu ditulis
+ * lewat setValues — persis seperti diketik manual di sel. Isinya jadi
+ * angka serial (0.3375), dan karena format kolom dbabsen adalah tanggal,
+ * yang tampil di layar adalah "30/12/1899".
+ *
+ * Sebelum formula IMPORTRANGE diganti, kolom-kolom ini berisi TEKS, dan
+ * handleGetDbAbsen() di Code.gs meneruskan row[8]/row[9]/row[10]/row[17]
+ * apa adanya ke frontend. Jadi teks memang bentuk yang benar — kalau
+ * dibiarkan jadi Date, frontend menerima "1899-12-30T01:06:00.000Z".
+ *
+ * Karena itu seluruh kolom dipaksa teks, KECUALI kolom Tanggal yang
+ * harus tetap objek Date supaya formatDateYMD_Strict() bekerja.
+ */
+function _importSetFormatKolom(sheet, barisAwal, jumlahBaris) {
+  if (jumlahBaris < 1) return;
+  sheet.getRange(barisAwal, 1, jumlahBaris, DBABSEN_TOTAL_COLS)
+       .setNumberFormat('@');
+  sheet.getRange(barisAwal, IMPORT_IDX_TANGGAL + 1, jumlahBaris, 1)
+       .setNumberFormat('dd/MM/yyyy');
+}
+
+/**
+ * Mengembalikan sel yang terlanjur jadi Date menjadi teks "HH:mm".
+ *
+ * Dipakai untuk SELURUH baris yang akan ditulis — termasuk baris lama
+ * yang dipertahankan pada mode upsert — sehingga satu kali import ulang
+ * cukup untuk merapikan sheet yang sudah terlanjur rusak.
+ */
+function _importNormalisasiJam(rows) {
+  const tz = Session.getScriptTimeZone();
+
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    for (let c = 0; c < row.length; c++) {
+      if (c === IMPORT_IDX_TANGGAL) continue;
+
+      const v = row[c];
+      if (Object.prototype.toString.call(v) !== '[object Date]') continue;
+      if (isNaN(v.getTime())) { row[c] = ''; continue; }
+
+      // Nilai jam murni berpangkal di 30/12/1899 (serial 0).
+      row[c] = (v.getFullYear() <= 1900)
+        ? Utilities.formatDate(v, tz, 'HH:mm')
+        : Utilities.formatDate(v, tz, 'dd/MM/yyyy HH:mm');
+    }
+  }
+  return rows;
 }
 
 function _importBersihkan(propKey) {
@@ -348,6 +399,10 @@ function _importCommit(tmp, mode) {
   }
 
   if (final.length > 0) {
+    // Urutannya penting: format teks HARUS dipasang sebelum setValues,
+    // karena penafsiran "08:06" -> nilai jam terjadi saat penulisan.
+    _importNormalisasiJam(final);
+    _importSetFormatKolom(db, 2, final.length);
     db.getRange(2, 1, final.length, DBABSEN_TOTAL_COLS).setValues(final);
   }
 
