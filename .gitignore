@@ -21,3 +21,8 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Kredensial Telegram ada langsung di dalam kedua file ini
+# (BOT_TOKEN / TELEGRAM_TOKEN_REMARK). Repo ini Public — jangan di-commit.
+# Pindahkan token ke PropertiesService lalu baru boleh dilacak git.
+apps-script/SendTelegram*.gs

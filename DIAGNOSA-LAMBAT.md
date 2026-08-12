@@ -120,12 +120,55 @@ butuh spreadsheet.
 dibaca ulang tiap login oleh tiap user. `CacheService` sama sekali belum dipakai
 — hasil grep di `Code.gs`: **0 kemunculan** `CacheService`, **0** `LockService`.
 
-### 6. `onEdit` menulis timestamp per baris di `dbabsen`
+### 6. ~~`onEdit` menulis timestamp per baris di `dbabsen`~~ — DIKOREKSI
 
-`Code.gs:2607-2631` — setiap edit di `dbabsen` memicu `setValue` satu sel.
-Saat HRD menempel data rekap satu periode (ribuan baris), trigger ini ikut
-berjalan dan tiap `setValue` memicu perhitungan ulang formula di sheet yang sama.
-Waktu impor jadi berat, dan selama itu berlangsung semua request lain melambat.
+**Poin ini keliru dan sudah dibatalkan.** Diagnosa awal ditulis tanpa melihat
+seluruh isi project Apps Script — waktu itu hanya ada `Code.gs` dan
+`SyncCuti.gs`. Setelah memeriksa editor secara langsung, ternyata ada dua file
+lain: `SendTelegramRemark.gs` dan `SendTelegramForm.gs`.
+
+Dan `onEdit` **dideklarasikan dua kali**:
+
+| File | Baris | Menjaga sheet | Yang dilakukan |
+|---|---|---|---|
+| `Kode.gs` | 2607 | `dbabsen` | `setValue` timestamp ke kolom T |
+| `SendTelegramForm.gs` | 268 | `Absensi` | memanggil `triggerTelegramUpdate()` |
+
+Karena seluruh file `.gs` berbagi satu global scope, deklarasi terakhir menimpa
+yang sebelumnya. Urutan file di project Anda:
+
+```
+Kode.gs → SyncCuti.gs → SendTelegramRemark.gs → SendTelegramForm.gs
+```
+
+`SendTelegramForm.gs` paling akhir, jadi **`onEdit` di `Kode.gs` tidak pernah
+berjalan.** Penulisan timestamp kolom T di `dbabsen` sudah mati sejak file
+Telegram itu ditambahkan — sehingga bukan penyebab lambat, karena tidak pernah
+dieksekusi.
+
+**Cara memastikan sendiri:** buka sheet `dbabsen`, lihat kolom T. Kalau isinya
+kosong atau timestamp-nya lama padahal barisnya baru diubah, itu konfirmasinya.
+
+**Kabar baiknya, perbaikannya mudah.** Keduanya menjaga sheet yang *berbeda*
+(`dbabsen` vs `Absensi`), jadi tidak ada konflik logika — hanya konflik nama.
+Cukup disatukan jadi satu `onEdit`:
+
+```js
+function onEdit(e) {
+  if (!e) return;
+  const nama = e.source.getActiveSheet().getName();
+  if (nama === 'dbabsen')  onEditDbAbsen(e);        // eks Kode.gs
+  if (nama === 'Absensi')  triggerTelegramUpdate(e); // eks SendTelegramForm.gs
+}
+```
+
+lalu ganti nama `onEdit` di `Kode.gs` menjadi `onEditDbAbsen`, dan hapus
+`onEdit` di `SendTelegramForm.gs`.
+
+> **Sekalian catatan keamanan:** kedua file Telegram memuat bot token dan chat ID
+> langsung di dalam kode (`TELEGRAM_TOKEN_REMARK`, `BOT_TOKEN`). Repo GitHub
+> masih Public — **jangan commit kedua file itu.** Sebaiknya token dipindah ke
+> `PropertiesService.getScriptProperties()` seperti `AUTH_SECRET`.
 
 ---
 
