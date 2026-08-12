@@ -55,10 +55,12 @@ export default function AppAbsensi() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  // JANGAN naikkan ini sebelum Apps Script di-deploy dengan APP_VERSION yang sama.
-  // Kalau frontend lebih baru dari backend, layar "Update Tersedia" akan
-  // memblokir semua user dan reload tidak menyelesaikan apa pun.
-  const CLIENT_VERSION = "1.0.12";
+  // HARUS SAMA dengan APP_VERSION di Kode.gs yang SEDANG di-deploy.
+  // Backend produksi sudah di Versi 127 (APP_VERSION 1.0.13) sejak 12 Agu 13.13.
+  // Aturan urutannya: deploy Apps Script DULU, baru naikkan angka ini.
+  // Kalau frontend lebih baru dari backend, layar "Update Tersedia" memblokir
+  // semua user dan reload tidak menyelesaikan apa pun.
+  const CLIENT_VERSION = "1.0.13";
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
@@ -417,7 +419,7 @@ const Skeleton = ({ className }) => (
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font
           -bold uppercase tracking-widest">
-              Version {masterData?.appVersion || '1.0.12'} | &copy; {new Date().getFullYear()}
+              Version {masterData?.appVersion || '1.0.13'} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
