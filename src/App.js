@@ -217,6 +217,11 @@ const AnalogClock = ({ time }) => { const s = time.getSeconds(), m = time.getMin
 
     // DASHBOARD SCREEN (CLICKABLE STATS)
 function Dashboard({ user, setUser, setView, handleLogout, masterData }) { const [time, setTime] = useState(new Date()); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
+// Gagal-ambil vs benar-benar-nol dulu tampil identik (semua angka 0 dan
+// periode '-'), jadi request yang gagal terbaca seperti "user belum punya
+// data". Dua state ini memisahkannya.
+const [statsError, setStatsError] = useState('');
+const [statsRetry, setStatsRetry] = useState(0);
 
     // LOGIC FETCH PENGUMUMAN / INFO HRD
 useEffect(() => { (async () => { if(sessionStorage.getItem('announcement_shown')) return; try { const d = await (await fetchApi(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'get_latest_announcement'})})).json(); if(d.result==='success'&&d.data){ setNewsContent(d.data); setShowNews(true); } } catch(e){ console.error(e); } })(); }, []);
@@ -225,7 +230,31 @@ useEffect(() => { (async () => { if(sessionStorage.getItem('announcement_shown')
 useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
     // LOGIC FETCH STATISTIK DASHBOARD
-useEffect(() => { const f = async () => { setLoadingStats(true); try { const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) })).json(); if (d.result === 'success') { const n = {}; Object.keys(d.stats).forEach(k => n[k.toLowerCase()] = d.stats[k]); setStats({ ...d.stats, ...n }); } } catch (e) { console.error("Gagal"); } finally { setLoadingStats(false); } }; if (user) f(); }, [user]);
+useEffect(() => {
+  const f = async () => {
+    setLoadingStats(true);
+    setStatsError('');
+    try {
+      const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) })).json();
+      if (d.result === 'success') {
+        const n = {};
+        Object.keys(d.stats).forEach(k => n[k.toLowerCase()] = d.stats[k]);
+        setStats({ ...d.stats, ...n });
+      } else {
+        // Dulu cabang ini tidak ada: pesan error dari fetchApi
+        // (RESPONS_BUKAN_JSON, FORBIDDEN, dsb) dibuang, dan kartu
+        // Statistik tetap menampilkan nol seolah-olah itu datanya.
+        setStatsError(d.message || 'Server tidak mengirim data statistik.');
+      }
+    } catch (e) {
+      console.error('Gagal load stats:', e);
+      setStatsError('Tidak bisa menghubungi server. Periksa koneksi lalu coba lagi.');
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+  if (user) f();
+}, [user, statsRetry]);
 
     // FUNGSI KLIK STATISTIK (NAVIGASI FILTER)
 const handleStatClick = (c) => { localStorage.setItem('dbAbsenFilter', c); setView('db_absen'); };
@@ -391,11 +420,31 @@ const Skeleton = ({ className }) => (
                 {loadingStats && <Loader2 className="w-3 h-3 text-slate-400 animate-spin"/>}
             </div>
             <span className="text-[11px] text-slate-400 font-medium">
-                {loadingStats ? "Menyinkronkan…" : stats.periode_db}
+                {loadingStats ? "Menyinkronkan…" : (statsError ? <span className="text-red-500 font-semibold">gagal dimuat</span> : stats.periode_db)}
             </span>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+        {/* Gagal ambil statistik — angka nol di bawah BUKAN data asli. */}
+        {!loadingStats && statsError && (
+            <div className="mb-2.5 bg-red-50 border border-red-200 rounded-xl p-3">
+                <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                        <p className="text-[11px] font-bold text-red-700">Statistik gagal dimuat</p>
+                        <p className="text-[10px] text-red-600 leading-relaxed mt-0.5">{statsError}</p>
+                        <p className="text-[10px] text-red-500 italic mt-0.5">Angka 0 di bawah bukan data Anda — server belum sempat mengirimnya.</p>
+                        <button
+                            onClick={() => setStatsRetry(r => r + 1)}
+                            className="mt-2 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition active:scale-95"
+                        >
+                            <RefreshCcw className="w-3 h-3" /> Coba Lagi
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        <div className={`bg-white rounded-2xl border overflow-hidden ${statsError && !loadingStats ? 'border-red-200 opacity-60' : 'border-slate-200/70'}`}>
 
             {/* BARIS UTAMA — dua angka yang paling sering dilihat */}
             <div className="grid grid-cols-2 divide-x divide-slate-100">

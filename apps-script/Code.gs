@@ -61,6 +61,32 @@ const APP_VERSION = "1.0.13"; // UBAH ANGKA INI SETIAP KALI ANDA UPDATE SCRIPT/D
 //          baru yang mengirimkan token.
 
 // ==========================================
+// 0. PEMBACA SHEET HEMAT (Agu 2026)
+// ==========================================
+//
+// MASALAH TERUKUR: `getDataRange().getValues()` menarik SELURUH kolom
+// sampai kolom terakhir yang pernah dipakai. Sheet `dbabsen` punya 49
+// kolom, padahal handleGetStats hanya butuh 4 kolom pertama belasan.
+// Dengan 6.720 baris data, itu 6.720 x 49 = ~330.000 sel per pemanggilan
+// — dan get_stats dipanggil SETIAP kali dashboard dibuka.
+//
+// bacaSheet() membaca hanya sebanyak baris terisi x kolom yang benar-benar
+// dipakai handler-nya. Hasilnya identik, biayanya jauh lebih kecil.
+//
+// PENTING saat memakai: `jmlKolom` harus >= indeks kolom tertinggi yang
+// dibaca handler + 1. Kalau nanti handler membaca kolom baru yang lebih
+// jauh ke kanan, angka ini WAJIB ikut dinaikkan — kalau lupa, nilainya
+// jadi undefined tanpa error.
+function bacaSheet(sheet, jmlKolom) {
+  if (!sheet) return [];
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return [];
+  const maxKolom = sheet.getMaxColumns();
+  const kolom = jmlKolom ? Math.min(jmlKolom, maxKolom) : Math.max(sheet.getLastColumn(), 1);
+  return sheet.getRange(1, 1, lastRow, kolom).getValues();
+}
+
+// ==========================================
 // 1. HANDLING REQUEST (GET & POST)
 // ==========================================
 
@@ -652,7 +678,8 @@ function handleGetRemarks(data) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  const rows = sheet.getDataRange().getValues();
+  // Kolom terjauh yang dibaca: index 11 (Tanggal Proses) -> 12 kolom.
+  const rows = bacaSheet(sheet, 12);
   const list = [];
   const userRole = data.role ? String(data.role).toLowerCase() : '';
   const userId = String(data.userId);
@@ -769,12 +796,14 @@ function handleGetDbAbsen(data) {
       } catch (e) { lastUpdateStr = null; }
   }
 
-  const rows = sheet.getDataRange().getValues();
-  
+  // Kolom terjauh yang dibaca di bawah: index 18 (week) -> 19 kolom,
+  // bukan 49. Sisanya tidak pernah dipakai.
+  const rows = bacaSheet(sheet, 19);
+
   // --- CARI USER ---
   const sheetUser = SS.getSheetByName(SHEET_USERS); // [cite: 163]
-  const rowsUser = sheetUser.getDataRange().getValues();
-  let userNik = data.noPayroll; 
+  const rowsUser = bacaSheet(sheetUser, 8); // butuh index 0 dan 7 saja
+  let userNik = data.noPayroll;
 
   if (!userNik) {
     const foundUser = rowsUser.slice(1).find(r => String(r[0]) === String(data.userId));
@@ -1054,12 +1083,16 @@ function handleGetUserListSimple(data) {
 // HANDLE GET STATS (UPDATED: Cuti dari Master-Cuti)
 // ==========================================
 function handleGetStats(data) { 
+    // Kolom yang benar-benar dipakai di bawah (lihat bacaSheet di bagian atas):
+    //   Absensi : index 2 (User ID), 4 (Tipe), 12 (Status)        -> 13 kolom
+    //   dbabsen : index 2 (NIK), 4 (Tanggal), 10 (Telat), 14 (Symbol) -> 15 kolom
+    // Dulu keduanya dibaca penuh (46 dan 49 kolom) tiap dashboard dibuka.
     const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
-    const rowsAbsensi = sheetAbsensi.getDataRange().getValues();
-    
+    const rowsAbsensi = bacaSheet(sheetAbsensi, 13);
+
     // Ambil Data Mesin
     const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
-    const rowsDb = sheetDb ? sheetDb.getDataRange().getValues() : [];
+    const rowsDb = bacaSheet(sheetDb, 15);
 
     // [UPDATE] Ambil Data MASTER-CUTI — DARI CACHE (lihat Cache.gs).
     // Dulu membaca sheet MASTER-CUTI PENUH di setiap pemanggilan get_stats.
@@ -1107,7 +1140,8 @@ function handleGetStats(data) {
     // 2. CARI NIK USER & AMBIL DATA CUTI DARI MASTER
     let userNik = '';
     const sheetUser = SS.getSheetByName(SHEET_USERS);
-    const rowsUser = sheetUser.getDataRange().getValues();
+    // Butuh index 0 (ID) dan 7 (No Payroll) -> 8 kolom, bukan 18.
+    const rowsUser = bacaSheet(sheetUser, 8);
     const foundUser = rowsUser.slice(1).find(r => String(r[0]) === targetId);
     
     if (foundUser) {
@@ -1199,7 +1233,8 @@ function handleGetStats(data) {
     // 5. Remarks Counter
     const sheetRemarks = SS.getSheetByName(SHEET_REMARKS);
     if(sheetRemarks) {
-        const rRows = sheetRemarks.getDataRange().getValues();
+        // Butuh index 2 (User ID) dan 9 (Status) -> 10 kolom.
+        const rRows = bacaSheet(sheetRemarks, 10);
         const userRole = data.role ? String(data.role).toLowerCase() : '';
         for (let k = 1; k < rRows.length; k++) {
              const rStatus = rRows[k][9];

@@ -406,6 +406,22 @@ function _importCommit(tmp, mode) {
     db.getRange(2, 1, final.length, DBABSEN_TOTAL_COLS).setValues(final);
   }
 
+  // --- PANGKAS BARIS MENGANGGUR (Agu 2026) ---
+  // clearContent() di atas menghapus ISI, bukan barisnya, dan
+  // insertRowsAfter() hanya bisa menambah. Tanpa pemangkasan ini sheet
+  // hanya bisa memanjang: pengukuran 12 Agu 2026 menemukan dbabsen punya
+  // 66.946 baris untuk 6.720 baris data — 60.226 baris kosong yang tetap
+  // ikut terformat dan memperlambat setiap operasi pada sheet.
+  //
+  // Disisakan 200 baris kosong sebagai ruang gerak agar import berikutnya
+  // tidak selalu perlu insertRowsAfter().
+  const SISA_BUFFER = 200;
+  const barisTerpakai = final.length + 1;             // + header
+  const batasSimpan = barisTerpakai + SISA_BUFFER;
+  if (db.getMaxRows() > batasSimpan) {
+    db.deleteRows(batasSimpan + 1, db.getMaxRows() - batasSimpan);
+  }
+
   const sekarang = new Date();
   db.getRange('T1').setValue(sekarang);
   SpreadsheetApp.flush();
