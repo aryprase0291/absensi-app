@@ -139,8 +139,25 @@ export default function AppAbsensi() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
-    //----LOGIKA CEK UPDATE (DIPERBAIKI: BLOCKING UI)----
-useEffect(() => { const checkUpdate = async () => { try { const data = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })).json(); if (data.result === 'success' && data.version !== CLIENT_VERSION) { const sudahCoba = new URLSearchParams(window.location.search).get('v'); if (sudahCoba === data.version) { console.warn(`Versi tetap tidak cocok setelah reload (client v${CLIENT_VERSION}, server v${data.version}). Tidak memblokir agar aplikasi tetap bisa dipakai.`); return; } console.log(`Update: v${CLIENT_VERSION}->v${data.version}`); setNewVersion(data.version); setUpdateAvailable(true); } } catch (e) { console.error("Gagal cek versi", e); } }; checkUpdate(); }, []);
+    //----LOGIKA CEK UPDATE----
+    // Request 'check_version' saat mount DIHAPUS. Alasannya terukur:
+    // membuka aplikasi tadinya menembak 4 request Apps Script berurutan,
+    // dan backend sedang saturasi — klien menunggu 45-60 detik padahal
+    // eksekusi server hanya 1-5 detik. Menghapus satu request memotong
+    // 25% beban pada jalur buka-aplikasi.
+    //
+    // Versi server sekarang dibawa di dalam respons 'login' (field version),
+    // jadi fiturnya tetap ada tanpa round trip tambahan.
+const cekVersi = useCallback((versiServer) => {
+  if (!versiServer || versiServer === CLIENT_VERSION) return;
+  const sudahCoba = new URLSearchParams(window.location.search).get('v');
+  if (sudahCoba === versiServer) {
+    console.warn(`Versi tetap tidak cocok setelah reload (client v${CLIENT_VERSION}, server v${versiServer}). Tidak memblokir.`);
+    return;
+  }
+  setNewVersion(versiServer);
+  setUpdateAvailable(true);
+}, [CLIENT_VERSION]);
 
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
 useEffect(() => { 
@@ -175,7 +192,9 @@ const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(
 useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart']; ev.forEach(e => window.addEventListener(e, resetTimer)); return () => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); ev.forEach(e => window.removeEventListener(e, resetTimer)); }; }, [user, resetTimer]);
 
     // FUNGSI HANDLER LOGIN & PENYIMPANAN SESI
-const handleLogin = (userData, rawMasterData) => { 
+const handleLogin = (userData, rawMasterData, versiServer) => { 
+  cekVersi(versiServer);
+  
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift') };
   setMasterData(p); 
   setUser(userData); 
@@ -3750,7 +3769,7 @@ function LoginScreen({ onLogin }) {
       });
       const data = await response.json(); 
       if (data.result === 'success' && data.user) {
-        onLogin(data.user, data.masterData || []);
+        onLogin(data.user, data.masterData || [], data.version);
       } else {
         alert(data.message || 'Login Gagal');
       }
