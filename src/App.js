@@ -7,18 +7,51 @@ import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 
 // ============================================================
-// HELPER API — menyisipkan token login ke setiap request
+// HELPER API — token login + penanganan respons HTML dari Google
 //
-// Backend (Apps Script) kini menolak request tanpa token yang sah.
-// Token disimpan di dalam objek user pada sessionStorage saat login.
+// 1) Menyisipkan token login ke setiap request. Backend (Apps Script)
+//    menolak request tanpa token; token disimpan di dalam objek user
+//    pada sessionStorage saat login.
 //
-// Apps Script tidak bisa mengirim status HTTP 401, jadi kegagalan auth
-// dikenali dari body JSON: { result:'error', code:'AUTH_REQUIRED' }.
+// 2) Apps Script tidak bisa mengirim status HTTP 401, jadi kegagalan auth
+//    dikenali dari body JSON: { result:'error', code:'AUTH_REQUIRED' }.
+//
+// 3) MASALAH TERUKUR: Google kadang membalas halaman HTML interstitial
+//    (berisi window['ppConfig']) alih-alih JSON. Pengukuran 12 Agu 2026:
+//    1 dari 7 request 'ping' membalas HTML, dan latensi 1,1 s s/d 34 s.
+//    Dulu ini muncul ke user sebagai "Gagal koneksi server."
+//
+//    Retry hanya dilakukan untuk action BACA. Untuk action TULIS retry
+//    DILARANG: tulisnya mungkin sudah berhasil di server dan hanya
+//    responsnya yang berupa HTML — mengulang akan membuat data dobel.
+//    Ini diduga akar dari bug "pengajuan ganda" yang sudah dua kali
+//    dikoreksi (commit 017b033 dan f1f8255).
 // ============================================================
-const fetchApi = async (url, opts = {}) => {
+
+// Action yang aman diulang: hanya membaca, tidak mengubah data.
+const ACTION_AMAN_DIULANG = [
+  'ping', 'check_version', 'login', 'get_latest_announcement',
+  'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
+  'get_remarks', 'get_shift_history', 'get_approval_list',
+  'get_user_list_admin', 'get_analysis_data'
+];
+
+const MAKS_PERCOBAAN = 3;
+
+const jedaMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const responsSintetis = (obj) =>
+  new Response(JSON.stringify(obj), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
+
+const fetchApi = async (url, opts = {}, percobaan = 1) => {
   let body = opts.body;
+  let action = '';
   try {
     const o = JSON.parse(body);
+    action = o.action || '';
     const saved = sessionStorage.getItem('app_user');
     if (saved) {
       const u = JSON.parse(saved);
@@ -27,17 +60,59 @@ const fetchApi = async (url, opts = {}) => {
     body = JSON.stringify(o);
   } catch (e) { /* body bukan JSON — biarkan apa adanya */ }
 
-  const res = await fetch(url, { ...opts, body });
-
-  // Intip respons tanpa mengganggu pembacaan oleh pemanggil
+  let res;
   try {
-    const peek = await res.clone().json();
-    if (peek && peek.code === 'AUTH_REQUIRED') {
-      sessionStorage.clear();
-      alert('Sesi Anda sudah berakhir. Silakan login ulang.');
-      window.location.reload();
+    res = await fetch(url, { ...opts, body });
+  } catch (e) {
+    // Kegagalan jaringan murni — aman diulang untuk action baca
+    if (ACTION_AMAN_DIULANG.includes(action) && percobaan < MAKS_PERCOBAAN) {
+      await jedaMs(700 * percobaan);
+      return fetchApi(url, opts, percobaan + 1);
     }
-  } catch (e) { /* bukan JSON — abaikan */ }
+    throw e;
+  }
+
+  // Baca sekali lewat clone, supaya pemanggil tetap bisa memanggil .json()
+  let data = null;
+  let jsonValid = true;
+  try {
+    data = await res.clone().json();
+  } catch (e) {
+    jsonValid = false;
+  }
+
+  if (!jsonValid) {
+    if (ACTION_AMAN_DIULANG.includes(action) && percobaan < MAKS_PERCOBAAN) {
+      console.warn(`Google membalas non-JSON untuk '${action}' (percobaan ${percobaan}). Mengulang...`);
+      await jedaMs(700 * percobaan);
+      return fetchApi(url, opts, percobaan + 1);
+    }
+
+    console.error(`Google membalas non-JSON untuk '${action}' setelah ${percobaan} percobaan.`);
+
+    if (ACTION_AMAN_DIULANG.includes(action)) {
+      return responsSintetis({
+        result: 'error',
+        code: 'RESPONS_BUKAN_JSON',
+        message: 'Server Google sedang tidak stabil dan membalas halaman, bukan data. Mohon coba lagi beberapa saat.'
+      });
+    }
+
+    // Action TULIS: jangan pancing user untuk mengulang begitu saja
+    return responsSintetis({
+      result: 'error',
+      code: 'RESPONS_BUKAN_JSON_TULIS',
+      message: 'Server Google membalas halaman, bukan data, jadi status penyimpanan tidak diketahui. ' +
+               'PERIKSA DULU di menu Riwayat apakah data sudah tersimpan sebelum mengulang, ' +
+               'supaya tidak terjadi pengajuan ganda.'
+    });
+  }
+
+  if (data && data.code === 'AUTH_REQUIRED') {
+    sessionStorage.clear();
+    alert('Sesi Anda sudah berakhir. Silakan login ulang.');
+    window.location.reload();
+  }
 
   return res;
 };
