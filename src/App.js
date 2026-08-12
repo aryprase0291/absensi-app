@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, Briefcase, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, DoorOpen, DoorClosed, CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone } from 'lucide-react';
+import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, Calendar, Settings, History, Trash2, Edit, CreditCard, PieChart, Building, Briefcase, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronUp, Search, MessageSquare, Upload, Check, MessageCircle, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, Lock, RefreshCcw, Menu, UserPlus, ShieldCheck, Database, Megaphone } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 import ImportDbAbsen from './screens/ImportDbAbsen';
@@ -263,8 +263,40 @@ const Skeleton = ({ className }) => (
     <div className={`bg-gray-200 animate-pulse rounded ${className}`}></div>
 );
 
+  // Sel angka pada grid statistik. Nilai 0 sengaja diredupkan supaya
+  // mata langsung tertuju ke angka yang benar-benar ada isinya.
+  const StatCell = ({ label, value, tone = 'neutral', onClick }) => {
+    const n = Number(value) || 0;
+    const warna = n === 0
+        ? 'text-slate-300'
+        : tone === 'alert' ? 'text-rose-600' : 'text-slate-900';
+    return (
+        <button
+            onClick={onClick}
+            className="text-left px-3 py-3 transition-colors hover:bg-slate-50 active:bg-slate-100"
+        >
+            <p className="text-[10.5px] leading-tight text-slate-500 font-medium min-h-[26px]">{label}</p>
+            {loadingStats
+                ? <Skeleton className="h-[19px] w-6 mt-1" />
+                : <p className={`mt-1 text-[19px] leading-none font-semibold tabular-nums tracking-tight ${warna}`}>{n}</p>}
+        </button>
+    );
+  };
+
   // --- RENDER UI ---
-  return ( 
+  const sHadir  = Number(stats.total_hadir) || 0;
+  const sTelatX = Number(stats.total_telat_freq) || 0;
+  const sTelatM = Number(stats.total_telat_menit) || 0;
+  // Basis persentase: seluruh hari yang punya catatan, bukan kalender penuh.
+  const sTercatat = sHadir
+        + (Number(stats.total_ijin) || 0)
+        + (Number(stats.total_cuti) || 0)
+        + (Number(stats.total_cuti_bersama) || 0)
+        + (Number(stats.total_sakit) || 0)
+        + (Number(stats.total_alpa) || 0);
+  const sPctHadir = sTercatat > 0 ? Math.round((sHadir / sTercatat) * 100) : 0;
+
+  return (
     <div className="p-4 pb-24 bg-gray-50 min-h-screen font-sans flex flex-col"> 
       
       {/* --- KARTU PROFIL HEADER --- */}
@@ -347,88 +379,88 @@ const Skeleton = ({ className }) => (
       </div> 
 
       {/* --- STATISTIK (CLICKABLE) --- */}
-      <div className="flex justify-between items-end mb-3 px-2">
-          <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
-             {loadingStats ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin"/> : <Activity className="w-4 h-4 text-blue-500"/>}
-             Statistik
-          </h3>
-          <span className="text-[9px] bg-white border border-gray-200 px-3 py-1 rounded-full text-slate-500 font-medium shadow-sm">
-             {loadingStats ? "Sinkronisasi..." : stats.periode_db}
-          </span>
-      </div>
-      
-      {/* GRID STATISTIK UNIFORM (3 KOLOM) - CLICKABLE */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-          
-          {/* 1. [KOREKSI] TOMBOL HADIR: Gunakan filterCode 'HADIR_ALL' */}
-            <div onClick={() => handleStatClick('HADIR_ALL')} className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group cursor-pointer hover:shadow-md transition-all active:scale-95">
-                <div className="bg-emerald-50 text-emerald-600 p-2 rounded-xl mb-1"><CheckCircle className="w-4 h-4"/></div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Hadir</span>
-                {/* Tampilkan stats.total_hadir */}
-                {loadingStats ? <div className="h-5 w-8 bg-gray-200 animate-pulse rounded mt-1"></div> : <p className="text-lg font-black text-slate-800">{stats.total_hadir || 0}</p>}
+      <div className="mb-5">
+
+        <div className="flex items-baseline justify-between mb-2.5 px-1">
+            <div className="flex items-center gap-2">
+                <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">Statistik</h3>
+                {loadingStats && <Loader2 className="w-3 h-3 text-slate-400 animate-spin"/>}
+            </div>
+            <span className="text-[11px] text-slate-400 font-medium">
+                {loadingStats ? "Menyinkronkan…" : stats.periode_db}
+            </span>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+
+            {/* BARIS UTAMA — dua angka yang paling sering dilihat */}
+            <div className="grid grid-cols-2 divide-x divide-slate-100">
+
+                {/* HADIR -> Filter 'HADIR_ALL' */}
+                <button onClick={() => handleStatClick('HADIR_ALL')} className="text-left p-4 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span className="text-[11px] font-medium text-slate-500">Hadir</span>
+                    </div>
+                    {loadingStats ? <Skeleton className="h-8 w-14 mt-2.5"/> : (
+                        <>
+                            <p className="mt-2 flex items-baseline gap-1">
+                                <span className="text-[32px] leading-none font-semibold text-slate-900 tabular-nums tracking-tighter">{sHadir}</span>
+                                <span className="text-[11px] font-medium text-slate-400">hari</span>
+                            </p>
+                            <div className="mt-3 h-[3px] rounded-full bg-slate-100 overflow-hidden">
+                                <div className="h-full rounded-full bg-emerald-500 transition-all duration-700" style={{ width: `${sPctHadir}%` }}></div>
+                            </div>
+                            <p className="mt-1.5 text-[10px] text-slate-400 tabular-nums">{sPctHadir}% dari {sTercatat} hari tercatat</p>
+                        </>
+                    )}
+                </button>
+
+                {/* TELAT -> Filter 'T' */}
+                <button onClick={() => handleStatClick('T')} className="text-left p-4 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span className="text-[11px] font-medium text-slate-500">Telat</span>
+                    </div>
+                    {loadingStats ? <Skeleton className="h-8 w-14 mt-2.5"/> : (
+                        <>
+                            <p className="mt-2 flex items-baseline gap-1">
+                                <span className={`text-[32px] leading-none font-semibold tabular-nums tracking-tighter ${sTelatX > 0 ? 'text-slate-900' : 'text-slate-300'}`}>{sTelatX}</span>
+                                <span className="text-[11px] font-medium text-slate-400">kali</span>
+                            </p>
+                            <p className="mt-3 flex items-baseline gap-1.5">
+                                <span className="text-[13px] font-semibold text-amber-600 tabular-nums leading-none">{sTelatM}</span>
+                                <span className="text-[10px] text-slate-400">menit total</span>
+                            </p>
+                            <p className="mt-1 text-[10px] text-slate-400 tabular-nums">
+                                {sTelatX > 0 ? `rata-rata ${Math.round(sTelatM / sTelatX)} menit` : 'selalu tepat waktu'}
+                            </p>
+                        </>
+                    )}
+                </button>
             </div>
 
-          {/* 2. TERLAMBAT -> Filter 'T' */}
-          <div onClick={() => handleStatClick('T')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center relative overflow-hidden group hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-              <div className="absolute top-0 right-0 p-2 opacity-5"><Clock className="w-12 h-12 text-orange-600"/></div>
-              <div className="bg-orange-50 text-orange-600 p-2 rounded-xl mb-1"><Clock className="w-4 h-4"/></div>
-               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Telat</span>
-              {loadingStats ? <Skeleton className="h-5 w-8 mt-1" /> : (
-                  <div className="flex flex-col items-center">
-                    <p className="text-lg font-black text-slate-800 leading-none">{stats.total_telat_freq || 0}x</p>
-                    <span className="text-[8px] font-bold text-orange-500">{stats.total_telat_menit || 0}m</span>
-                  </div>
-               )}
-          </div>
+            {/* KELOMPOK 1 — ketidakhadiran yang sudah berizin */}
+            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-1.5">
+                <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-400">Izin &amp; cuti</span>
+            </div>
+            <div className="grid grid-cols-4 divide-x divide-slate-100 border-t border-slate-100">
+                <StatCell label="Ijin"          value={stats.total_ijin}         onClick={() => handleStatClick('I')} />
+                <StatCell label="Cuti diambil"  value={stats.total_cuti}         onClick={() => handleStatClick('C')} />
+                <StatCell label="Cuti bersama"  value={stats.total_cuti_bersama} onClick={() => handleStatClick('CB')} />
+                <StatCell label="Sakit"         value={stats.total_sakit}        onClick={() => handleStatClick('S')} />
+            </div>
 
-          {/* 3. IJIN -> Filter 'I' */}
-          <div onClick={() => handleStatClick('I')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-              <div className="bg-blue-50 text-blue-600 p-2 rounded-xl mb-1"><FileText className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Ijin</span>
-               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_ijin || 0}</p>}
-          </div>
-          
-          {/* 4. CUTI -> Filter 'C' */}
-          <div onClick={() => handleStatClick('C')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-              <div className="bg-pink-50 text-pink-600 p-2 rounded-xl mb-1"><Calendar className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Cuti Diambil</span>
-               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_cuti || 0}</p>}
-          </div>
-
-          {/* 5. CUTI BERSAMA -> Filter 'CB' */}
-          <div onClick={() => handleStatClick('CB')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-              <div className="bg-purple-50 text-purple-600 p-2 rounded-xl mb-1"><CalendarDays className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight leading-none">Cuti Bersama</span>
-              {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_cuti_bersama || 0}</p>}
-          </div>
-
-          {/* 6. SAKIT -> Filter 'S' */}
-          <div onClick={() => handleStatClick('S')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-              <div className="bg-orange-50 text-orange-600 p-2 rounded-xl mb-1"><AlertTriangle className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Sakit</span>
-              {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_sakit || 0}</p>}
-          </div>
-
-          {/* 7. ALPA -> Filter 'A' */}
-          <div onClick={() => handleStatClick('A')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-              <div className="bg-red-50 text-red-600 p-2 rounded-xl mb-1"><X className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">Alpa</span>
-              {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700">{stats.total_alpa || 0}</p>}
-          </div>
-
-          {/* 8. NO CHECK IN -> Filter 'Si' */}
-          <div onClick={() => handleStatClick('Si')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-              <div className="bg-yellow-50 text-yellow-600 p-2 rounded-xl mb-1"><DoorOpen className="w-4 h-4"/></div>
-              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight leading-none">Tdk Absen-IN</span>
-               {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_no_scan_in || 0}</p>}
-          </div>
-
-           {/* 9. NO CHECK OUT -> Filter 'So' */}
-           <div onClick={() => handleStatClick('So')} className="cursor-pointer bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center justify-center text-center hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all">
-                <div className="bg-rose-50 text-rose-600 p-2 rounded-xl mb-1"><DoorClosed className="w-4 h-4"/></div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight leading-none">Tdk Absen-OUT</span>
-                 {loadingStats ? <Skeleton className="h-5 w-6 mt-1" /> : <p className="text-lg font-black text-slate-700 mt-1">{stats.total_no_scan_out || 0}</p>}
-           </div>
+            {/* KELOMPOK 2 — yang perlu ditindaklanjuti */}
+            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-1.5">
+                <span className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-slate-400">Perlu perhatian</span>
+            </div>
+            <div className="grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100">
+                <StatCell label="Alpa"            value={stats.total_alpa}         tone="alert" onClick={() => handleStatClick('A')} />
+                <StatCell label="Tidak absen-in"  value={stats.total_no_scan_in}   tone="alert" onClick={() => handleStatClick('Si')} />
+                <StatCell label="Tidak absen-out" value={stats.total_no_scan_out}  tone="alert" onClick={() => handleStatClick('So')} />
+            </div>
+        </div>
       </div>
 
       {/* --- MENU SHORTCUT --- */}
