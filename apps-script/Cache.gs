@@ -11,9 +11,11 @@
 //
 // CATATAN PENTING soal batas CacheService:
 //   - maksimal 100 KB per kunci, 10 MB total
-//   - MASTER-CUTI (~300 baris x 25 kolom) berisiko melewati 100 KB kalau
-//     disimpan apa adanya. Karena itu yang disimpan hanya PETA RINGKAS
-//     noPayroll -> {terpakai, bersama, tersedia} (~10 KB), bukan sheetnya.
+//   - MASTER-CUTI berisiko melewati 100 KB kalau disimpan apa adanya.
+//     Karena itu yang disimpan hanya PETA RINGKAS
+//     noPayroll -> {terpakai, bersama, tersedia}, bukan sheetnya.
+//     Diukur 13 Agu 2026 dari data asli: 325 NIK = 42.436 byte. Aman,
+//     tapi jangan sekali-kali diubah jadi menyimpan barisnya utuh.
 //   - JSON mengubah Date menjadi string. Aman di sini karena MasterData
 //     berisi teks dan peta cuti berisi angka.
 //   - put() yang gagal TIDAK boleh menggagalkan request: dibungkus try.
@@ -72,14 +74,31 @@ function getPetaCutiCached() {
   const peta = {};
   if (!sh) return peta;
 
-  const rows = sh.getDataRange().getValues();
-  for (let i = 0; i < rows.length; i++) {
-    const nik = String(rows[i][1] || '').trim();
+  // --- KENAPA TIDAK getDataRange() (Agu 2026) ---
+  // Diukur dari spreadsheet produksi: MASTER-CUTI hanya berisi 325 baris
+  // data, tapi getLastRow() melaporkan 7.511 — karena kolom U diisi
+  // formula `=B2` yang ter-drag sampai jauh ke bawah (7.510 sel).
+  // getDataRange() berarti 7.511 x 27 = 202.797 sel, dan membaca kolom U
+  // memaksa 7.510 formula itu dihitung ulang. Padahal yang dipakai di
+  // bawah cuma kolom B, W, X, Y.
+  //
+  // Dua getRange terpisah membaca 4 kolom saja dan melompati kolom U
+  // sepenuhnya. Kalau baris kosong itu nanti dibersihkan
+  // (lihat Perawatan.gs -> MASTERCUTI_PERIKSA/MASTERCUTI_BERSIHKAN),
+  // kode ini tetap benar — hanya jadi lebih cepat lagi.
+  const baris = _lastRowKolom(sh, 2); // baris terakhir yang punya No Payroll
+  if (baris < 1) return peta;
+
+  const kolNik = sh.getRange(1, 2, baris, 1).getValues();       // B
+  const kolCuti = sh.getRange(1, 23, baris, 3).getValues();     // W, X, Y
+
+  for (let i = 0; i < baris; i++) {
+    const nik = String(kolNik[i][0] || '').trim();
     if (!nik) continue;
     peta[nik] = {
-      terpakai: rows[i][22] || 0,
-      bersama:  rows[i][23] || 0,
-      tersedia: rows[i][24] || 0
+      terpakai: kolCuti[i][0] || 0,
+      bersama:  kolCuti[i][1] || 0,
+      tersedia: kolCuti[i][2] || 0
     };
   }
 
@@ -89,6 +108,29 @@ function getPetaCutiCached() {
     console.warn('Peta cuti gagal di-cache: ' + e.message);
   }
   return peta;
+}
+
+/**
+ * Baris terakhir yang benar-benar berisi data pada satu kolom.
+ *
+ * sheet.getLastRow() mengembalikan baris terakhir yang terisi di SELURUH
+ * sheet — termasuk kolom lain yang penuh formula sampai jauh ke bawah.
+ * getNextDataCell(UP) menelusuri dari bawah ke atas pada satu kolom saja
+ * dan tidak membaca isi selnya, jadi murah.
+ *
+ * @param {Sheet} sh
+ * @param {number} kolom  nomor kolom 1-based (B = 2)
+ * @return {number} nomor baris terakhir berisi data, 0 kalau kosong
+ * @private
+ */
+function _lastRowKolom(sh, kolom) {
+  const maxRows = sh.getMaxRows();
+  if (maxRows < 1) return 0;
+  const sel = sh.getRange(maxRows, kolom).getNextDataCell(SpreadsheetApp.Direction.UP);
+  const baris = sel.getRow();
+  // Kalau kolomnya benar-benar kosong, getNextDataCell mendarat di baris 1.
+  if (baris === 1 && sel.getValue() === '') return 0;
+  return baris;
 }
 
 /**

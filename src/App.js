@@ -140,7 +140,7 @@ export default function AppAbsensi() {
   // Aturan urutannya: deploy Apps Script DULU, baru naikkan angka ini.
   // Kalau frontend lebih baru dari backend, layar "Update Tersedia" memblokir
   // semua user dan reload tidak menyelesaikan apa pun.
-  const CLIENT_VERSION = "1.0.13";
+  const CLIENT_VERSION = "1.0.14";
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
@@ -185,8 +185,13 @@ const handleLogout = useCallback(() => {
   setView('login'); 
   // UBAH: localStorage menjadi sessionStorage
   sessionStorage.removeItem('app_user'); 
-  sessionStorage.removeItem('app_master_data'); 
-  sessionStorage.removeItem('announcement_shown'); 
+  sessionStorage.removeItem('app_master_data');
+  sessionStorage.removeItem('announcement_shown');
+  // Statistik milik user sebelumnya — kalau tidak dibuang, user berikutnya
+  // yang login di HP yang sama akan melihat angka orang lain sekejap.
+  sessionStorage.removeItem('app_stats_awal');
+  sessionStorage.removeItem('app_stats_terakhir');
+  sessionStorage.removeItem('app_pengumuman_awal');
   if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); 
 }, []);
 
@@ -197,16 +202,44 @@ const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(
 useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart']; ev.forEach(e => window.addEventListener(e, resetTimer)); return () => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); ev.forEach(e => window.removeEventListener(e, resetTimer)); }; }, [user, resetTimer]);
 
     // FUNGSI HANDLER LOGIN & PENYIMPANAN SESI
-const handleLogin = (userData, rawMasterData, versiServer) => { 
+const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumumanAwal, pengumumanDisertakan) => {
   cekVersi(versiServer);
-  
+
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift') };
-  setMasterData(p); 
-  setUser(userData); 
-  setView('dashboard'); 
+  setMasterData(p);
+  setUser(userData);
+  setView('dashboard');
   // UBAH: localStorage menjadi sessionStorage
-  sessionStorage.setItem('app_user', JSON.stringify(userData)); 
-  sessionStorage.setItem('app_master_data', JSON.stringify(p)); 
+  sessionStorage.setItem('app_user', JSON.stringify(userData));
+  sessionStorage.setItem('app_master_data', JSON.stringify(p));
+
+  // STATISTIK IKUT DALAM RESPONS LOGIN (Agu 2026).
+  // Dititipkan lewat sessionStorage, bukan props, supaya Dashboard bisa
+  // memakainya tanpa mengubah rantai props yang dilewati banyak layar.
+  // Dibaca SEKALI lalu dihapus oleh Dashboard — kalau halaman di-reload
+  // dan sesi dipulihkan, angkanya sudah usang dan harus diambil ulang.
+  //
+  // Backend boleh mengirim stats: null (perhitungannya dibungkus try di
+  // sana). Kalau null, Dashboard jatuh ke perilaku lama: tembak get_stats.
+  if (statsAwal) {
+    try {
+      sessionStorage.setItem('app_stats_awal', JSON.stringify(statsAwal));
+    } catch (e) { /* kuota penuh: bukan kegagalan fatal, cuma tidak hemat */ }
+  }
+
+  // PENGUMUMAN juga ikut di respons login. Dititipkan HANYA kalau backend
+  // menyatakan pembacaannya berhasil (pengumumanDisertakan). Kalau tidak,
+  // kunci ini tidak ditulis sama sekali dan Dashboard mengambilnya sendiri
+  // seperti dulu — supaya pengumuman yang gagal dibaca tidak hilang diam-diam.
+  //
+  // isi null yang SAH (memang tidak ada pengumuman aktif) tetap perlu
+  // disimpan, karena itulah yang memberi tahu Dashboard "sudah dicek, kosong".
+  // Karena itu yang disimpan objek pembungkus, bukan nilainya langsung.
+  if (pengumumanDisertakan) {
+    try {
+      sessionStorage.setItem('app_pengumuman_awal', JSON.stringify({ isi: pengumumanAwal || null }));
+    } catch (e) { /* abaikan */ }
+  }
 };
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
@@ -223,23 +256,82 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData }) { const
 const [statsError, setStatsError] = useState('');
 const [statsRetry, setStatsRetry] = useState(0);
 
+// STATISTIK YANG SUDAH IKUT DI RESPONS LOGIN (Agu 2026).
+// Dibaca sekali saat komponen pertama dibuat, lalu dihapus dari
+// sessionStorage supaya reload halaman tidak memakai angka basi.
+// useState dengan fungsi inisialisasi = dijalankan sekali, bukan tiap render.
+const [statsAwal] = useState(() => {
+  try {
+    const raw = sessionStorage.getItem('app_stats_awal');
+    if (!raw) return null;
+    sessionStorage.removeItem('app_stats_awal');
+    return JSON.parse(raw);
+  } catch (e) { return null; }
+});
+
+// Menandai bahwa pengambilan get_stats PERTAMA boleh dilewati.
+// Dipakai sekali lalu dimatikan, sehingga tombol "coba lagi" (statsRetry)
+// dan pergantian user tetap menembak server seperti biasa.
+const lewatiFetchStatsAwal = useRef(!!statsAwal);
+
     // LOGIC FETCH PENGUMUMAN / INFO HRD
-useEffect(() => { (async () => { if(sessionStorage.getItem('announcement_shown')) return; try { const d = await (await fetchApi(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'get_latest_announcement'})})).json(); if(d.result==='success'&&d.data){ setNewsContent(d.data); setShowNews(true); } } catch(e){ console.error(e); } })(); }, []);
+useEffect(() => { (async () => {
+  if (sessionStorage.getItem('announcement_shown')) return;
+
+  // JALUR CEPAT: pengumuman sudah ikut di respons login (lihat handleLogin).
+  // Dipakai sekali lalu dihapus, supaya reload halaman mengambil yang terbaru.
+  //
+  // Yang disimpan objek pembungkus {isi: ...}, bukan nilainya langsung —
+  // sehingga "sudah dicek dan memang kosong" bisa dibedakan dari
+  // "belum pernah dicek". Kalau tidak dibedakan, setiap user yang tidak
+  // punya pengumuman aktif akan tetap menembak request ini sia-sia.
+  try {
+    const raw = sessionStorage.getItem('app_pengumuman_awal');
+    if (raw) {
+      sessionStorage.removeItem('app_pengumuman_awal');
+      const bungkus = JSON.parse(raw);
+      if (bungkus && bungkus.isi) { setNewsContent(bungkus.isi); setShowNews(true); }
+      return;
+    }
+  } catch (e) { /* cache rusak: lanjut ambil dari server */ }
+
+  try { const d = await (await fetchApi(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'get_latest_announcement'})})).json(); if(d.result==='success'&&d.data){ setNewsContent(d.data); setShowNews(true); } } catch(e){ console.error(e); }
+})(); }, []);
   
     // LOGIC TIMER / DETAK JAM REAL-TIME
 useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
     // LOGIC FETCH STATISTIK DASHBOARD
 useEffect(() => {
+  // Menyalin apa adanya + versi huruf kecil semua kunci, karena beberapa
+  // kartu dashboard membaca nama kunci dengan kapitalisasi berbeda.
+  const terapkanStats = (s) => {
+    const n = {};
+    Object.keys(s).forEach(k => n[k.toLowerCase()] = s[k]);
+    setStats({ ...s, ...n });
+    // Disimpan supaya layar DB Absen tidak perlu menembak get_stats lagi
+    // hanya untuk mengambil ijin_count.
+    try { sessionStorage.setItem('app_stats_terakhir', JSON.stringify(s)); } catch (e) { /* abaikan */ }
+  };
+
+  // JALUR CEPAT: angka sudah ikut di respons login, tidak perlu request.
+  // Inilah yang menghilangkan satu round trip penuh (POST + 302 redirect
+  // + boot container) dari jalur membuka aplikasi.
+  if (lewatiFetchStatsAwal.current) {
+    lewatiFetchStatsAwal.current = false;
+    terapkanStats(statsAwal);
+    setLoadingStats(false);
+    setStatsError('');
+    return;
+  }
+
   const f = async () => {
     setLoadingStats(true);
     setStatsError('');
     try {
       const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) })).json();
       if (d.result === 'success') {
-        const n = {};
-        Object.keys(d.stats).forEach(k => n[k.toLowerCase()] = d.stats[k]);
-        setStats({ ...d.stats, ...n });
+        terapkanStats(d.stats);
       } else {
         // Dulu cabang ini tidak ada: pesan error dari fetchApi
         // (RESPONS_BUKAN_JSON, FORBIDDEN, dsb) dibuang, dan kartu
@@ -254,6 +346,10 @@ useEffect(() => {
     }
   };
   if (user) f();
+  // statsAwal sengaja tidak masuk daftar: nilainya dibekukan sekali oleh
+  // useState dan tidak pernah berubah, jadi menambahkannya tidak mengubah
+  // kapan efek ini berjalan.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [user, statsRetry]);
 
     // FUNGSI KLIK STATISTIK (NAVIGASI FILTER)
@@ -4103,7 +4199,17 @@ function LoginScreen({ onLogin }) {
       });
       const data = await response.json(); 
       if (data.result === 'success' && data.user) {
-        onLogin(data.user, data.masterData || [], data.version);
+        // data.stats / data.pengumuman boleh tidak ada (backend lama) atau
+        // null (gagal dihitung di server). Dashboard menanganinya dengan
+        // mengambil sendiri, persis seperti perilaku sebelum perubahan ini.
+        onLogin(
+          data.user,
+          data.masterData || [],
+          data.version,
+          data.stats,
+          data.pengumuman,
+          data.pengumumanDisertakan === true
+        );
       } else {
         alert(data.message || 'Login Gagal');
       }
@@ -4346,10 +4452,30 @@ function DbAbsenScreen({ user, setView }) {
   };
 
   useEffect(() => {
+    // Layar ini hanya butuh SATU angka: ijin_count. Dulu ia menembak
+    // get_stats sendiri untuk mendapatkannya — satu request penuh (POST +
+    // 302 redirect + boot container Apps Script) yang mengantre di belakang
+    // get_db_absen di bawah, padahal Dashboard baru saja memegang angka itu.
+    //
+    // Sekarang dipakai ulang dari sessionStorage yang diisi Dashboard.
+    // Request hanya ditembak kalau nilainya benar-benar belum ada
+    // (misal user membuka layar ini tanpa lewat Dashboard).
+    const dariCache = (() => {
+      try {
+        const raw = sessionStorage.getItem('app_stats_terakhir');
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    })();
+
+    if (dariCache) {
+      setIjinCount(dariCache.ijin_count || 0);
+      return;
+    }
+
     const fetchStats = async () => {
         try {
-            const res = await fetchApi(SCRIPT_URL, { 
-                method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) 
+            const res = await fetchApi(SCRIPT_URL, {
+                method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id })
             });
             const data = await res.json();
             if (data.result === 'success') setIjinCount(data.stats.ijin_count || 0);

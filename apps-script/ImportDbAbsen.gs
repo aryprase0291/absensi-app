@@ -426,6 +426,25 @@ function _importCommit(tmp, mode) {
   db.getRange('T1').setValue(sekarang);
   SpreadsheetApp.flush();
 
+  // --- INVALIDASI INDEKS STATISTIK (Agu 2026) ---
+  // Statistik dashboard tidak lagi menyisir dbabsen per request; ia
+  // memakai indeks agregat per NIK yang di-cache (StatsIndex.gs).
+  // Import adalah SATU-SATUNYA momen isi dbabsen berubah, jadi di sinilah
+  // indeks lama harus dibuang. Kalau baris ini hilang, dashboard akan
+  // menampilkan angka periode SEBELUMNYA sampai TTL 6 jam habis.
+  //
+  // Langsung disusun ulang di sini (bukan menunggu user pertama) supaya
+  // biaya scan ditanggung proses import, bukan orang yang login duluan.
+  // Dibungkus try: gagal menyusun indeks tidak boleh menggagalkan import
+  // yang datanya sudah tertulis — paling buruk request berikutnya yang
+  // menyusunnya.
+  try {
+    bersihkanIndeksDbAbsen();
+    IDX_HANGATKAN();
+  } catch (e) {
+    console.warn('Indeks dbabsen gagal disegarkan setelah import: ' + e.message);
+  }
+
   // Hash disamakan supaya checkFormulaUpdates() (kalau triggernya masih
   // terpasang) tidak langsung menimpa T1 pada eksekusi berikutnya.
   try {

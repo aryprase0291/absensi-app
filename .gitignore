@@ -26,3 +26,6 @@ yarn-error.log*
 # (BOT_TOKEN / TELEGRAM_TOKEN_REMARK). Repo ini Public — jangan di-commit.
 # Pindahkan token ke PropertiesService lalu baru boleh dilacak git.
 apps-script/SendTelegram*.gs
+
+# Folder buangan (build hasil verifikasi, dsb). Tidak untuk di-commit.
+_to_delete/

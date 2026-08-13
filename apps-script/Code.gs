@@ -55,7 +55,14 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.13"; // UBAH ANGKA INI SETIAP KALI ANDA UPDATE SCRIPT/DEPLOY BARU
+const APP_VERSION = "1.0.14"; // UBAH ANGKA INI SETIAP KALI ANDA UPDATE SCRIPT/DEPLOY BARU
+// 1.0.14 — jalur buka-aplikasi dipangkas dari 3 request jadi 1: stats dan
+//          pengumuman ikut di respons login, dan statistik mesin diambil
+//          dari indeks dbabsen yang di-cache (StatsIndex.gs).
+//          Naiknya versi TIDAK wajib untuk kompatibilitas — backend baru
+//          tetap melayani klien 1.0.13, dan klien baru tetap jalan di
+//          backend lama. Dinaikkan supaya semua HP menarik bundle baru
+//          dan benar-benar ikut merasakan penghematannya.
 // 1.0.13 — wajib token auth (lihat Auth.gs). Klien lama (1.0.12) akan
 //          dipaksa reload oleh layar "Update Tersedia" agar dapat bundle
 //          baru yang mengirimkan token.
@@ -878,7 +885,12 @@ function handleGetDbAbsen(data) {
 
 function handleLogin(data) {
   const sheetUsers = SS.getSheetByName(SHEET_USERS);
-  const userRows = sheetUsers.getDataRange().getValues();
+
+  // Kolom terjauh yang dipakai di bawah: index 13 (lokasi) -> 14 kolom.
+  // Dulu getDataRange() menarik 18 kolom, dan kolom O & P berisi
+  // VLOOKUP ke Sheet7 — membacanya ikut memicu perhitungan ulang formula
+  // itu untuk seluruh 305 baris, padahal nilainya tidak dipakai sama sekali.
+  const userRows = bacaSheet(sheetUsers, 14);
 
   // 1. AMBIL DATA MASTER (Agar menu E-Form Muncul)
   // DARI CACHE (lihat Cache.gs). Dulu membaca sheet MasterData PENUH di
@@ -919,6 +931,37 @@ function handleLogin(data) {
        cutiTersedia = foundUser[8] || 0;
     }
 
+    // 5. TITIPAN UNTUK MENGHEMAT REQUEST (Agu 2026)
+    //
+    // Dulu dashboard menembak get_stats dan get_latest_announcement sendiri
+    // setelah login. Karena Apps Script menjalankan eksekusi milik user yang
+    // SAMA secara berurutan (bukan paralel), keduanya selalu mengantre di
+    // belakang login — masing-masing dengan 302 redirect dan boot container
+    // sendiri. Dihitung dari jalur buka-aplikasi: 3 request -> 1.
+    //
+    // Keduanya dibungkus try secara TERPISAH: kegagalan salah satu tidak
+    // boleh menggagalkan login, dan tidak boleh menyeret yang lain.
+    let statsLogin = null;
+    try {
+      // Tidak membaca ulang sheet: noPayroll dan petaCuti sudah di memori.
+      statsLogin = hitungStats(String(foundUser[0]), foundUser[5], noPayroll, petaCuti);
+    } catch (e) {
+      console.warn('Stats gagal dihitung saat login: ' + e.message);
+    }
+
+    // Untuk pengumuman, null berarti dua hal yang berbeda: "tidak ada
+    // pengumuman aktif" dan "gagal dibaca". Frontend perlu membedakannya —
+    // kalau gagal, ia harus mengambil sendiri seperti dulu, bukan diam.
+    // Karena itu ada penanda terpisah di bawah.
+    let pengumumanLogin = null;
+    let pengumumanOk = false;
+    try {
+      pengumumanLogin = cariPengumumanAktif();
+      pengumumanOk = true;
+    } catch (e) {
+      console.warn('Pengumuman gagal dibaca saat login: ' + e.message);
+    }
+
     return responseJSON({
       result: 'success',
       user: { 
@@ -955,7 +998,18 @@ function handleLogin(data) {
       // (menghemat satu round trip saat membuka aplikasi).
       version: APP_VERSION,
 
-      masterData: masterData
+      masterData: masterData,
+
+      // Lihat blok "TITIPAN UNTUK MENGHEMAT REQUEST" di atas.
+      // stats bisa null kalau perhitungannya gagal — frontend menanganinya
+      // dengan mengambil sendiri lewat get_stats, seperti perilaku lama.
+      stats: statsLogin,
+
+      // pengumuman null = tidak ada pengumuman aktif ATAU gagal dibaca.
+      // pengumumanDisertakan yang membedakannya: hanya true kalau
+      // pembacaannya benar-benar berhasil.
+      pengumuman: pengumumanLogin,
+      pengumumanDisertakan: pengumumanOk
     });
   } else { 
     return responseJSON({ result: 'error', message: 'Username/Password salah!' });
@@ -1082,21 +1136,42 @@ function handleGetUserListSimple(data) {
 
 // HANDLE GET STATS (UPDATED: Cuti dari Master-Cuti)
 // ==========================================
-function handleGetStats(data) { 
+function handleGetStats(data) {
+    return responseJSON({
+        result: 'success',
+        stats: hitungStats(String(data.userId), data.role)
+    });
+}
+
+/**
+ * Inti perhitungan statistik dashboard, dipisah dari handleGetStats
+ * (Agu 2026) supaya handleLogin bisa memanggilnya juga dan mengirim
+ * angkanya menyusul di respons login — menghemat satu request penuh
+ * beserta 302 redirect-nya saat membuka aplikasi.
+ *
+ * @param {string} targetId   ID user (kolom A sheet Users)
+ * @param {string} role       role user, untuk penghitungan remarks_open
+ * @param {string=} nikDiketahui  No Payroll kalau pemanggil sudah punya
+ *        (handleLogin punya). Kalau diisi, sheet Users tidak dibaca ulang.
+ * @param {Object=} petaCutiDiketahui  peta cuti kalau pemanggil sudah punya.
+ * @return {Object} objek stats
+ */
+function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
     // Kolom yang benar-benar dipakai di bawah (lihat bacaSheet di bagian atas):
     //   Absensi : index 2 (User ID), 4 (Tipe), 12 (Status)        -> 13 kolom
-    //   dbabsen : index 2 (NIK), 4 (Tanggal), 10 (Telat), 14 (Symbol) -> 15 kolom
-    // Dulu keduanya dibaca penuh (46 dan 49 kolom) tiap dashboard dibuka.
+    // Dulu dibaca penuh (46 kolom) tiap dashboard dibuka.
     const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
     const rowsAbsensi = bacaSheet(sheetAbsensi, 13);
 
-    // Ambil Data Mesin
-    const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
-    const rowsDb = bacaSheet(sheetDb, 15);
+    // Data mesin TIDAK lagi disisir per request. Diambil dari indeks
+    // agregat per NIK yang disusun sekali lalu di-cache (StatsIndex.gs).
+    // Dulu: 6.700 baris dbabsen disisir ulang setiap dashboard dibuka,
+    // hanya untuk mengambil angka satu orang.
+    const idxDb = getIndeksDbAbsen();
 
     // [UPDATE] Ambil Data MASTER-CUTI — DARI CACHE (lihat Cache.gs).
     // Dulu membaca sheet MASTER-CUTI PENUH di setiap pemanggilan get_stats.
-    const petaCuti = getPetaCutiCached();
+    const petaCuti = petaCutiDiketahui || getPetaCutiCached();
 
     // Init Counters
     let stats = {
@@ -1114,8 +1189,6 @@ function handleGetStats(data) {
         remarks_open: 0,
         periode_db: 'Belum ada data'
     };
-
-    const targetId = String(data.userId);
 
     // 1. HITUNG STATISTIK MANUAL (Sheet Absensi - Ijin, Sakit, Alpa)
     for (let i = 1; i < rowsAbsensi.length; i++) { 
@@ -1139,82 +1212,61 @@ function handleGetStats(data) {
 
     // 2. CARI NIK USER & AMBIL DATA CUTI DARI MASTER
     let userNik = '';
-    const sheetUser = SS.getSheetByName(SHEET_USERS);
-    // Butuh index 0 (ID) dan 7 (No Payroll) -> 8 kolom, bukan 18.
-    const rowsUser = bacaSheet(sheetUser, 8);
-    const foundUser = rowsUser.slice(1).find(r => String(r[0]) === targetId);
-    
-    if (foundUser) {
-        userNik = String(foundUser[7]).trim(); // Ambil No Payroll
 
-        // [UPDATE] LOGIKA BARU: AMBIL DARI MASTER-CUTI BERDASARKAN NIK
-        if (userNik && userNik !== '-') {
-            // Lookup langsung ke peta, bukan menyisir seluruh baris
-            const rowCuti = petaCuti[userNik];
+    if (nikDiketahui) {
+        // Jalur login: pemanggil sudah memegang baris user, sheet Users
+        // tidak perlu dibaca untuk kedua kalinya dalam satu request.
+        userNik = String(nikDiketahui).trim();
+    } else {
+        const sheetUser = SS.getSheetByName(SHEET_USERS);
+        // Butuh index 0 (ID) dan 7 (No Payroll) -> 8 kolom, bukan 18.
+        // Berhenti di kolom H juga menghindari recalc VLOOKUP di kolom O/P.
+        const rowsUser = bacaSheet(sheetUser, 8);
+        const foundUser = rowsUser.slice(1).find(r => String(r[0]) === targetId);
+        if (foundUser) userNik = String(foundUser[7]).trim(); // Ambil No Payroll
+    }
 
-            if (rowCuti) {
-                // Kolom W (Index 22) -> Dashboard: CUTI DIAMBIL
-                stats.total_cuti = rowCuti.terpakai || 0;
+    // [UPDATE] LOGIKA BARU: AMBIL DARI MASTER-CUTI BERDASARKAN NIK
+    if (userNik && userNik !== '-') {
+        // Lookup langsung ke peta, bukan menyisir seluruh baris
+        const rowCuti = petaCuti[userNik];
 
-                // Kolom X (Index 23) -> Dashboard: CUTI BERSAMA
-                stats.total_cuti_bersama = rowCuti.bersama || 0;
-            }
+        if (rowCuti) {
+            // Kolom W (Index 22) -> Dashboard: CUTI DIAMBIL
+            stats.total_cuti = rowCuti.terpakai || 0;
+
+            // Kolom X (Index 23) -> Dashboard: CUTI BERSAMA
+            stats.total_cuti_bersama = rowCuti.bersama || 0;
         }
     }
 
-    // 3. HITUNG STATISTIK MESIN (Database Fingerprint)
+    // 3. AMBIL STATISTIK MESIN DARI INDEKS (bukan lagi menyisir dbabsen)
+    //
+    // Perhitungan simbolnya persis sama, hanya pindah tempat: sekarang
+    // dilakukan satu kali untuk SEMUA NIK di StatsIndex.gs lalu dipakai
+    // ulang, bukan diulang per request untuk satu NIK. Dulu blok ini
+    // menyisir 6.700 baris tiap kali dashboard dibuka.
     let minTimestamp = null;
     let maxTimestamp = null;
     let dataMesinFound = false;
 
-    // Definisikan Simbol untuk Kategori HADIR
-    const HADIR_SYMBOLS = ['H', 'I', 'T', 'Si', 'So', 'TSo', 'TSi', 'TPC'];
+    if (userNik && userNik !== '-') {
+        const e = idxDb[userNik];
+        if (e) {
+            dataMesinFound = true;
+            minTimestamp = e.min_ts;
+            maxTimestamp = e.max_ts;
 
-    if (userNik && userNik !== '-' && rowsDb.length > 1) {
-        for (let j = 1; j < rowsDb.length; j++) {
-            const rowNik = String(rowsDb[j][2]).trim();
-            if (rowNik === userNik) {
-                dataMesinFound = true;
-                
-                // A. Cek Periode
-                const rawDate = rowsDb[j][4];
-                let currentTs = null;
-                if (rawDate instanceof Date) currentTs = rawDate.getTime();
-                else if (typeof rawDate === 'string') {
-                    const parsed = new Date(rawDate);
-                    if (!isNaN(parsed.getTime())) currentTs = parsed.getTime();
-                }
-                if (currentTs !== null) {
-                    if (minTimestamp === null || currentTs < minTimestamp) minTimestamp = currentTs;
-                    if (maxTimestamp === null || currentTs > maxTimestamp) maxTimestamp = currentTs;
-                }
+            stats.total_hadir        = e.hadir;
+            stats.total_sakit       += e.sakit;   // ditambahkan ke hitungan sheet Absensi
+            stats.total_alpa        += e.alpa;    // (perilaku lama dipertahankan)
+            stats.total_telat_freq   = e.telat_freq;
+            stats.total_telat_menit  = e.telat_menit;
+            stats.total_no_scan_in   = e.no_scan_in;
+            stats.total_no_scan_out  = e.no_scan_out;
 
-                // B. Statistik Symbol
-                const symbol = String(rowsDb[j][14]); 
-                const telatStr = rowsDb[j][10];
-
-                // Hitung Hadir Gabungan
-                if (HADIR_SYMBOLS.includes(symbol)) {
-                     stats.total_hadir++;
-                }
-
-                // Hitung Detail Lainnya
-                if (['S'].includes(symbol)) stats.total_sakit++; // Opsional: jika ingin ambil dari DB
-                if (['A', 'AC'].includes(symbol)) stats.total_alpa++; // Opsional: jika ingin ambil dari DB
-                
-                // [UPDATE] Cuti Bersama (CB) dari DB dimatikan agar tidak bentrok dengan Master Cuti
-                // if (['CB'].includes(symbol)) stats.total_cuti_bersama++;
-
-                // Terlambat
-                if (symbol.includes('T') || (telatStr && telatStr !== '00:00:00' && telatStr !== '-' && telatStr !== 'FALSE')) {
-                     if(symbol.includes('T')) stats.total_telat_freq++;
-                     stats.total_telat_menit += parseTimeToMinutes(telatStr);
-                }
-
-                // Scan Error
-                if (['Si', 'TSi', 'SiPC', 'SiSo'].includes(symbol)) stats.total_no_scan_in++;
-                if (['So', 'TSo', 'SiSo'].includes(symbol)) stats.total_no_scan_out++;
-            }
+            // [UPDATE] Cuti Bersama (CB) dari DB tetap dimatikan agar tidak
+            // bentrok dengan Master Cuti — sama seperti sebelumnya.
         }
     }
 
@@ -1235,7 +1287,7 @@ function handleGetStats(data) {
     if(sheetRemarks) {
         // Butuh index 2 (User ID) dan 9 (Status) -> 10 kolom.
         const rRows = bacaSheet(sheetRemarks, 10);
-        const userRole = data.role ? String(data.role).toLowerCase() : '';
+        const userRole = role ? String(role).toLowerCase() : '';
         for (let k = 1; k < rRows.length; k++) {
              const rStatus = rRows[k][9];
              const rUserId = String(rRows[k][2]);
@@ -1246,7 +1298,7 @@ function handleGetStats(data) {
         }
     }
 
-    return responseJSON({ result: 'success', stats: stats });
+    return stats;
 }
 
 function handleGetApprovalList(data) {
@@ -1924,12 +1976,23 @@ function hitungDurasi(start, end) { const diff = Math.abs(end - start); const mi
 
 //---POP UP INFO HRD--//
 function handleGetLatestAnnouncement() {
-  const sheet = SS.getSheetByName(SHEET_ANNOUNCEMENTS);
-  // Jika sheet tidak ditemukan, return null
-  if (!sheet) return responseJSON({ result: 'success', data: null });
+  return responseJSON({ result: 'success', data: cariPengumumanAktif() });
+}
 
-  const rows = sheet.getDataRange().getValues();
-  if (rows.length <= 1) return responseJSON({ result: 'success', data: null });
+/**
+ * Pengumuman aktif terbaru, atau null kalau tidak ada.
+ * Dipisah dari handler-nya (Agu 2026) supaya bisa ikut dititipkan di
+ * respons login — menghemat satu request lagi saat membuka aplikasi.
+ *
+ * @return {?{waktu: string, isi: string}}
+ */
+function cariPengumumanAktif() {
+  const sheet = SS.getSheetByName(SHEET_ANNOUNCEMENTS);
+  if (!sheet) return null;
+
+  // Kolom terjauh yang dipakai: index 3 (Status) -> 4 kolom, bukan 26.
+  const rows = bacaSheet(sheet, 4);
+  if (rows.length <= 1) return null;
 
   // Loop dari bawah (terbaru)
   // Kolom D (Index 3) adalah Status
@@ -1940,16 +2003,13 @@ function handleGetLatestAnnouncement() {
 
     // Cek apakah status mengandung kata 'active' atau 'aktif'
     if (status === 'active' || status === 'aktif') {
-      return responseJSON({
-        result: 'success',
-        data: {
-          waktu: formatDate(rows[i][1]), // Kolom B
-          isi: rows[i][2]                // Kolom C
-        }
-      });
+      return {
+        waktu: formatDate(rows[i][1]), // Kolom B
+        isi: rows[i][2]                // Kolom C
+      };
     }
   }
-  return responseJSON({ result: 'success', data: null });
+  return null;
 }
 
 // Fungsi Helper Pemroses Data
