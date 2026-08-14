@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
+import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers,
+  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 import ImportDbAbsen from './screens/ImportDbAbsen';
@@ -132,9 +133,92 @@ const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return n
 // Ikon dipilih per makna, bukan per kemiripan bentuk:
 // Sakit = medis (bukan segitiga peringatan), Tukar Shift = panah dua arah
 // (dulu memakai ikon kalender yang sama persis dengan Off).
-const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': ClipboardList, 'Sakit': HeartPulse, 'Lembur': Timer, 'Dinas': PlaneTakeoff, 'Cuti': Palmtree, 'Tukar Shift': ArrowLeftRight, 'Off': Coffee };
+const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': ClipboardList, 'Sakit': HeartPulse, 'Lembur': Timer, 'Dinas': PlaneTakeoff, 'Dinas Luar': PlaneTakeoff, 'Cuti': Palmtree, 'Cuti EO': Palmtree, 'Tukar Shift': ArrowLeftRight, 'Off': Coffee, 'Standby': Clock };
 // Tint lembut + ikon berwarna. Blok warna penuh bikin 4 kartu saling berebut perhatian.
 const COLOR_MAP = {'Hadir': 'bg-emerald-50 text-emerald-600', 'Pulang': 'bg-rose-50 text-rose-600', 'Ijin': 'bg-amber-50 text-amber-600', 'Sakit': 'bg-red-50 text-red-600', 'Lembur': 'bg-violet-50 text-violet-600', 'Dinas': 'bg-sky-50 text-sky-600', 'Cuti': 'bg-teal-50 text-teal-600', 'Tukar Shift': 'bg-indigo-50 text-indigo-600', 'Off': 'bg-slate-100 text-slate-500'};
+
+// ============================================================
+// TEMA WARNA PER JENIS FORM
+//
+// Satu warna aksen per jenis pengajuan, dipakai konsisten di kepala
+// layar, chip ikon, cincin fokus input, dan tombol kirim. Ini yang
+// membedakan "berwarna" dari "warna-warni": versi lama menumpuk kotak
+// biru, oranye, indigo, dan abu di satu layar tanpa alasan — tiap blok
+// berteriak sekeras blok di sebelahnya, jadi tidak ada yang menonjol.
+//
+// Kelasnya ditulis utuh (bukan dirakit dari potongan string) karena
+// Tailwind memindai kode sebagai teks; nama kelas hasil rakitan tidak
+// akan pernah ikut ter-generate.
+// ============================================================
+const TEMA_DEFAULT = {
+  grad: 'from-blue-600 to-indigo-700',
+  chip: 'bg-blue-50 text-blue-600',
+  fokus: 'focus:border-blue-400 focus:ring-blue-500/10',
+  tombol: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/25',
+  garis: 'bg-blue-500',
+};
+const TEMA_FORM = {
+  'Hadir':       { grad: 'from-emerald-500 to-teal-600',  chip: 'bg-emerald-50 text-emerald-600', fokus: 'focus:border-emerald-400 focus:ring-emerald-500/10', tombol: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25', garis: 'bg-emerald-500' },
+  'Pulang':      { grad: 'from-rose-500 to-red-600',      chip: 'bg-rose-50 text-rose-600',       fokus: 'focus:border-rose-400 focus:ring-rose-500/10',       tombol: 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25',       garis: 'bg-rose-500' },
+  'Ijin':        { grad: 'from-amber-500 to-orange-600',  chip: 'bg-amber-50 text-amber-600',     fokus: 'focus:border-amber-400 focus:ring-amber-500/10',     tombol: 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25',     garis: 'bg-amber-500' },
+  'Sakit':       { grad: 'from-red-500 to-rose-600',      chip: 'bg-red-50 text-red-600',         fokus: 'focus:border-red-400 focus:ring-red-500/10',         tombol: 'bg-red-600 hover:bg-red-700 shadow-red-600/25',         garis: 'bg-red-500' },
+  'Lembur':      { grad: 'from-violet-500 to-purple-600', chip: 'bg-violet-50 text-violet-600',   fokus: 'focus:border-violet-400 focus:ring-violet-500/10',   tombol: 'bg-violet-600 hover:bg-violet-700 shadow-violet-600/25', garis: 'bg-violet-500' },
+  'Dinas':       { grad: 'from-sky-500 to-blue-600',      chip: 'bg-sky-50 text-sky-600',         fokus: 'focus:border-sky-400 focus:ring-sky-500/10',         tombol: 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/25',         garis: 'bg-sky-500' },
+  'Dinas Luar':  { grad: 'from-sky-500 to-cyan-600',      chip: 'bg-sky-50 text-sky-600',         fokus: 'focus:border-sky-400 focus:ring-sky-500/10',         tombol: 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/25',         garis: 'bg-sky-500' },
+  'Cuti':        { grad: 'from-teal-500 to-emerald-600',  chip: 'bg-teal-50 text-teal-600',       fokus: 'focus:border-teal-400 focus:ring-teal-500/10',       tombol: 'bg-teal-600 hover:bg-teal-700 shadow-teal-600/25',       garis: 'bg-teal-500' },
+  'Cuti EO':     { grad: 'from-teal-500 to-cyan-600',     chip: 'bg-teal-50 text-teal-600',       fokus: 'focus:border-teal-400 focus:ring-teal-500/10',       tombol: 'bg-teal-600 hover:bg-teal-700 shadow-teal-600/25',       garis: 'bg-teal-500' },
+  'Tukar Shift': { grad: 'from-indigo-500 to-blue-700',   chip: 'bg-indigo-50 text-indigo-600',   fokus: 'focus:border-indigo-400 focus:ring-indigo-500/10',   tombol: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/25', garis: 'bg-indigo-500' },
+  'Off':         { grad: 'from-slate-600 to-slate-800',   chip: 'bg-slate-100 text-slate-500',    fokus: 'focus:border-slate-400 focus:ring-slate-500/10',     tombol: 'bg-slate-800 hover:bg-slate-900 shadow-slate-800/25',   garis: 'bg-slate-500' },
+  'Standby':     { grad: 'from-slate-600 to-slate-800',   chip: 'bg-slate-100 text-slate-500',    fokus: 'focus:border-slate-400 focus:ring-slate-500/10',     tombol: 'bg-slate-800 hover:bg-slate-900 shadow-slate-800/25',   garis: 'bg-slate-500' },
+};
+const temaFor = (tipe) => TEMA_FORM[tipe] || TEMA_DEFAULT;
+
+// Sakelar on/off. Dulu tiap tempat menggambar sakelarnya sendiri dengan
+// ukuran dan jarak berbeda — di satu layar yang sama ada dua sakelar yang
+// tidak sama tingginya.
+const Sakelar = ({ aktif, onToggle, nonaktif, label }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={aktif}
+    aria-label={label}
+    disabled={nonaktif}
+    onClick={onToggle}
+    className={`relative inline-flex h-[24px] w-[42px] shrink-0 items-center rounded-full transition-colors duration-200
+      ${aktif ? 'bg-blue-600' : 'bg-slate-200'} ${nonaktif ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+  >
+    <span className={`inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow-sm transition-transform duration-200
+      ${aktif ? 'translate-x-[21px]' : 'translate-x-[3px]'}`} />
+  </button>
+);
+
+// Satu kartu seksi form: kepala (ikon + judul + kontrol kanan) lalu isi.
+// Semua blok di layar form memakai ini, sehingga jarak dan garisnya sama.
+const SeksiForm = ({ ikon: Ikon, judul, catatan, aksi, warnaIkon, padat, children }) => (
+  <section className="bg-white rounded-2xl border border-slate-200/80 shadow-sm shadow-slate-900/[0.03] overflow-hidden">
+    <header className="flex items-center gap-2.5 px-4 py-3">
+      <span className={`w-8 h-8 shrink-0 rounded-[10px] flex items-center justify-center ${warnaIkon || 'bg-slate-100 text-slate-500'}`}>
+        <Ikon className="w-[15px] h-[15px]" strokeWidth={2} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-semibold text-slate-900 tracking-tight leading-tight">{judul}</p>
+        {catatan && <p className="text-[10.5px] text-slate-400 leading-tight mt-0.5">{catatan}</p>}
+      </div>
+      {aksi}
+    </header>
+    {children && (
+      <div className={`border-t border-slate-100 ${padat ? 'p-3' : 'px-4 py-3.5'}`}>{children}</div>
+    )}
+  </section>
+);
+
+// Satu gaya input untuk seluruh layar form.
+const INPUT_FORM = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13.5px] font-medium text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-all focus:ring-4';
+
+// Label mikro di atas tiap field.
+const LabelKecil = ({ children }) => (
+  <label className="block text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-400 mb-1.5">{children}</label>
+);
 
     // MAIN APP COMPONENT
     //
@@ -255,7 +339,10 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
 };
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
-return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{view!=='login'&&view!=='dashboard'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='form'?'Form':(view==='history'?'Riwayat':'Lainnya')}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
+       punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
+       hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
+    {view!=='login'&&view!=='dashboard'&&view!=='form'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='history'?'Riwayat':'Lainnya'}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
@@ -2900,141 +2987,369 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
     } catch (e) { alert('Gagal kirim.'); } finally { setIsSubmitting(false); }
   };
   
+  // ============================================================
+  // TAMPILAN
+  //
+  // Susunannya: kepala berwarna (identitas pengajuan) -> kartu-kartu
+  // seksi di atas latar netral -> bilah aksi yang menempel di bawah.
+  //
+  // Kenapa bilah aksi ditempel: di versi lama tombol "Kirim" ikut
+  // menggulung ke bawah bersama isi form. Pada form yang panjang (foto +
+  // peta + alasan) tombolnya keluar layar, dan orang harus menggulir
+  // balik untuk mengirim.
+  // ============================================================
+  const tema = temaFor(type);
+  const IkonTipe = ICON_MAP[type] || FileText;
+
+  // Daftar syarat yang BELUM terpenuhi. Ini murni untuk ditampilkan —
+  // validasi sesungguhnya tetap di handleSubmit dan tidak diubah, supaya
+  // tidak ada jalur kirim yang diam-diam ikut terblokir oleh logika baru.
+  // Nilainya juga bukan sekadar hiasan: sebelum ini satu-satunya cara tahu
+  // ada yang kurang adalah menekan tombol lalu membaca alert.
+  const NOTE_WAJIB = ['Ijin', 'Cuti', 'Sakit', 'Dinas Luar', 'Dinas', 'Cuti EO', 'Tukar Shift', 'Off', 'Lembur'];
+  const kurang = [];
+  if (isShiftWorker && isClockIn && !isEditMode && !selectedShift) kurang.push('pilih shift');
+  if (isIntervalType && (!intervalData.tglMulai || !intervalData.tglSelesai)) kurang.push('tanggal');
+  if (isIntervalType && useTime && (!intervalData.jamMulai || !intervalData.jamSelesai)) kurang.push('jam mulai & selesai');
+  if (isPhotoRequired && !isEditMode && !photo) kurang.push('foto');
+  if (isGpsRequired && !isEditMode && !location) kurang.push('lokasi GPS');
+  if (NOTE_WAJIB.includes(type) && catatan.trim().length < 3) kurang.push('alasan');
+
+  const adaTanggal = !!intervalData.tglMulai;
+  const teksTanggal = adaTanggal
+      ? (intervalData.tglMulai === intervalData.tglSelesai
+          ? formatDateIndo(intervalData.tglMulai)
+          : `${formatDateShort(intervalData.tglMulai)} — ${formatDateShort(intervalData.tglSelesai)}`)
+      : 'Pilih tanggal…';
+
   return (
-    <div className="p-4 flex flex-col h-full overflow-y-auto relative min-h-screen bg-gray-50">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold ml-2 text-slate-800">{isEditMode ? 'Edit Data' : `Form ${type}`}</h2>
-        <BackButton onClick={() => { setEditItem(null); setView('dashboard'); }} />
+    <div className="min-h-screen bg-slate-50 pb-32">
+
+      {/* ================= KEPALA ================= */}
+      <div className={`relative overflow-hidden bg-gradient-to-br ${tema.grad} px-5 pt-5 pb-14`}>
+        {/* Dua lingkaran samar. Gradien polos terlihat rata seperti blok cat;
+            ini memberi kedalaman tanpa menambah elemen yang harus dibaca. */}
+        <div className="absolute -top-16 -right-10 w-52 h-52 rounded-full bg-white/10"></div>
+        <div className="absolute -bottom-24 -left-16 w-56 h-56 rounded-full bg-black/5"></div>
+
+        <div className="relative z-10 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-11 h-11 shrink-0 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center">
+              <IkonTipe className="w-[19px] h-[19px] text-white" strokeWidth={2} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-white/65 leading-none">
+                {isEditMode ? 'Ubah pengajuan' : 'Pengajuan e-Form'}
+              </p>
+              <h2 className="mt-1 text-[20px] font-semibold text-white tracking-tight leading-none truncate">{type}</h2>
+            </div>
+          </div>
+
+          <button
+            onClick={() => { setEditItem(null); setView('dashboard'); }}
+            className="shrink-0 w-9 h-9 rounded-xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center text-white transition-colors hover:bg-white/25 active:scale-95"
+            title="Kembali"
+          >
+            <ChevronLeft className="w-[18px] h-[18px]" strokeWidth={2.2} />
+          </button>
+        </div>
+
+        {/* Identitas pemohon. Di form HRIS ini selalu terlihat supaya orang
+            yakin sedang mengajukan atas nama dirinya sendiri. */}
+        <div className="relative z-10 mt-4 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[10.5px] font-medium text-white">
+            <User className="w-3 h-3 text-white/70" strokeWidth={2} /> {user.nama}
+          </span>
+          <span className="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[10.5px] font-medium text-white">
+            <Layers className="w-3 h-3 text-white/70" strokeWidth={2} /> {user.divisi}
+          </span>
+          {user.noPayroll && (
+            <span className="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 backdrop-blur-sm rounded-lg px-2.5 py-1 text-[10.5px] font-medium text-white font-mono">
+              {user.noPayroll}
+            </span>
+          )}
+        </div>
       </div>
 
       {isInitializing ? (
-         <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh]">
-             <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4"/>
-             <p className="text-sm font-bold text-slate-500">Menyiapkan Form...</p>
-         </div>
+        <div className="px-4 -mt-8 relative z-10">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm py-16 flex flex-col items-center justify-center">
+            <Loader2 className="w-7 h-7 text-slate-300 animate-spin mb-3" />
+            <p className="text-[12px] font-medium text-slate-400">Menyiapkan formulir…</p>
+          </div>
+        </div>
       ) : (
-         <>
-            {isH3Required && (
-                <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-3 mb-4 text-xs">
-                <p className="font-bold">Perhatian!</p><p>Pengajuan wajib H-3.</p>
+        <div className="px-4 -mt-8 relative z-10 space-y-3">
+
+          {/* ---- PERINGATAN H-3 ---- */}
+          {isH3Required && (
+            <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 flex gap-2.5">
+              <CircleAlert className="w-[17px] h-[17px] text-amber-600 shrink-0 mt-px" strokeWidth={2} />
+              <div>
+                <p className="text-[12px] font-semibold text-amber-900 leading-tight">Pengajuan wajib H-3</p>
+                <p className="text-[11px] text-amber-700/90 leading-relaxed mt-0.5">
+                  Tanggal mulai minimal 3 hari dari hari ini. Pengajuan lebih mepet akan ditolak sistem.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ---- PILIH SHIFT ---- */}
+          {isShiftWorker && isClockIn && !isEditMode && (
+            <SeksiForm ikon={Clock} judul="Shift hari ini" catatan="Wajib dipilih sebelum absen masuk" warnaIkon={tema.chip}>
+              <div className="relative">
+                <select
+                  className={`${INPUT_FORM} ${tema.fokus} appearance-none pr-10 cursor-pointer`}
+                  value={selectedShift}
+                  onChange={(e) => setSelectedShift(e.target.value)}
+                >
+                  <option value="">— Pilih shift —</option>
+                  {availableShifts.map((s, idx) => (<option key={idx} value={s.value}>{s.label} ({s.value})</option>))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+            </SeksiForm>
+          )}
+
+          {/* ---- TANGGAL & JAM ---- */}
+          {isIntervalType && (
+            <SeksiForm
+              ikon={CalendarRange}
+              judul="Periode pengajuan"
+              catatan={useTime ? 'Beserta jam mulai & selesai' : 'Sehari penuh'}
+              warnaIkon={tema.chip}
+              aksi={
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Tanpa breakpoint 'xs:' — itu bukan breakpoint bawaan
+                      Tailwind, jadi kelasnya tidak pernah ter-generate dan
+                      labelnya akan hilang selamanya. */}
+                  <span className="text-[10px] font-medium text-slate-400">Jam</span>
+                  <Sakelar aktif={useTime} onToggle={() => setUseTime(!useTime)} label="Sertakan jam" />
                 </div>
-            )}
+              }
+            >
+              <LabelKecil>Tanggal mulai — selesai</LabelKecil>
+              <button
+                onClick={() => setShowCalendar(true)}
+                className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border bg-white text-left transition-all active:scale-[0.995]
+                  ${adaTanggal ? 'border-slate-200' : 'border-dashed border-slate-300'}`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <CalendarDays className={`w-4 h-4 shrink-0 ${adaTanggal ? 'text-slate-400' : 'text-slate-300'}`} strokeWidth={2} />
+                  <span className={`text-[13.5px] truncate ${adaTanggal ? 'font-medium text-slate-900' : 'text-slate-400'}`}>
+                    {teksTanggal}
+                  </span>
+                </span>
+                <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" />
+              </button>
 
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-4 animate-in fade-in duration-500">
-                {isShiftWorker && isClockIn && !isEditMode && (
-                    <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100">
-                        <label className="text-xs font-bold text-indigo-800 block mb-2">Pilih Shift Hari Ini:</label>
-                        <select className="w-full p-2.5 text-sm border border-indigo-200 rounded-lg bg-white" value={selectedShift} onChange={(e) => setSelectedShift(e.target.value)}>
-                            <option value="">-- Pilih Shift --</option>
-                            {availableShifts.map((s, idx) => ( <option key={idx} value={s.value}>{s.label} ({s.value})</option> ))}
-                        </select>
-                    </div>
+              <DateRangeModal
+                isOpen={showCalendar}
+                onClose={() => setShowCalendar(false)}
+                onApply={handleCalendarApply}
+                initialStart={intervalData.tglMulai}
+                initialEnd={intervalData.tglSelesai}
+              />
+
+              {useTime && (
+                <div className="grid grid-cols-2 gap-2.5 mt-3.5 pt-3.5 border-t border-slate-100">
+                  <div>
+                    <LabelKecil>Jam mulai</LabelKecil>
+                    <input type="time" className={`${INPUT_FORM} ${tema.fokus} tabular-nums`}
+                      value={intervalData.jamMulai}
+                      onChange={e => setIntervalData({ ...intervalData, jamMulai: e.target.value })} />
+                  </div>
+                  <div>
+                    <LabelKecil>Jam selesai</LabelKecil>
+                    <input type="time" className={`${INPUT_FORM} ${tema.fokus} tabular-nums`}
+                      value={intervalData.jamSelesai}
+                      onChange={e => setIntervalData({ ...intervalData, jamSelesai: e.target.value })} />
+                  </div>
+                </div>
+              )}
+            </SeksiForm>
+          )}
+
+          {/* ---- LAMPIRAN ---- */}
+          {isUploadAllowed && (
+            <SeksiForm
+              ikon={Paperclip}
+              judul="Lampiran"
+              catatan={fileName ? fileName : 'Opsional — gambar atau PDF'}
+              warnaIkon={tema.chip}
+              padat
+              aksi={
+                <Sakelar
+                  aktif={isUploading}
+                  label="Sertakan lampiran"
+                  onToggle={() => { setIsUploading(!isUploading); if (isUploading) { setFileLampiran(null); setFileName(''); } }}
+                />
+              }
+            >
+              {isUploading && (
+                <>
+                  <input type="file" id="lampiranInput" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
+                  <label
+                    htmlFor="lampiranInput"
+                    className={`cursor-pointer w-full flex flex-col items-center justify-center gap-1.5 py-6 rounded-xl border-2 border-dashed transition-colors
+                      ${fileName ? 'border-slate-200 bg-slate-50/70' : 'border-slate-300 hover:border-slate-400 hover:bg-slate-50'}`}
+                  >
+                    {fileName
+                      ? <CheckCircle className="w-6 h-6 text-emerald-500" strokeWidth={1.8} />
+                      : <Upload className="w-6 h-6 text-slate-400" strokeWidth={1.8} />}
+                    <span className="text-[12px] font-medium text-slate-700 text-center px-4 truncate max-w-full">
+                      {fileName || 'Ketuk untuk memilih berkas'}
+                    </span>
+                    {fileName && <span className="text-[10px] text-slate-400">Ketuk lagi untuk mengganti</span>}
+                  </label>
+                </>
+              )}
+            </SeksiForm>
+          )}
+
+          {/* ---- FOTO ---- */}
+          {isPhotoRequired && !isEditMode && (
+            <SeksiForm
+              ikon={Camera}
+              judul="Foto kehadiran"
+              catatan="Wajib — diambil langsung dari kamera"
+              warnaIkon={tema.chip}
+              padat
+              aksi={photo
+                ? <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg shrink-0"><CheckCircle className="w-3 h-3" strokeWidth={2.4} /> Siap</span>
+                : <span className="text-[10.5px] font-semibold text-slate-300 shrink-0">Belum</span>}
+            >
+              <div className="relative rounded-xl overflow-hidden bg-slate-900 aspect-[4/5]">
+                {!photo && !cameraActive && (
+                  <button onClick={startCamera} className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-100 hover:bg-slate-200/70 transition-colors">
+                    <span className="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center">
+                      <Camera className="w-6 h-6 text-slate-500" strokeWidth={1.8} />
+                    </span>
+                    <span className="text-[12.5px] font-semibold text-slate-600">Buka kamera</span>
+                  </button>
                 )}
 
-                {/* --- BAGIAN TANGGAL & JAM KUSTOM --- */}
-                {isIntervalType && (
-                    <div className="bg-blue-50 p-3 rounded-lg space-y-3 border border-blue-100">
-                        <div className="flex justify-between items-center">
-                            <h4 className="font-bold text-blue-800 text-sm flex items-center gap-2"><Calendar className="w-4 h-4"/> Waktu Pengajuan</h4>
-                            
-                            {/* [NEW] TOGGLE SWITCH JAM */}
-                            <label className="flex items-center gap-2 cursor-pointer bg-white px-2 py-1 rounded-full border border-blue-200 shadow-sm">
-                                <span className="text-[10px] font-bold text-slate-500">Sertakan Jam</span>
-                                <div className="relative">
-                                    <input type="checkbox" checked={useTime} onChange={() => setUseTime(!useTime)} className="sr-only" />
-                                    <div className={`block w-8 h-5 rounded-full transition-colors ${useTime ? 'bg-blue-600' : 'bg-gray-300'}`}></div>
-                                    <div className={`absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition-transform ${useTime ? 'translate-x-3' : ''}`}></div>
-                                </div>
-                            </label>
-                        </div>
-                        
-                        {/* Tombol Kalender */}
-                        <div>
-                            <label className="text-xs text-gray-500 mb-1 block">Tanggal (Mulai - Selesai)</label>
-                            <button 
-                                onClick={() => setShowCalendar(true)}
-                                className="w-full flex items-center justify-between p-3 bg-white border border-blue-200 rounded-xl text-sm font-bold text-slate-700 hover:border-blue-400 hover:ring-2 hover:ring-blue-100 transition-all shadow-sm active:scale-[0.98]"
-                            >
-                                <span className="flex items-center gap-2">
-                                    <CalendarDays className="w-4 h-4 text-blue-500"/>
-                                    {intervalData.tglMulai ? (
-                                        intervalData.tglMulai === intervalData.tglSelesai 
-                                            ? formatDateIndo(intervalData.tglMulai)
-                                            : `${formatDateShort(intervalData.tglMulai)} - ${formatDateShort(intervalData.tglSelesai)}`
-                                    ) : (
-                                        <span className="text-gray-400 font-normal">Pilih tanggal...</span>
-                                    )}
-                                </span>
-                                <ChevronDown className="w-4 h-4 text-gray-400"/>
-                            </button>
-                        </div>
+                <video ref={videoRef} autoPlay playsInline
+                  className={`absolute inset-0 w-full h-full object-cover ${cameraActive && !photo ? 'block' : 'hidden'}`} />
+                <canvas ref={canvasRef} className="hidden" />
+                {photo && <img src={photo} alt="Pratinjau" className="absolute inset-0 w-full h-full object-cover" />}
 
-                        {/* Modal Kalender */}
-                        <DateRangeModal 
-                            isOpen={showCalendar} 
-                            onClose={() => setShowCalendar(false)} 
-                            onApply={handleCalendarApply}
-                            initialStart={intervalData.tglMulai}
-                            initialEnd={intervalData.tglSelesai}
-                        />
-
-                        {/* Input Jam (Kondisional based on Toggle) */}
-                        {useTime && (
-                            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-blue-100/50 animate-in slide-in-from-top-2">
-                                <div><label className="text-xs text-gray-500">Jam Mulai</label><input type="time" className="w-full p-2 text-sm border rounded-lg bg-white" value={intervalData.jamMulai} onChange={e => setIntervalData({...intervalData, jamMulai: e.target.value})} /></div>
-                                <div><label className="text-xs text-gray-500">Jam Selesai</label><input type="time" className="w-full p-2 text-sm border rounded-lg bg-white" value={intervalData.jamSelesai} onChange={e => setIntervalData({...intervalData, jamSelesai: e.target.value})} /></div>
-                            </div>
-                        )}
+                {cameraActive && !photo && (
+                  <>
+                    {/* Bingkai bantu — memberi patokan posisi wajah, dan
+                        membuat layar kamera tidak terlihat seperti video kosong. */}
+                    <div className="absolute inset-6 rounded-2xl border-2 border-white/25 pointer-events-none"></div>
+                    <div className="absolute inset-x-0 bottom-0 pt-10 pb-4 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center gap-8">
+                      <button onClick={toggleCamera} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-sm border border-white/25 flex items-center justify-center text-white active:scale-90 transition-transform" title="Ganti kamera">
+                        <SwitchCamera className="w-[18px] h-[18px]" strokeWidth={2} />
+                      </button>
+                      <button onClick={takePhoto} className="w-[62px] h-[62px] rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform" title="Ambil foto">
+                        <span className="w-[50px] h-[50px] rounded-full bg-white border-[3px] border-white/60"></span>
+                      </button>
+                      <span className="w-10"></span>
                     </div>
+                  </>
                 )}
+              </div>
 
-                {/* Bagian Upload */}
-                {isUploadAllowed && (
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg border border-gray-200">
-                            <div className="flex items-center gap-2"><FileIcon className="w-4 h-4 text-gray-500" /> <span className="text-xs font-bold text-gray-700">Upload Lampiran</span></div>
-                            <button type="button" onClick={() => { setIsUploading(!isUploading); if (isUploading) { setFileLampiran(null); setFileName(''); } }} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isUploading ? 'bg-blue-600' : 'bg-gray-300'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isUploading ? 'translate-x-6' : 'translate-x-1'}`} /></button>
-                        </div>
-                        {isUploading && (
-                            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100 border-dashed">
-                                <input type="file" id="lampiranInput" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
-                                <label htmlFor="lampiranInput" className="cursor-pointer w-full flex flex-col items-center justify-center p-4 bg-white border border-orange-200 rounded-lg hover:bg-orange-100 transition">
-                                    <Upload className="w-6 h-6 text-orange-500 mb-1" />
-                                    <span className="text-xs font-bold text-gray-600 text-center">{fileName ? fileName : "Klik untuk Upload File"}</span>
-                                </label>
-                            </div>
-                        )}
-                    </div>
-                )}
+              {photo && (
+                <button
+                  onClick={() => { setPhoto(null); startCamera(); }}
+                  className="mt-2.5 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[12.5px] font-semibold text-slate-700 transition-colors active:scale-[0.99]"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" strokeWidth={2.2} /> Ambil ulang
+                </button>
+              )}
+            </SeksiForm>
+          )}
 
-                {/* Bagian Kamera */}
-                {isPhotoRequired && !isEditMode && (
-                  <div className="bg-gray-100 rounded-lg h-72 flex items-center justify-center relative border-2 border-dashed overflow-hidden">
-                    {!photo && !cameraActive && <button onClick={startCamera} className="text-blue-600 flex flex-col items-center gap-2 p-4"><div className="bg-blue-100 p-3 rounded-full"><Camera className="w-8 h-8" /></div><span className="text-sm font-bold">Buka Kamera (Wajib)</span></button>}
-                    <video ref={videoRef} autoPlay playsInline className={`absolute inset-0 w-full h-full object-cover ${cameraActive && !photo ? 'block' : 'hidden'}`} />
-                    <canvas ref={canvasRef} className="hidden" />
-                    {photo && <img src={photo} alt="Preview" className="absolute inset-0 w-full h-full object-cover" />}
-                    {cameraActive && <div className="absolute bottom-4 left-0 right-0 flex items-center justify-center gap-6"><button onClick={toggleCamera} className="bg-white/30 p-3 rounded-full"><History className="w-5 h-5 text-white" /></button><button onClick={takePhoto} className="bg-white rounded-full p-1"><div className="w-14 h-14 bg-red-600 rounded-full border-4 border-white"></div></button><div className="w-11"></div></div>}
+          {/* ---- LOKASI ---- */}
+          {!isEditMode && isGpsRequired && (
+            <SeksiForm
+              ikon={LocateFixed}
+              judul="Lokasi"
+              catatan={location ? 'Titik GPS terkunci' : 'Mencari sinyal GPS…'}
+              warnaIkon={tema.chip}
+              padat
+              aksi={location
+                ? <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg shrink-0"><CheckCircle className="w-3 h-3" strokeWidth={2.4} /> Terkunci</span>
+                : <Loader2 className="w-3.5 h-3.5 text-slate-300 animate-spin shrink-0" />}
+            >
+              <div className="rounded-xl overflow-hidden h-44 bg-slate-100 relative">
+                {location ? (
+                  <iframe title="Lokasi" width="100%" height="100%" frameBorder="0" style={{ border: 0 }}
+                    src={`https://maps.google.com/maps?q=${location.lat},${location.lng}&z=17&output=embed`}></iframe>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full gap-2">
+                    <MapPin className="w-7 h-7 text-slate-300 animate-pulse" strokeWidth={1.8} />
+                    <span className="text-[11px] font-medium text-slate-400">Menunggu GPS…</span>
                   </div>
                 )}
-                {photo && !isEditMode && <button onClick={() => {setPhoto(null); startCamera();}} className="w-full py-2 text-center text-blue-600 text-sm font-bold bg-blue-50 rounded-lg">Ambil Foto Ulang</button>}
-                
-                {!isEditMode && isGpsRequired && (
-                    <div className="space-y-2 mb-3">
-                        <label className="text-xs font-bold text-gray-700 block mb-1">Lokasi:</label>
-                        <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm h-48 bg-gray-100 relative">
-                            {location ? <iframe title="Lokasi" width="100%" height="100%" frameBorder="0" style={{ border: 0 }} src={`https://maps.google.com/maps?q=${location.lat},${location.lng}&z=17&output=embed`}></iframe> : <div className="flex flex-col items-center justify-center h-full text-gray-400 animate-pulse"><MapPin className="w-10 h-10 mb-2"/><span className="text-xs">Mencari GPS...</span></div>}
-                        </div>
-                    </div>
-                )}
+              </div>
+              {location && (
+                <p className="mt-2 text-[10px] text-slate-400 font-mono tabular-nums text-center">
+                  {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                </p>
+              )}
+            </SeksiForm>
+          )}
 
-                <textarea className="w-full border p-3 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Alasan (Wajib diisi)" rows="2" value={catatan} onChange={e => setCatatan(e.target.value)}></textarea>
+          {/* ---- ALASAN ---- */}
+          <SeksiForm
+            ikon={NotebookPen}
+            judul="Keterangan"
+            catatan={NOTE_WAJIB.includes(type) ? 'Wajib diisi — minimal 3 huruf' : 'Opsional'}
+            warnaIkon={tema.chip}
+          >
+            <textarea
+              className={`${INPUT_FORM} ${tema.fokus} resize-none leading-relaxed`}
+              placeholder={`Tulis alasan pengajuan ${type} Anda…`}
+              rows="3"
+              value={catatan}
+              onChange={e => setCatatan(e.target.value)}
+            />
+            <div className="mt-1.5 flex justify-end">
+              <span className={`text-[10px] tabular-nums ${catatan.trim().length < 3 && NOTE_WAJIB.includes(type) ? 'text-slate-300' : 'text-slate-400'}`}>
+                {catatan.length} huruf
+              </span>
             </div>
-            
-            <button onClick={handleSubmit} disabled={isSubmitting} className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl font-bold mt-6 mb-10 shadow-lg active:scale-95 transition-all">
-                {isSubmitting ? 'Mengirim Data...' : (isEditMode ? 'Update Data' : 'Kirim Sekarang')}
+          </SeksiForm>
+
+          <p className="flex items-center justify-center gap-1.5 pt-1 pb-2 text-[10px] text-slate-400">
+            <ShieldCheck className="w-3 h-3" strokeWidth={2} />
+            Data pengajuan tercatat atas nama {user.nama}
+          </p>
+        </div>
+      )}
+
+      {/* ================= BILAH AKSI ================= */}
+      {!isInitializing && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
+          <div className="max-w-md mx-auto pointer-events-auto bg-white/90 backdrop-blur-md border-t border-slate-200 px-4 pt-3 pb-4">
+
+            {/* Daftar yang masih kurang. Sebelumnya informasi ini baru muncul
+                sebagai alert SETELAH tombol ditekan, satu per satu. */}
+            {kurang.length > 0 && (
+              <div className="mb-2.5 flex items-start gap-2 text-[11px] text-slate-500">
+                <CircleAlert className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-px" strokeWidth={2.2} />
+                <span className="leading-snug">
+                  Belum lengkap: <span className="font-semibold text-slate-700">{kurang.join(', ')}</span>
+                </span>
+              </div>
+            )}
+
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-tight shadow-lg transition-all active:scale-[0.98]
+                ${isSubmitting ? 'bg-slate-300 shadow-none cursor-wait' : tema.tombol}`}
+            >
+              {isSubmitting
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Mengirim…</>
+                : <><Send className="w-4 h-4" strokeWidth={2.2} /> {isEditMode ? 'Simpan perubahan' : 'Kirim pengajuan'}</>}
             </button>
-         </>
+          </div>
+        </div>
       )}
     </div>
   );

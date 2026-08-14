@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pratinjau — Form pengajuan</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}</style>
+</head>
+<body class="bg-slate-200 p-6">
+
+<div class="max-w-6xl mx-auto">
+  <h1 class="text-xl font-semibold text-slate-900 tracking-tight">Pratinjau form pengajuan</h1>
+  <p class="text-sm text-slate-500 mt-1 mb-6">Halaman statis. Tiga jenis form untuk menunjukkan bagaimana warna aksen mengikuti jenis pengajuan.</p>
+  <div class="grid lg:grid-cols-3 gap-6" id="kolom"></div>
+</div>
+
+<script>
+const I = (n, c) => `<i data-lucide="${n}" class="${c}"></i>`;
+
+const TEMA = {
+  Ijin:   { grad:'from-amber-500 to-orange-600', chip:'bg-amber-50 text-amber-600', tombol:'bg-amber-600 shadow-amber-600/25', ikon:'clipboard-list' },
+  Sakit:  { grad:'from-red-500 to-rose-600',     chip:'bg-red-50 text-red-600',     tombol:'bg-red-600 shadow-red-600/25',     ikon:'heart-pulse' },
+  Cuti:   { grad:'from-teal-500 to-emerald-600', chip:'bg-teal-50 text-teal-600',   tombol:'bg-teal-600 shadow-teal-600/25',   ikon:'palmtree' },
+};
+
+const INPUT = 'w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-[13.5px] font-medium text-slate-900 outline-none';
+const LBL = t => `<label class="block text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-400 mb-1.5">${t}</label>`;
+
+function sakelar(aktif){
+  return `<button class="relative inline-flex h-[24px] w-[42px] shrink-0 items-center rounded-full ${aktif?'bg-blue-600':'bg-slate-200'}">
+    <span class="inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm" style="transform:translateX(${aktif?21:3}px)"></span></button>`;
+}
+
+function seksi({ikon, judul, catatan, aksi, isi, chip, padat}) {
+  return `<section class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+    <header class="flex items-center gap-2.5 px-4 py-3">
+      <span class="w-8 h-8 shrink-0 rounded-[10px] flex items-center justify-center ${chip}">${I(ikon,'w-[15px] h-[15px]')}</span>
+      <div class="flex-1 min-w-0">
+        <p class="text-[13px] font-semibold text-slate-900 tracking-tight leading-tight">${judul}</p>
+        ${catatan?`<p class="text-[10.5px] text-slate-400 leading-tight mt-0.5">${catatan}</p>`:''}
+      </div>
+      ${aksi||''}
+    </header>
+    ${isi?`<div class="border-t border-slate-100 ${padat?'p-3':'px-4 py-3.5'}">${isi}</div>`:''}
+  </section>`;
+}
+
+function layar(tipe, opsi) {
+  const t = TEMA[tipe];
+  const seksiList = [];
+
+  if (opsi.h3) seksiList.push(`<div class="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 flex gap-2.5">
+    ${I('circle-alert','w-[17px] h-[17px] text-amber-600 shrink-0 mt-px')}
+    <div><p class="text-[12px] font-semibold text-amber-900 leading-tight">Pengajuan wajib H-3</p>
+    <p class="text-[11px] text-amber-700/90 leading-relaxed mt-0.5">Tanggal mulai minimal 3 hari dari hari ini. Pengajuan lebih mepet akan ditolak sistem.</p></div></div>`);
+
+  seksiList.push(seksi({
+    ikon:'calendar-range', judul:'Periode pengajuan', chip:t.chip,
+    catatan: opsi.jam ? 'Beserta jam mulai & selesai' : 'Sehari penuh',
+    aksi:`<div class="flex items-center gap-2 shrink-0"><span class="text-[10px] font-medium text-slate-400">Jam</span>${sakelar(opsi.jam)}</div>`,
+    isi: LBL('Tanggal mulai — selesai') +
+      `<button class="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border bg-white text-left ${opsi.tgl?'border-slate-200':'border-dashed border-slate-300'}">
+        <span class="flex items-center gap-2.5 min-w-0">${I('calendar-days',`w-4 h-4 shrink-0 ${opsi.tgl?'text-slate-400':'text-slate-300'}`)}
+        <span class="text-[13.5px] truncate ${opsi.tgl?'font-medium text-slate-900':'text-slate-400'}">${opsi.tgl||'Pilih tanggal…'}</span></span>
+        ${I('chevron-down','w-4 h-4 text-slate-300 shrink-0')}</button>` +
+      (opsi.jam?`<div class="grid grid-cols-2 gap-2.5 mt-3.5 pt-3.5 border-t border-slate-100">
+        <div>${LBL('Jam mulai')}<div class="${INPUT} tabular-nums">08:00</div></div>
+        <div>${LBL('Jam selesai')}<div class="${INPUT} tabular-nums">12:00</div></div></div>`:'')
+  }));
+
+  if (opsi.lampiran !== undefined) seksiList.push(seksi({
+    ikon:'paperclip', judul:'Lampiran', chip:t.chip, padat:true,
+    catatan: opsi.lampiran || 'Opsional — gambar atau PDF',
+    aksi: sakelar(!!opsi.lampiran),
+    isi: opsi.lampiran ? `<div class="w-full flex flex-col items-center justify-center gap-1.5 py-6 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/70">
+      ${I('check-circle','w-6 h-6 text-emerald-500')}
+      <span class="text-[12px] font-medium text-slate-700">${opsi.lampiran}</span>
+      <span class="text-[10px] text-slate-400">Ketuk lagi untuk mengganti</span></div>` : ''
+  }));
+
+  if (opsi.foto) seksiList.push(seksi({
+    ikon:'camera', judul:'Foto kehadiran', catatan:'Wajib — diambil langsung dari kamera', chip:t.chip, padat:true,
+    aksi:`<span class="text-[10.5px] font-semibold text-slate-300 shrink-0">Belum</span>`,
+    isi:`<div class="relative rounded-xl overflow-hidden bg-slate-100 aspect-[4/5] flex flex-col items-center justify-center gap-3">
+      <span class="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center">${I('camera','w-6 h-6 text-slate-500')}</span>
+      <span class="text-[12.5px] font-semibold text-slate-600">Buka kamera</span></div>`
+  }));
+
+  seksiList.push(seksi({
+    ikon:'notebook-pen', judul:'Keterangan', catatan:'Wajib diisi — minimal 3 huruf', chip:t.chip,
+    isi:`<div class="${INPUT} h-[76px] text-slate-400 font-normal">Tulis alasan pengajuan ${tipe} Anda…</div>
+         <div class="mt-1.5 flex justify-end"><span class="text-[10px] text-slate-300 tabular-nums">0 huruf</span></div>`
+  }));
+
+  return `<div>
+    <p class="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Form ${tipe}</p>
+    <div class="bg-slate-50 rounded-3xl overflow-hidden shadow-xl relative" style="height:760px">
+
+      <div class="relative overflow-hidden bg-gradient-to-br ${t.grad} px-5 pt-5 pb-14">
+        <div class="absolute -top-16 -right-10 w-52 h-52 rounded-full bg-white/10"></div>
+        <div class="absolute -bottom-24 -left-16 w-56 h-56 rounded-full bg-black/5"></div>
+        <div class="relative z-10 flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="w-11 h-11 shrink-0 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center">${I(t.ikon,'w-[19px] h-[19px] text-white')}</span>
+            <div class="min-w-0">
+              <p class="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-white/65 leading-none">Pengajuan e-Form</p>
+              <h2 class="mt-1 text-[20px] font-semibold text-white tracking-tight leading-none">${tipe}</h2>
+            </div>
+          </div>
+          <span class="shrink-0 w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center text-white">${I('chevron-left','w-[18px] h-[18px]')}</span>
+        </div>
+        <div class="relative z-10 mt-4 flex flex-wrap items-center gap-1.5">
+          <span class="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 rounded-lg px-2.5 py-1 text-[10.5px] font-medium text-white">${I('user','w-3 h-3 text-white/70')} Ary Prasetyo</span>
+          <span class="inline-flex items-center gap-1.5 bg-white/15 border border-white/20 rounded-lg px-2.5 py-1 text-[10.5px] font-medium text-white">${I('layers','w-3 h-3 text-white/70')} Staff</span>
+          <span class="inline-flex items-center bg-white/15 border border-white/20 rounded-lg px-2.5 py-1 text-[10.5px] font-medium text-white font-mono">JPT-0412</span>
+        </div>
+      </div>
+
+      <div class="px-4 -mt-8 relative z-10 space-y-3 overflow-y-auto" style="max-height:530px">${seksiList.join('')}
+        <p class="flex items-center justify-center gap-1.5 pt-1 pb-2 text-[10px] text-slate-400">${I('shield-check','w-3 h-3')} Data pengajuan tercatat atas nama Ary Prasetyo</p>
+      </div>
+
+      <div class="absolute bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-slate-200 px-4 pt-3 pb-4">
+        ${opsi.kurang?`<div class="mb-2.5 flex items-start gap-2 text-[11px] text-slate-500">
+          ${I('circle-alert','w-3.5 h-3.5 text-amber-500 shrink-0 mt-px')}
+          <span class="leading-snug">Belum lengkap: <span class="font-semibold text-slate-700">${opsi.kurang}</span></span></div>`:''}
+        <button class="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-white text-[14px] font-semibold tracking-tight shadow-lg ${t.tombol}">
+          ${I('send','w-4 h-4')} Kirim pengajuan</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+document.getElementById('kolom').innerHTML =
+    layar('Ijin',  { h3:true, jam:false, tgl:null, lampiran:'', kurang:'tanggal, alasan' })
+  + layar('Sakit', { jam:false, tgl:'Jumat, 14 Agustus 2026', foto:true, kurang:'foto, alasan' })
+  + layar('Cuti',  { jam:true, tgl:'14 Agu 2026 — 18 Agu 2026', lampiran:'surat-cuti.pdf', kurang:'alasan' });
+
+lucide.createIcons();
+</script>
+</body>
+</html>
