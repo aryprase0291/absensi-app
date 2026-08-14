@@ -2,10 +2,12 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Camera, MapPin, CheckCircle, LogOut, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
+import { Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 import ImportDbAbsen from './screens/ImportDbAbsen';
+import { ImportJobProvider } from './context/ImportJobContext';
+import ImportNotifier from './components/ImportNotifier';
 
 // ============================================================
 // HELPER API — token login + penanganan respons HTML dari Google
@@ -119,6 +121,12 @@ const fetchApi = async (url, opts = {}, percobaan = 1) => {
 };
 
     // HELPER FORMAT TANGGAL GLOBAL
+// Tanggal hari ini menurut jam PERANGKAT (bukan UTC), format yyyy-MM-dd.
+// Dipakai untuk mencocokkan catatan absen lokal dengan hari berjalan:
+// toISOString() akan menggeser absen pagi hari WIB ke tanggal kemarin.
+const tglLokal = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
 const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
 // Ikon dipilih per makna, bukan per kemiripan bentuk:
@@ -129,14 +137,18 @@ const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': ClipboardList
 const COLOR_MAP = {'Hadir': 'bg-emerald-50 text-emerald-600', 'Pulang': 'bg-rose-50 text-rose-600', 'Ijin': 'bg-amber-50 text-amber-600', 'Sakit': 'bg-red-50 text-red-600', 'Lembur': 'bg-violet-50 text-violet-600', 'Dinas': 'bg-sky-50 text-sky-600', 'Cuti': 'bg-teal-50 text-teal-600', 'Tukar Shift': 'bg-indigo-50 text-indigo-600', 'Off': 'bg-slate-100 text-slate-500'};
 
     // MAIN APP COMPONENT
-export default function AppAbsensi() {
+    //
+    // Dibungkus <ImportJobProvider> di bawah (lihat AppAbsensi). Provider itu
+    // yang memegang job import dbabsen, supaya loop pengirimannya tidak ikut
+    // mati saat admin meninggalkan layar Import.
+function AppAbsensiInner() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('login'); 
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
   // HARUS SAMA dengan APP_VERSION di Kode.gs yang SEDANG di-deploy.
-  // Backend produksi sudah di Versi 127 (APP_VERSION 1.0.13) sejak 12 Agu 13.13.
+  // Backend produksi sudah di Versi 127 (APP_VERSION 1.0.14) sejak 12 Agu 13.13.
   // Aturan urutannya: deploy Apps Script DULU, baru naikkan angka ini.
   // Kalau frontend lebih baru dari backend, layar "Update Tersedia" memblokir
   // semua user dan reload tidak menyelesaikan apa pun.
@@ -243,7 +255,72 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
 };
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
-return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{view!=='login'&&view!=='dashboard'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='form'?'Form':(view==='history'?'Riwayat':'Lainnya')}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div></div></div>);}
+return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{view!=='login'&&view!=='dashboard'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='form'?'Form':(view==='history'?'Riwayat':'Lainnya')}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+
+    // PEMBUNGKUS APLIKASI
+    // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
+    // job import tidak ikut ter-reset setiap kali AppAbsensiInner render ulang.
+export default function AppAbsensi() {
+  return (
+    <ImportJobProvider>
+      <AppAbsensiInner />
+    </ImportJobProvider>
+  );
+}
+
+// Satu kartu absen (masuk / pulang).
+// Tiga keadaan, dan hanya SATU yang boleh terlihat menonjol pada saat
+// yang sama — itu yang membuat orang tidak perlu berpikir tombol mana
+// yang harus ditekan sekarang.
+//   utama    : aksi yang wajar dilakukan berikutnya -> tombol terisi warna
+//   menunggu : belum waktunya (mis. pulang sebelum masuk) -> redup
+//   selesai  : sudah tercatat -> menampilkan jam, bukan ajakan
+const KartuAbsen = ({ onClick, label, jam, Ikon, warna, keadaan }) => {
+  const selesai = keadaan === 'selesai';
+  const utama = keadaan === 'utama';
+
+  const gaya = selesai
+      ? `bg-white border-slate-200/80 ${warna.teksSelesai}`
+      : utama
+          ? `${warna.isi} border-transparent text-white ${warna.bayangan}`
+          : 'bg-white border-slate-200/80 text-slate-400';
+
+  return (
+      <button
+          onClick={onClick}
+          className={`relative flex-1 min-w-0 rounded-2xl border p-3.5 text-left transition-all duration-200 active:scale-[0.97] ${gaya}`}
+      >
+          <div className="flex items-center gap-2">
+              <span className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center
+                  ${selesai ? warna.lembut : utama ? 'bg-white/20' : 'bg-slate-100'}`}>
+                  <Ikon className="w-[15px] h-[15px]" strokeWidth={2.1} />
+              </span>
+              <span className={`text-[11px] font-semibold tracking-tight truncate
+                  ${utama ? 'text-white/90' : selesai ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {label}
+              </span>
+          </div>
+
+          <p className={`mt-2.5 font-semibold tabular-nums tracking-tight leading-none
+              ${jam ? 'text-[26px]' : 'text-[26px] opacity-40'}`}>
+              {jam || '--:--'}
+          </p>
+
+          <p className={`mt-1.5 text-[10px] font-medium leading-tight
+              ${utama ? 'text-white/70' : selesai ? warna.teksSelesai : 'text-slate-300'}`}>
+              {selesai
+                  ? 'Sudah tercatat'
+                  : utama ? 'Ketuk untuk absen' : 'Belum tercatat'}
+          </p>
+
+          {selesai && (
+              <span className={`absolute top-3 right-3 ${warna.teksSelesai}`}>
+                  <CheckCircle className="w-4 h-4" strokeWidth={2.2} />
+              </span>
+          )}
+      </button>
+  );
+};
 
     // KOMPONEN JAM ANALOG
 const AnalogClock = ({ time }) => { const s = time.getSeconds(), m = time.getMinutes(), h = time.getHours(); const sD = (s/60)*360, mD = (m/60)*360+(s/60)*6, hD = ((h%12)/12)*360+(m/60)*30; return (<div className="relative w-28 h-28 flex items-center justify-center bg-white rounded-full shadow-inner border-4 border-slate-100">{[...Array(12)].map((_, i) => { const n = i+1, r = n*30; return (<div key={n} className="absolute w-full h-full text-center pt-1" style={{transform:`rotate(${r}deg)`}}><span className="inline-block text-[10px] font-bold text-slate-400" style={{transform:`rotate(-${r}deg)`}}>{n}</span></div>); })}{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-0.5 h-1 bg-slate-200 rounded-full" style={{transform:`rotate(${i*30}deg) translate(0, -38px)`}}></div>))}<div className="absolute w-1.5 h-7 bg-slate-800 rounded-full origin-bottom z-10" style={{transform:`rotate(${hD}deg)`, bottom:'50%'}}></div><div className="absolute w-1 h-9 bg-blue-500 rounded-full origin-bottom z-10" style={{transform:`rotate(${mD}deg)`, bottom:'50%'}}></div><div className="absolute w-0.5 h-10 bg-red-500 rounded-full origin-bottom z-10" style={{transform:`rotate(${sD}deg)`, bottom:'50%'}}></div><div className="absolute w-2.5 h-2.5 bg-slate-800 rounded-full z-20 border-2 border-white"></div></div>); };
@@ -412,6 +489,63 @@ const Skeleton = ({ className }) => (
     );
   };
 
+  // ============================================================
+  // ABSEN HARI INI — sumber jam masuk & jam pulang
+  //
+  // Angkanya datang dari hitungStats di Apps Script (field
+  // jam_masuk_hari_ini / jam_pulang_hari_ini), jadi TIDAK ada request
+  // tambahan: loop sheet Absensi di sana memang sudah membaca kolom
+  // waktu inputnya.
+  //
+  // Cadangan localStorage dipakai hanya untuk jeda beberapa detik antara
+  // "form absen baru saja terkirim" dan "stats berikutnya sudah turun",
+  // supaya jamnya muncul seketika. Isinya diabaikan kalau tanggalnya
+  // bukan hari ini atau user-nya beda.
+  const absenLokal = (() => {
+    try {
+      const raw = localStorage.getItem('absen_hari_ini');
+      if (!raw) return {};
+      const d = JSON.parse(raw);
+      // tglLokal(), bukan toISOString(): toISOString memberi tanggal UTC,
+      // jadi absen pukul 06.00 WIB tersimpan sebagai "kemarin" dan
+      // jam-nya tidak pernah muncul.
+      if (d.tgl !== tglLokal() || String(d.userId) !== String(user.id)) return {};
+      return d;
+    } catch (e) { return {}; }
+  })();
+
+  const jamMasuk  = stats.jam_masuk_hari_ini  || absenLokal.masuk  || '';
+  const jamPulang = stats.jam_pulang_hari_ini || absenLokal.pulang || '';
+
+  const menitDariJam = (j) => {
+    if (!j) return null;
+    const c = String(j).match(/^(\d{1,2}):(\d{2})/);
+    return c ? Number(c[1]) * 60 + Number(c[2]) : null;
+  };
+
+  // Selisih masuk -> pulang. Kalau negatif, berarti shift yang menyeberang
+  // tengah malam, bukan data salah.
+  const durasiKerja = (() => {
+    const a = menitDariJam(jamMasuk), b = menitDariJam(jamPulang);
+    if (a === null || b === null) return '';
+    const d = b >= a ? b - a : b + 1440 - a;
+    return `${Math.floor(d / 60)} jam ${d % 60} menit`;
+  })();
+
+  // Tombol hanya untuk user yang memang punya akses menu-nya (lihat kolom
+  // "akses" di sheet Users). Sisa menunya tetap tampil di daftar e-Form.
+  const menuMasuk  = allowedMenus.find(m => m.value === 'Hadir');
+  const menuPulang = allowedMenus.find(m => m.value === 'Pulang');
+  const adaTombolAbsen = !!(menuMasuk || menuPulang);
+  const menuEForm = allowedMenus.filter(m => m.value !== 'Hadir' && m.value !== 'Pulang');
+
+  const bukaFormAbsen = (nilai) => {
+    localStorage.setItem('absenType', nilai);
+    setView('form');
+  };
+
+  const jamSekarang = time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
+
   // --- RENDER UI ---
   const sHadir  = Number(stats.total_hadir) || 0;
   const sTelatX = Number(stats.total_telat_freq) || 0;
@@ -506,6 +640,111 @@ const Skeleton = ({ className }) => (
             </div>
         </div>
       </div> 
+
+      {/* --- ABSEN HARI INI --- */}
+      {/* Dulu "Absen Masuk" dan "Absen Pulang" hanya dua baris di antara
+          delapan baris daftar e-Form — padahal keduanya dipakai setiap hari
+          oleh setiap orang, sedangkan sisanya sebulan sekali. Sekarang
+          keduanya naik ke atas sebagai satu kartu tersendiri, dan jamnya
+          langsung terbaca tanpa harus membuka Riwayat. */}
+      {adaTombolAbsen && (
+        <div className="mb-4 bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+
+            <div className="flex items-center justify-between px-4 pt-3.5 pb-1">
+                <h3 className="text-[13px] font-semibold text-slate-900 tracking-tight">Absensi hari ini</h3>
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 tabular-nums">
+                    <Clock className="w-3 h-3" strokeWidth={2} />
+                    {jamSekarang}
+                </span>
+            </div>
+
+            <div className="flex gap-2.5 p-3 pt-2">
+                {menuMasuk && (
+                    <KartuAbsen
+                        onClick={() => bukaFormAbsen('Hadir')}
+                        label={menuMasuk.label || 'Absen Masuk'}
+                        jam={jamMasuk}
+                        Ikon={LogIn}
+                        keadaan={jamMasuk ? 'selesai' : 'utama'}
+                        warna={{
+                            isi: 'bg-emerald-600',
+                            bayangan: 'shadow-lg shadow-emerald-600/20',
+                            lembut: 'bg-emerald-50',
+                            teksSelesai: 'text-emerald-600',
+                        }}
+                    />
+                )}
+
+                {menuPulang && (
+                    <KartuAbsen
+                        onClick={() => bukaFormAbsen('Pulang')}
+                        label={menuPulang.label || 'Absen Pulang'}
+                        jam={jamPulang}
+                        Ikon={LogOut}
+                        keadaan={jamPulang ? 'selesai' : (jamMasuk || !menuMasuk ? 'utama' : 'menunggu')}
+                        warna={{
+                            isi: 'bg-rose-600',
+                            bayangan: 'shadow-lg shadow-rose-600/20',
+                            lembut: 'bg-rose-50',
+                            teksSelesai: 'text-rose-600',
+                        }}
+                    />
+                )}
+            </div>
+
+            {/* Baris bawah hanya muncul kalau ada yang bisa dikatakan.
+                Tanpa ini, kartu punya footer kosong sepanjang pagi. */}
+            {(durasiKerja || (jamMasuk && !jamPulang)) && (
+                <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-2 flex items-center gap-1.5">
+                    <Timer className="w-3 h-3 text-slate-400" strokeWidth={2} />
+                    <span className="text-[10.5px] font-medium text-slate-500">
+                        {durasiKerja
+                            ? <>Durasi kerja hari ini <span className="font-semibold text-slate-700 tabular-nums">{durasiKerja}</span></>
+                            : <>Masuk pukul <span className="font-semibold text-slate-700 tabular-nums">{jamMasuk}</span> — belum absen pulang</>}
+                    </span>
+                </div>
+            )}
+        </div>
+      )}
+
+      {/* --- MENU SHORTCUT --- */}
+      {/* Satu bar tersegmentasi. Versi lama memakai kartu terpisah dengan warna teks
+          berbeda-beda + scroll horizontal, jadi scrollbar-nya ikut terlihat di layar kecil.
+          Posisinya dinaikkan ke atas kartu Statistik (Agu 2026): ini navigasi, dan
+          navigasi tidak boleh berada di bawah blok angka setinggi satu layar. */}
+      <div className="mb-5 bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+        <div className={`grid divide-x divide-slate-100 ${canApprove && canAccessPanel ? 'grid-cols-5' : (canApprove || canAccessPanel ? 'grid-cols-4' : 'grid-cols-3')}`}>
+
+            <button onClick={() => setView('history')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                <History className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Riwayat</span>
+            </button>
+
+            <button onClick={() => setView('db_absen')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                <Fingerprint className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Data mesin</span>
+            </button>
+
+            <button onClick={() => setView('remark')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                <MessageSquareText className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">{isHRDOrAdmin ? 'Respon' : 'Lapor HRD'}</span>
+            </button>
+
+            {canApprove && (
+                <button onClick={() => setView('approval')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                    <UsersRound className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                    <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Approval</span>
+                </button>
+            )}
+
+            {canAccessPanel && (
+                <button onClick={() => setView('admin')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
+                    <SlidersHorizontal className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                    <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Panel</span>
+                </button>
+            )}
+        </div>
+      </div>
 
       {/* --- STATISTIK (CLICKABLE) --- */}
       <div className="mb-5">
@@ -612,43 +851,6 @@ const Skeleton = ({ className }) => (
         </div>
       </div>
 
-      {/* --- MENU SHORTCUT --- */}
-      {/* Satu bar tersegmentasi. Versi lama memakai kartu terpisah dengan warna teks
-          berbeda-beda + scroll horizontal, jadi scrollbar-nya ikut terlihat di layar kecil. */}
-      <div className="mb-6 bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
-        <div className={`grid divide-x divide-slate-100 ${canApprove && canAccessPanel ? 'grid-cols-5' : (canApprove || canAccessPanel ? 'grid-cols-4' : 'grid-cols-3')}`}>
-
-            <button onClick={() => setView('history')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                <History className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
-                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Riwayat</span>
-            </button>
-
-            <button onClick={() => setView('db_absen')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                <Fingerprint className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
-                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Data mesin</span>
-            </button>
-
-            <button onClick={() => setView('remark')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                <MessageSquareText className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
-                <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">{isHRDOrAdmin ? 'Respon' : 'Lapor HRD'}</span>
-            </button>
-
-            {canApprove && (
-                <button onClick={() => setView('approval')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                    <UsersRound className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
-                    <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Approval</span>
-                </button>
-            )}
-
-            {canAccessPanel && (
-                <button onClick={() => setView('admin')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                    <SlidersHorizontal className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
-                    <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Panel</span>
-                </button>
-            )}
-        </div>
-      </div>
-
       {/* --- MENU INPUT SHIFT --- */}
       {isShiftWorker && (
          <div className="mb-5">
@@ -672,12 +874,17 @@ const Skeleton = ({ className }) => (
       {/* Dulu grid kartu dengan blob dekoratif dan subjudul "Pengajuan Form" yang
           diulang di tiap kartu. Sekarang jadi daftar: kolom kanan dipakai untuk
           sisa kuota, informasi yang sebelumnya baru muncul setelah tombol mati. */}
+      {/* Absen Masuk/Pulang sengaja dikeluarkan dari daftar ini — keduanya
+          sudah punya kartu sendiri di atas, dan menampilkannya dua kali
+          hanya membuat orang ragu mana yang "benar". */}
+      {menuEForm.length > 0 && (
+      <>
       <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight mb-2.5 px-1">
           Pengajuan e-Form
       </h3>
 
       <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden divide-y divide-slate-100">
-        {allowedMenus.map((item) => {
+        {menuEForm.map((item) => {
             const Icon = ICON_MAP[item.value] || Star;
             const toneClass = COLOR_MAP[item.value] || 'bg-slate-100 text-slate-500';
             const sisaCuti = parseInt(user.sisaCuti) || 0;
@@ -720,6 +927,8 @@ const Skeleton = ({ className }) => (
             )
         })}
       </div>
+      </>
+      )}
 
       {/* --- FOOTER --- */}
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
@@ -2654,8 +2863,32 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
 
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json();
-      if (data.result === 'success') { 
+      if (data.result === 'success') {
         alert(data.message);
+
+        // Catat jam masuk/pulang hari ini secara lokal supaya kartu
+        // "Absensi hari ini" di dashboard langsung terisi, tanpa menunggu
+        // stats berikutnya turun dari server. Ini CADANGAN, bukan sumber
+        // kebenaran — dashboard selalu mendahulukan angka dari hitungStats.
+        if (!isEditMode && (type === 'Hadir' || type === 'Pulang')) {
+          try {
+            const skr = new Date();
+            const hariIni = tglLokal(skr);
+            let simpan = {};
+            try {
+              const lama = JSON.parse(localStorage.getItem('absen_hari_ini') || '{}');
+              if (lama.tgl === hariIni && String(lama.userId) === String(user.id)) simpan = lama;
+            } catch (e2) { /* isi rusak: mulai dari kosong */ }
+
+            simpan.tgl = hariIni;
+            simpan.userId = user.id;
+            simpan[type === 'Hadir' ? 'masuk' : 'pulang'] =
+              String(skr.getHours()).padStart(2, '0') + ':' + String(skr.getMinutes()).padStart(2, '0');
+
+            localStorage.setItem('absen_hari_ini', JSON.stringify(simpan));
+          } catch (e2) { /* localStorage penuh/diblokir: abaikan saja */ }
+        }
+
         if (data.newSisaCuti !== undefined) {
            const updatedUser = { ...user, sisaCuti: data.newSisaCuti };
            setUser(updatedUser); 

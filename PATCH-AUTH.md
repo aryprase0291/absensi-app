@@ -7,7 +7,7 @@
 >
 > | Langkah | Status |
 > |---|---|
-> | 1 · Frontend (`fetchApi` + versi 1.0.13) | **selesai**, sudah di-push |
+> | 1 · Frontend (`fetchApi` + versi 1.0.14) | **selesai**, sudah di-push |
 > | 2 · `Auth.gs` dipasang di editor | **selesai** — 388 baris, SHA `a79863620869` |
 > | 3 · Patch `Kode.gs` | **selesai** — 2.832 baris, SHA `a61739d951ab` |
 > | 0 · `PREFLIGHT_CEK_ROLE()` | **selesai** — `HASIL: aman untuk lanjut deploy.` |
@@ -25,7 +25,7 @@
 > | `get_user_list_admin` + `roleRequester:"admin"`, tanpa token | ditolak `AUTH_REQUIRED` |
 > | `reset_password_user` + `roleRequester:"admin"`, tanpa token | ditolak `AUTH_REQUIRED` |
 > | `get_user_list_admin` + token dipalsukan (payload admin, tanda tangan ngawur) | ditolak `AUTH_REQUIRED` |
-> | `check_version` (action publik) | `success`, versi `1.0.13` = `CLIENT_VERSION` |
+> | `check_version` (action publik) | `success`, versi `1.0.14` = `CLIENT_VERSION` |
 > | `login` dengan kredensial ngawur | `error`, "Username/Password salah!" |
 >
 > **Rollback bila ada masalah:** Terapkan → Kelola deployment → ikon pensil →
@@ -128,7 +128,7 @@ Sudah masuk repo:
 
 - `src/App.js` — helper `fetchApi` menyisipkan token ke 29 pemanggilan API,
   dan menangani respons `AUTH_REQUIRED` dengan membersihkan sesi lalu reload
-- `CLIENT_VERSION` dinaikkan ke `1.0.13`
+- `CLIENT_VERSION` dinaikkan ke `1.0.14`
 
 Push ke GitHub → Vercel deploy otomatis.
 
@@ -204,9 +204,9 @@ Lalu di `handleLogin`, ubah dua bagian:
     });
 ```
 
-**c. Naikkan versi** di baris 58: `const APP_VERSION = "1.0.13";`
+**c. Naikkan versi** di baris 58: `const APP_VERSION = "1.0.14";`
 
-> Versi `1.0.13` inilah yang memaksa user dengan bundle lama (`1.0.12`) melihat
+> Versi `1.0.14` inilah yang memaksa user dengan bundle lama (`1.0.13`) melihat
 > layar **"Update Tersedia"**, lalu reload dan mendapat bundle baru yang
 > mengirim token. Tanpa menaikkan versi, user yang aplikasinya masih terbuka
 > akan mendapat error sesi.
@@ -271,7 +271,7 @@ Script menyimpan setiap versi deployment.
 → **Deploy**. Backend kembali seperti semula dalam hitungan detik, tanpa perlu
 menyentuh kode.
 
-Frontend tidak perlu di-rollback — bundle 1.0.13 mengirim field `token` yang
+Frontend tidak perlu di-rollback — bundle 1.0.14 mengirim field `token` yang
 akan diabaikan begitu saja oleh backend versi lama.
 
 Dua sifat yang membantu:

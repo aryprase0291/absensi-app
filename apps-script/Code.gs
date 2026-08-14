@@ -1185,21 +1185,63 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
         total_alpa: 0,
         total_no_scan_in: 0,
         total_no_scan_out: 0,
-        ijin_count: 0,      
+        ijin_count: 0,
         remarks_open: 0,
-        periode_db: 'Belum ada data'
+        periode_db: 'Belum ada data',
+
+        // Jam absen HARI INI, dipakai kartu "Absensi hari ini" di dashboard.
+        // Sengaja diisi di dalam loop sheet Absensi yang sudah ada di bawah:
+        // kolom waktu inputnya (index 1) memang sudah ikut terbaca, jadi
+        // tambahan ini tidak menambah satu sel pun yang dibaca dan tidak
+        // menambah request apa pun dari sisi aplikasi.
+        jam_masuk_hari_ini: '',
+        jam_pulang_hari_ini: ''
     };
 
+    // Patokan "hari ini" mengikuti zona waktu skrip, bukan zona waktu
+    // browser. Kalau tidak, user yang membuka aplikasi lewat tengah malam
+    // UTC akan melihat jam absennya hilang padahal datanya ada.
+    const tzSkrip = Session.getScriptTimeZone();
+    const tglHariIni = Utilities.formatDate(new Date(), tzSkrip, 'yyyy-MM-dd');
+
     // 1. HITUNG STATISTIK MANUAL (Sheet Absensi - Ijin, Sakit, Alpa)
-    for (let i = 1; i < rowsAbsensi.length; i++) { 
-        if (String(rowsAbsensi[i][2]) === targetId) { 
+    for (let i = 1; i < rowsAbsensi.length; i++) {
+        if (String(rowsAbsensi[i][2]) === targetId) {
             const tipe = rowsAbsensi[i][4];
-            const status = rowsAbsensi[i][12]; 
+            const status = rowsAbsensi[i][12];
+
+            // JAM MASUK / PULANG HARI INI
+            //
+            // Diambil dari kolom B (Waktu Input) — waktu saat tombol kirim
+            // ditekan, yaitu yang sama dengan yang dilihat karyawan.
+            // Baris Rejected tetap diabaikan, sama seperti hitungan lain.
+            if (status !== 'Rejected' && (tipe === 'Hadir' || tipe === 'Pulang')) {
+                const wkt = rowsAbsensi[i][1];
+                if (wkt) {
+                    const dWkt = new Date(wkt);
+                    if (!isNaN(dWkt.getTime()) &&
+                        Utilities.formatDate(dWkt, tzSkrip, 'yyyy-MM-dd') === tglHariIni) {
+                        const jam = Utilities.formatDate(dWkt, tzSkrip, 'HH:mm');
+                        // Kalau seseorang absen dua kali di hari yang sama:
+                        // MASUK ambil yang paling awal, PULANG ambil yang
+                        // paling akhir. Itu yang benar untuk durasi kerja.
+                        if (tipe === 'Hadir') {
+                            if (!stats.jam_masuk_hari_ini || jam < stats.jam_masuk_hari_ini) {
+                                stats.jam_masuk_hari_ini = jam;
+                            }
+                        } else {
+                            if (!stats.jam_pulang_hari_ini || jam > stats.jam_pulang_hari_ini) {
+                                stats.jam_pulang_hari_ini = jam;
+                            }
+                        }
+                    }
+                }
+            }
 
             if (status !== 'Rejected') {
-                if (tipe === 'Ijin') { 
+                if (tipe === 'Ijin') {
                     stats.ijin_count++;
-                    stats.total_ijin++; 
+                    stats.total_ijin++;
                 }
                 // [UPDATE] Logika Cuti manual dimatikan, karena diambil dari Master
                 // if (tipe === 'Cuti' || tipe === 'Cuti EO') stats.total_cuti++;

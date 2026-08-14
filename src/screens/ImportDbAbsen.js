@@ -12,10 +12,11 @@
 // tetap berlaku jaminan yang sama seperti satu file — sheet baru disentuh
 // pada potongan terakhir.
 //
-// Catatan penting soal pengiriman: action 'import_db_absen' adalah
-// action TULIS, jadi permintaan yang gagal TIDAK BOLEH diulang otomatis.
-// Karena itu komponen ini memakai fetch-nya sendiri, bukan fetchApi()
-// di App.js yang punya logika retry.
+// [Agu 2026] PENGIRIMANNYA SUDAH TIDAK LAGI DI SINI. Loop chunk dipindah
+// ke <ImportJobProvider> (context/ImportJobContext.js) yang hidup di akar
+// aplikasi, sehingga admin boleh menutup layar ini dan memakai menu lain
+// selagi import berjalan; hasilnya muncul sebagai notifikasi. Komponen ini
+// tinggal mengurus: pilih file -> baca -> pratinjau -> picu job.
 // =======================================================
 
 import React, { useState, useRef } from 'react';
@@ -23,43 +24,8 @@ import * as XLSX from 'xlsx';
 import {
   Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Loader2, X, Info, Plus
 } from 'lucide-react';
-import { SCRIPT_URL } from '../config/constants';
 import { parseWorkbook, KOLOM_SUMBER, JUMLAH_KOLOM, IDX } from './importDbAbsenParser';
-
-// 400 baris x 18 kolom masih jauh di bawah batas payload Apps Script,
-// dan cukup kecil supaya satu eksekusi tidak mendekati batas 6 menit.
-const UKURAN_CHUNK = 400;
-
-function buatSessionId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return 'imp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
-}
-
-async function kirimSekali(payload) {
-  let token = '';
-  try {
-    const saved = sessionStorage.getItem('app_user');
-    if (saved) {
-      const u = JSON.parse(saved);
-      token = (u && u.token) || '';
-    }
-  } catch (e) { /* biarkan kosong; backend akan menolak */ }
-
-  const res = await fetch(SCRIPT_URL, {
-    method: 'POST',
-    body: JSON.stringify({ ...payload, token })
-  });
-
-  const teks = await res.text();
-  try {
-    return JSON.parse(teks);
-  } catch (e) {
-    throw new Error(
-      'Server Google membalas halaman, bukan data. ' +
-      'JANGAN langsung mengulang — periksa dulu isi sheet dbabsen.'
-    );
-  }
-}
+import { useImportJob } from '../context/ImportJobContext';
 
 function tglTampil(ymd) {
   if (!ymd) return '-';
@@ -94,11 +60,15 @@ export default function ImportDbAbsen({ user }) {
   const [mode, setMode] = useState('upsert');
   const [konfirmasi, setKonfirmasi] = useState('');
   const [membaca, setMembaca] = useState(false);
-  const [mengirim, setMengirim] = useState(false);
-  const [progres, setProgres] = useState(0);
-  const [pesan, setPesan] = useState(null);          // { tipe, teks }
-  const [ringkasanServer, setRingkasanServer] = useState(null);
+  const [pesan, setPesan] = useState(null);          // { tipe, teks } — hanya error lokal (baca file / validasi)
   const inputRef = useRef(null);
+
+  // Kemajuan dan hasil import TIDAK disimpan di komponen ini lagi:
+  // begitu admin pindah menu, state lokal ikut hilang. Sumbernya sekarang
+  // provider di akar aplikasi.
+  const { job, mulaiImport, sedangJalan } = useImportJob();
+  const mengirim = sedangJalan;
+  const progres = job.progres;
 
   const kosongkanInput = () => {
     // Tanpa ini, memilih file yang sama dua kali berturut-turut tidak
@@ -108,7 +78,7 @@ export default function ImportDbAbsen({ user }) {
 
   const reset = () => {
     setDaftarFile([]); setHasil(null); setKonfirmasi('');
-    setProgres(0); setPesan(null); setRingkasanServer(null);
+    setPesan(null);
     kosongkanInput();
   };
 
@@ -120,7 +90,6 @@ export default function ImportDbAbsen({ user }) {
   const bacaSemua = async (files) => {
     setMembaca(true);
     setPesan(null);
-    setRingkasanServer(null);
     setHasil(null);
 
     try {
@@ -176,7 +145,7 @@ export default function ImportDbAbsen({ user }) {
     await bacaSemua(sisa);
   };
 
-  const handleImport = async () => {
+  const handleImport = () => {
     if (!hasil || hasil.baris.length === 0) return;
 
     if (mode === 'replace' && konfirmasi.trim().toUpperCase() !== 'GANTI') {
@@ -185,50 +154,19 @@ export default function ImportDbAbsen({ user }) {
     }
 
     const asal = daftarFile.length > 1 ? `${daftarFile.length} file` : 'file ini';
-    const kalimat = mode === 'replace'
-      ? `SELURUH isi sheet dbabsen akan dihapus dan diganti ${hasil.baris.length} baris dari ${asal}. Lanjutkan?`
-      : `${hasil.baris.length} baris dari ${asal} akan dimasukkan. Baris lama dengan NIK + tanggal yang sama akan ditimpa, sisanya tetap. Lanjutkan?`;
+    const kalimat = (mode === 'replace'
+      ? `SELURUH isi sheet dbabsen akan dihapus dan diganti ${hasil.baris.length} baris dari ${asal}.`
+      : `${hasil.baris.length} baris dari ${asal} akan dimasukkan. Baris lama dengan NIK + tanggal yang sama akan ditimpa, sisanya tetap.`)
+      + '\n\nImport berjalan di latar — Anda boleh menutup layar ini dan memakai menu lain. '
+      + 'Tapi JANGAN menutup atau me-reload tab browser sampai notifikasi selesai muncul.'
+      + '\n\nLanjutkan?';
     if (!window.confirm(kalimat)) return;
 
-    const sessionId = buatSessionId();
-    const total = Math.ceil(hasil.baris.length / UKURAN_CHUNK);
-
-    setMengirim(true);
     setPesan(null);
-    setRingkasanServer(null);
-    setProgres(0);
 
-    try {
-      for (let i = 0; i < total; i++) {
-        const potongan = hasil.baris.slice(i * UKURAN_CHUNK, (i + 1) * UKURAN_CHUNK);
-
-        const res = await kirimSekali({
-          action: 'import_db_absen',
-          sessionId,
-          chunkIndex: i,
-          totalChunks: total,
-          mode,
-          rows: potongan
-        });
-
-        if (res.result !== 'success') {
-          const catatan = (i === total - 1)
-            ? ' Ini potongan terakhir, jadi periksa sheet dbabsen sebelum mengulang.'
-            : ' Sheet dbabsen belum tersentuh, aman untuk diulang dari awal.';
-          throw new Error((res.message || 'Ditolak server.') + catatan);
-        }
-
-        setProgres(Math.round(((i + 1) / total) * 100));
-
-        if (res.stage === 'done') {
-          setRingkasanServer(res);
-          setPesan({ tipe: 'sukses', teks: 'Import selesai.' });
-        }
-      }
-    } catch (err) {
-      setPesan({ tipe: 'error', teks: err.message });
-    } finally {
-      setMengirim(false);
+    const jadi = mulaiImport(hasil.baris, mode, daftarFile.length);
+    if (!jadi) {
+      setPesan({ tipe: 'error', teks: 'Masih ada import lain yang sedang berjalan. Tunggu sampai selesai.' });
     }
   };
 
@@ -257,8 +195,32 @@ export default function ImportDbAbsen({ user }) {
           ditulis sebagai nilai statis ke sheet <code className="bg-white px-1 rounded">dbabsen</code>,
           menggantikan formula IMPORTRANGE. Semua sheet di dalam tiap file dibaca
           otomatis; sheet tanpa kolom NIK./Tanggal/Symbol dilewati.
+          <p className="mt-1.5">
+            <strong className="text-blue-800">Import berjalan di latar.</strong> Setelah
+            tombol ditekan Anda boleh keluar dari layar ini dan memakai menu lain —
+            notifikasi berhasil/gagal akan muncul sendiri. Yang tetap tidak boleh:
+            menutup atau me-reload tab browser sebelum selesai.
+          </p>
         </div>
       </div>
+
+      {/* JOB YANG SEDANG BERJALAN — ditampilkan juga di sini supaya admin
+          yang kembali ke layar ini tahu ada import yang belum kelar. */}
+      {mengirim && (
+        <div className="bg-slate-900 text-white rounded-xl p-4 flex gap-3">
+          <Loader2 className="w-5 h-5 animate-spin text-blue-300 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold">Import sedang berjalan — {progres}%</p>
+            <div className="mt-2 h-1.5 bg-white/15 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-400 rounded-full transition-all duration-300" style={{ width: `${progres}%` }} />
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1.5 tabular-nums">
+              {job.chunkSelesai}/{job.totalChunk} bagian · {job.jumlahBaris} baris ·
+              mode {job.mode === 'replace' ? 'ganti total' : 'perbarui'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* PILIH FILE */}
       <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
@@ -505,47 +467,50 @@ export default function ImportDbAbsen({ user }) {
             </div>
           )}
 
-          {mengirim && (
-            <div>
-              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${progres}%` }} />
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1 text-center">
-                Mengirim {progres}% — jangan tutup halaman ini
-              </p>
-            </div>
-          )}
-
           <button
             onClick={handleImport}
             disabled={mengirim || (mode === 'replace' && konfirmasi.trim().toUpperCase() !== 'GANTI')}
             className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold text-sm hover:bg-slate-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
           >
             {mengirim
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Mengimpor...</>
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Import sedang berjalan…</>
               : <><Upload className="w-4 h-4" /> Import {hasil.baris.length} baris ke dbabsen</>}
           </button>
         </div>
       )}
 
-      {/* PESAN */}
+      {/* PESAN LOKAL — gagal baca file / validasi. Hasil import sendiri
+          dilaporkan oleh notifikasi global, bukan di sini. */}
       {pesan && (
         <div className={`p-4 rounded-xl border flex gap-3 text-xs ${pesan.tipe === 'sukses' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
           {pesan.tipe === 'sukses'
             ? <CheckCircle className="w-5 h-5 shrink-0" />
             : <AlertTriangle className="w-5 h-5 shrink-0" />}
+          <div><p className="font-bold">{pesan.teks}</p></div>
+        </div>
+      )}
+
+      {/* HASIL IMPORT TERAKHIR — tetap terbaca di layar ini walau notifikasi
+          melayangnya sudah ditutup admin. */}
+      {!mengirim && (job.status === 'sukses' || job.status === 'gagal') && (
+        <div className={`p-4 rounded-xl border flex gap-3 text-xs ${job.status === 'sukses' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+          {job.status === 'sukses'
+            ? <CheckCircle className="w-5 h-5 shrink-0" />
+            : <AlertTriangle className="w-5 h-5 shrink-0" />}
           <div>
-            <p className="font-bold">{pesan.teks}</p>
-            {ringkasanServer && (
+            <p className="font-bold">
+              {job.status === 'sukses' ? 'Import terakhir selesai.' : job.pesan}
+            </p>
+            {job.status === 'sukses' && job.ringkasan && (
               <ul className="mt-2 space-y-0.5 text-green-700">
-                <li>Baris dari file: {ringkasanServer.barisBaru}</li>
-                {ringkasanServer.mode === 'upsert' && (
+                <li>Baris dari file: {job.ringkasan.barisBaru}</li>
+                {job.ringkasan.mode === 'upsert' && (
                   <>
-                    <li>Baris lama ditimpa: {ringkasanServer.barisDitimpa}</li>
-                    <li>Baris lama dipertahankan: {ringkasanServer.barisDipertahankan}</li>
+                    <li>Baris lama ditimpa: {job.ringkasan.barisDitimpa}</li>
+                    <li>Baris lama dipertahankan: {job.ringkasan.barisDipertahankan}</li>
                   </>
                 )}
-                <li className="font-bold">Total isi dbabsen sekarang: {ringkasanServer.totalBaris}</li>
+                <li className="font-bold">Total isi dbabsen sekarang: {job.ringkasan.totalBaris}</li>
               </ul>
             )}
           </div>
