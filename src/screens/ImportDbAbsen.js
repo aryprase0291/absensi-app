@@ -19,10 +19,10 @@
 // tinggal mengurus: pilih file -> baca -> pratinjau -> picu job.
 // =======================================================
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import {
-  Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Loader2, X, Info, Plus
+  Upload, UploadCloud, FileSpreadsheet, AlertTriangle, CheckCircle, Loader2, X, Plus
 } from 'lucide-react';
 import { parseWorkbook, KOLOM_SUMBER, JUMLAH_KOLOM, IDX } from './importDbAbsenParser';
 import { useImportJob } from '../context/ImportJobContext';
@@ -36,6 +36,20 @@ function tglTampil(ymd) {
 /** Identitas file, supaya file yang sama tidak terbaca dua kali. */
 function kunciFile(f) {
   return `${f.name}|${f.size}|${f.lastModified}`;
+}
+
+const EKSTENSI_DITERIMA = ['.xlsx', '.xls', '.csv'];
+
+/**
+ * Penyaring untuk file yang DI-DRAG. Lewat tombol pilih, atribut `accept`
+ * sudah menyaring di tingkat sistem; drag-and-drop tidak punya penyaring
+ * itu, jadi apa pun bisa jatuh ke sini — termasuk PDF, gambar, atau folder.
+ * Tanpa penyaringan, XLSX.read() akan melempar error mentah yang tidak
+ * memberi tahu apa pun soal penyebabnya.
+ */
+function ekstensiCocok(f) {
+  const n = (f.name || '').toLowerCase();
+  return EKSTENSI_DITERIMA.some((e) => n.endsWith(e));
 }
 
 /** Satu File -> daftar sheet siap dilempar ke parseWorkbook(). */
@@ -61,7 +75,14 @@ export default function ImportDbAbsen({ user }) {
   const [konfirmasi, setKonfirmasi] = useState('');
   const [membaca, setMembaca] = useState(false);
   const [pesan, setPesan] = useState(null);          // { tipe, teks } — hanya error lokal (baca file / validasi)
+  const [seret, setSeret] = useState(false);         // ada file melayang di atas kotak
   const inputRef = useRef(null);
+
+  // dragenter/dragleave juga ikut menyala untuk tiap elemen ANAK di dalam
+  // kotak. Kalau hanya memakai boolean, sorotan berkedip setiap kali kursor
+  // melewati ikon atau teks di dalamnya. Penghitung ini yang menahannya:
+  // baru dianggap keluar setelah semua enter berpasangan dengan leave.
+  const hitungSeret = useRef(0);
 
   // Kemajuan dan hasil import TIDAK disimpan di komponen ini lagi:
   // begitu admin pindah menu, state lokal ikut hilang. Sumbernya sekarang
@@ -116,13 +137,29 @@ export default function ImportDbAbsen({ user }) {
     }
   };
 
-  const handlePilihFile = async (e) => {
-    const dipilih = Array.from(e.target.files || []);
-    kosongkanInput();
+  /**
+   * Jalur masuk tunggal untuk file baru — dipakai tombol pilih MAUPUN
+   * drag-and-drop, supaya keduanya tidak pernah berbeda perilaku.
+   */
+  const tambahFile = async (dipilih) => {
     if (dipilih.length === 0) return;
 
+    // Yang salah format dibuang di sini, tapi disebut namanya. Membuang
+    // diam-diam membuat orang mengira file-nya terbaca padahal tidak.
+    const salahFormat = dipilih.filter((f) => !ekstensiCocok(f));
+    const cocok = dipilih.filter(ekstensiCocok);
+
+    if (cocok.length === 0) {
+      setPesan({
+        tipe: 'error',
+        teks: `Format tidak didukung: ${salahFormat.map((f) => f.name).join(', ')}. ` +
+              `Hanya ${EKSTENSI_DITERIMA.join(' / ')} yang bisa dibaca.`
+      });
+      return;
+    }
+
     const sudahAda = new Set(daftarFile.map(kunciFile));
-    const baru = dipilih.filter((f) => !sudahAda.has(kunciFile(f)));
+    const baru = cocok.filter((f) => !sudahAda.has(kunciFile(f)));
 
     if (baru.length === 0) {
       setPesan({ tipe: 'error', teks: 'File itu sudah ada di daftar.' });
@@ -132,7 +169,68 @@ export default function ImportDbAbsen({ user }) {
     const gabungan = [...daftarFile, ...baru];
     setDaftarFile(gabungan);
     await bacaSemua(gabungan);
+
+    // Peringatan format ditampilkan SETELAH pembacaan, supaya tidak
+    // langsung tertimpa oleh setPesan(null) di dalam bacaSemua().
+    if (salahFormat.length > 0) {
+      setPesan({
+        tipe: 'error',
+        teks: `${salahFormat.length} file dilewati karena formatnya tidak didukung: ` +
+              salahFormat.map((f) => f.name).join(', ')
+      });
+    }
   };
+
+  const handlePilihFile = async (e) => {
+    const dipilih = Array.from(e.target.files || []);
+    kosongkanInput();
+    await tambahFile(dipilih);
+  };
+
+  // --- DRAG AND DROP ---
+  const bolehTerima = !membaca && !mengirim;
+
+  const onDragEnter = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!bolehTerima) return;
+    hitungSeret.current += 1;
+    setSeret(true);
+  };
+
+  const onDragOver = (e) => {
+    // Wajib. Tanpa preventDefault di dragover, event 'drop' TIDAK PERNAH
+    // dipicu browser — ini penyebab paling umum dropzone "tidak berfungsi".
+    e.preventDefault(); e.stopPropagation();
+    if (bolehTerima) e.dataTransfer.dropEffect = 'copy';
+  };
+
+  const onDragLeave = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    hitungSeret.current = Math.max(0, hitungSeret.current - 1);
+    if (hitungSeret.current === 0) setSeret(false);
+  };
+
+  const onDrop = async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    hitungSeret.current = 0;
+    setSeret(false);
+    if (!bolehTerima) return;
+    await tambahFile(Array.from(e.dataTransfer.files || []));
+  };
+
+  // Menjatuhkan file di LUAR kotak akan membuat browser membuka file itu
+  // dan meninggalkan halaman. Sejak import berjalan di latar, itu bukan
+  // gangguan kecil lagi: halaman yang ditinggalkan memutus import yang
+  // sedang jalan. Jadi drop di mana pun selain kotak diabaikan.
+  useEffect(() => {
+    const tahan = (e) => { e.preventDefault(); };
+    window.addEventListener('dragover', tahan);
+    window.addEventListener('drop', tahan);
+    return () => {
+      window.removeEventListener('dragover', tahan);
+      window.removeEventListener('drop', tahan);
+    };
+  }, []);
 
   const handleHapusFile = async (f) => {
     const sisa = daftarFile.filter((x) => kunciFile(x) !== kunciFile(f));
@@ -185,25 +283,6 @@ export default function ImportDbAbsen({ user }) {
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
 
-      {/* PENJELASAN */}
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex gap-3">
-        <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-        <div className="text-xs text-slate-600 leading-relaxed">
-          <p className="font-bold text-blue-800 mb-1">Import data mesin absen</p>
-          Upload file <strong>.xlsx</strong> hasil download mesin absen — boleh
-          beberapa file sekaligus, isinya digabung jadi satu import. Hasilnya
-          ditulis sebagai nilai statis ke sheet <code className="bg-white px-1 rounded">dbabsen</code>,
-          menggantikan formula IMPORTRANGE. Semua sheet di dalam tiap file dibaca
-          otomatis; sheet tanpa kolom NIK./Tanggal/Symbol dilewati.
-          <p className="mt-1.5">
-            <strong className="text-blue-800">Import berjalan di latar.</strong> Setelah
-            tombol ditekan Anda boleh keluar dari layar ini dan memakai menu lain —
-            notifikasi berhasil/gagal akan muncul sendiri. Yang tetap tidak boleh:
-            menutup atau me-reload tab browser sebelum selesai.
-          </p>
-        </div>
-      </div>
-
       {/* JOB YANG SEDANG BERJALAN — ditampilkan juga di sini supaya admin
           yang kembali ke layar ini tahu ada import yang belum kelar. */}
       {mengirim && (
@@ -222,7 +301,7 @@ export default function ImportDbAbsen({ user }) {
         </div>
       )}
 
-      {/* PILIH FILE */}
+      {/* PILIH / TARIK FILE */}
       <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
         <label className="block">
           <input
@@ -234,21 +313,40 @@ export default function ImportDbAbsen({ user }) {
             disabled={membaca || mengirim}
             className="hidden"
           />
-          <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition-all">
+          <div
+            onDragEnter={onDragEnter}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all
+              ${seret
+                ? 'border-blue-500 bg-blue-50 scale-[1.01]'
+                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50/40'}`}
+          >
             {membaca ? (
               <Loader2 className="w-8 h-8 text-blue-500 animate-spin mx-auto" />
+            ) : seret ? (
+              <UploadCloud className="w-8 h-8 text-blue-600 mx-auto" />
             ) : adaFile ? (
               <Plus className="w-8 h-8 text-slate-400 mx-auto" />
             ) : (
               <FileSpreadsheet className="w-8 h-8 text-slate-400 mx-auto" />
             )}
-            <p className="mt-2 text-sm font-bold text-slate-700">
-              {adaFile ? 'Tambah file lagi' : 'Pilih file Excel'}
+
+            <p className={`mt-2 text-sm font-bold ${seret ? 'text-blue-700' : 'text-slate-700'}`}>
+              {membaca
+                ? 'Membaca file…'
+                : seret
+                  ? 'Lepaskan di sini'
+                  : adaFile ? 'Tambah file lagi' : 'Tarik file ke sini atau klik'}
             </p>
+
+            {/* Satu-satunya keterangan yang tersisa: format yang diterima
+                dan sheet tujuannya. */}
             <p className="text-[11px] text-slate-400 mt-1">
               {membaca
-                ? 'Membaca file...'
-                : 'Klik untuk memilih — boleh pilih beberapa sekaligus (.xlsx / .xls / .csv)'}
+                ? 'Sebentar…'
+                : <>.xlsx · .xls · .csv &nbsp;→&nbsp; sheet <code className="bg-slate-100 text-slate-600 px-1 rounded">dbabsen</code></>}
             </p>
           </div>
         </label>
