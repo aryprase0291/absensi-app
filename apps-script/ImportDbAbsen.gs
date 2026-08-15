@@ -52,11 +52,25 @@
 // Payload Apps Script dibatasi, jadi klien mengirim data per potongan:
 //
 //   { action:'import_db_absen', sessionId, chunkIndex, totalChunks,
-//     mode:'upsert'|'replace', rows:[ [18 kolom], ... ] }
+//     mode:'upsert'|'replace', targetSheet:'dbabsen', rows:[ [18 kolom], ... ] }
 //
 // Potongan ditumpuk lebih dulu di sheet sementara `_import_dbabsen_tmp`.
-// Baru pada potongan terakhir isinya dipindah ke `dbabsen`. Kalau upload
-// putus di tengah jalan, `dbabsen` sama sekali tidak tersentuh.
+// Baru pada potongan terakhir isinya dipindah ke sheet `targetSheet`. Kalau
+// upload putus di tengah jalan, sheet tujuan sama sekali tidak tersentuh.
+//
+// TARGET SHEET BUKAN CUMA dbabsen [Agu 2026]
+// -------------------------------------------
+// Awalnya tujuan import selalu hardcode ke dbabsen. Sekarang klien boleh
+// mengirim `targetSheet` lain (mis. 'shift') — daftarnya diatur admin lewat
+// MasterData kategori 'SheetImport'. Kalau sheet-nya belum ada, dibuat di
+// sini dengan header PERSIS meniru dbabsen (lihat _importBuatSheetTujuan),
+// supaya kode lain yang nanti membaca sheet ini tidak perlu tahu bedanya.
+// `targetSheet` kosong/tidak dikirim -> tetap jatuh ke dbabsen, supaya
+// klien versi lama (belum tahu soal field ini) tidak perlu diubah.
+//
+// Indeks statistik (StatsIndex.gs) HANYA mengagregasi dbabsen. Import ke
+// sheet lain sengaja TIDAK memicu bersihkanIndeksDbAbsen() — lihat
+// _importCommit().
 // =======================================================
 
 const IMPORT_TMP_SHEET = '_import_dbabsen_tmp';
@@ -72,6 +86,32 @@ const IMPORT_IDX_TANGGAL = 4;    // kolom E
 // Batas wajar supaya satu sheet tidak meledak karena file salah.
 const IMPORT_MAX_ROWS = 60000;
 
+// Sheet sistem yang TIDAK BOLEH jadi target import. `targetSheet` datang
+// dari input admin (lewat MasterData atau layar Import) dan dipakai
+// langsung sebagai nama sheet Google — tanpa daftar ini, salah ketik atau
+// input jahil bisa menimpa sheet lain yang sama sekali tidak berhubungan
+// dengan absensi mesin. Dicocokkan huruf kecil semua.
+const IMPORT_SHEET_TERLARANG = [
+  'users', 'master-cuti', 'masterdata', 'announcements', 'absensi', 'online',
+  'db_cuti&sakit', 'remarks', 'running shift', 'db-tally', 'db_testing',
+  'sheet7', 'histori-absensi', 'histori-cuti bersama', 'sheet18',
+  'histori-shift', 'histori-remark'
+];
+
+/**
+ * Validasi nama sheet tujuan. Dijalankan di backend juga (bukan cuma
+ * disaring lewat dropdown di frontend) karena frontend bisa saja dilewati
+ * dan mengirim request mentah.
+ */
+function _importNamaSheetValid(nama) {
+  const s = String(nama || '').trim();
+  if (!s) return false;
+  if (s.charAt(0) === '_') return false;                 // reservasi sheet sementara
+  if (!/^[A-Za-z0-9 _\-]{1,60}$/.test(s)) return false;   // karakter aman untuk nama sheet
+  if (IMPORT_SHEET_TERLARANG.indexOf(s.toLowerCase()) !== -1) return false;
+  return true;
+}
+
 
 // =======================================================
 // HANDLER UTAMA
@@ -83,12 +123,24 @@ function handleImportDbAbsen(data) {
   const totalChunks = Number(data.totalChunks);
   const rows = Array.isArray(data.rows) ? data.rows : [];
 
+  // Kosong/tidak dikirim -> dbabsen (kompatibel dengan klien lama).
+  const targetSheetMentah = data.targetSheet;
+  const targetSheet = (targetSheetMentah === undefined || targetSheetMentah === null || targetSheetMentah === '')
+    ? SHEET_DB_ABSEN
+    : String(targetSheetMentah).trim();
+
   if (!sessionId) {
     return responseJSON({ result: 'error', message: 'sessionId kosong.' });
   }
   if (!isFinite(chunkIndex) || !isFinite(totalChunks) || totalChunks < 1 ||
       chunkIndex < 0 || chunkIndex >= totalChunks) {
     return responseJSON({ result: 'error', message: 'Nomor potongan tidak valid.' });
+  }
+  if (!_importNamaSheetValid(targetSheet)) {
+    return responseJSON({
+      result: 'error',
+      message: 'Nama sheet tujuan "' + targetSheet + '" tidak diizinkan.'
+    });
   }
 
   // Kunci skrip: mencegah dua admin mengimpor bersamaan, yang bisa
@@ -109,6 +161,7 @@ function handleImportDbAbsen(data) {
       const mode = (data.mode === 'replace') ? 'replace' : 'upsert';
       props.setProperty(propKey, JSON.stringify({
         mode: mode,
+        targetSheet: targetSheet,
         totalChunks: totalChunks,
         mulai: new Date().getTime()
       }));
@@ -149,14 +202,19 @@ function handleImportDbAbsen(data) {
       });
     }
 
-    // Potongan terakhir — pindahkan ke dbabsen.
-    const hasil = _importCommit(tmp, state.mode);
+    // Potongan terakhir — pindahkan ke sheet tujuan (state.targetSheet
+    // adalah sumber kebenaran, bukan `targetSheet` dari request potongan
+    // terakhir — keduanya seharusnya sama, tapi kalau klien nakal
+    // mengganti targetSheet di tengah sesi, punya sesi yang menang).
+    const namaTarget = state.targetSheet || targetSheet;
+    const hasil = _importCommit(tmp, state.mode, namaTarget);
     _importBersihkan(propKey);
 
     return responseJSON({
       result: 'success',
       stage: 'done',
       mode: state.mode,
+      targetSheet: namaTarget,
       barisBaru: hasil.barisBaru,
       barisDitimpa: hasil.barisDitimpa,
       barisDipertahankan: hasil.barisDipertahankan,
@@ -331,14 +389,41 @@ function _importBarisKosong(row) {
 // =======================================================
 
 /**
+ * Sheet tujuan yang belum ada (mis. admin baru menambah kategori
+ * SheetImport di MasterData dan ini import pertamanya) dibuat di sini,
+ * meniru struktur dbabsen PERSIS — header sama, offset kolom sama —
+ * supaya kode lain yang nanti membaca sheet ini tidak perlu tahu bedanya.
+ *
+ * Header di bawah diambil dari isi nyata sheet dbabsen produksi (dicek
+ * manual 16 Agu 2026), bukan ditebak dari nama kolom file mesin. Kolom A
+ * berjudul "UUID" walau tidak pernah diisi oleh proses import ini —
+ * dibiarkan kosong, sama seperti dbabsen.
+ */
+function _importBuatSheetTujuan(nama) {
+  const sh = SS.insertSheet(nama);
+  const header = [
+    'UUID', 'No.Akun', 'NIK.', 'Nama', 'Tanggal', 'Jam Kerja', 'Mulai Tugas',
+    'Akhir Tugas', 'Masuk', 'Pulang', 'Telat', 'Pulang Awal', 'Bolos',
+    'Jam Kerja', 'Symbol', 'Departemen', 'ATT_Time', 'Waktu Scan', 'week'
+  ];
+  sh.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+/**
  * mode 'replace' : seluruh A2:S dibuang, diganti isi file.
  * mode 'upsert'  : baris lama yang punya kombinasi NIK+tanggal sama
  *                  dengan file baru dibuang; sisanya dipertahankan.
  *                  Ini yang dipakai kalau Anda mengimpor per periode.
+ *
+ * `targetSheet` boleh sheet mana pun yang lolos _importNamaSheetValid —
+ * default dbabsen kalau kosong. Dibuat otomatis kalau belum ada.
  */
-function _importCommit(tmp, mode) {
-  const db = SS.getSheetByName(SHEET_DB_ABSEN);
-  if (!db) throw new Error('Sheet "' + SHEET_DB_ABSEN + '" tidak ditemukan.');
+function _importCommit(tmp, mode, targetSheet) {
+  const namaTarget = targetSheet || SHEET_DB_ABSEN;
+  let db = SS.getSheetByName(namaTarget);
+  if (!db) db = _importBuatSheetTujuan(namaTarget);
 
   const nBaru = tmp.getLastRow();
   if (nBaru < 1) throw new Error('Tidak ada baris yang bisa diimpor.');
@@ -438,21 +523,31 @@ function _importCommit(tmp, mode) {
   // Dibungkus try: gagal menyusun indeks tidak boleh menggagalkan import
   // yang datanya sudah tertulis — paling buruk request berikutnya yang
   // menyusunnya.
-  try {
-    bersihkanIndeksDbAbsen();
-    IDX_HANGATKAN();
-  } catch (e) {
-    console.warn('Indeks dbabsen gagal disegarkan setelah import: ' + e.message);
-  }
+  //
+  // [Agu 2026] Sheet tujuan sekarang bisa lebih dari dbabsen (lihat
+  // header file). StatsIndex.gs HANYA mengagregasi dbabsen — sheet lain
+  // (mis. hasil MasterData kategori SheetImport) belum dibaca kode
+  // manapun, jadi menyegarkan indeks untuk target selain dbabsen hanya
+  // buang-buang waktu eksekusi tanpa manfaat.
+  if (namaTarget === SHEET_DB_ABSEN) {
+    try {
+      bersihkanIndeksDbAbsen();
+      IDX_HANGATKAN();
+    } catch (e) {
+      console.warn('Indeks dbabsen gagal disegarkan setelah import: ' + e.message);
+    }
 
-  // Hash disamakan supaya checkFormulaUpdates() (kalau triggernya masih
-  // terpasang) tidak langsung menimpa T1 pada eksekusi berikutnya.
-  try {
-    const payload = JSON.stringify(final);
-    const sig = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, payload);
-    PropertiesService.getScriptProperties()
-      .setProperty('LAST_DB_HASH', Utilities.base64Encode(sig));
-  } catch (e) { /* bukan kegagalan fatal */ }
+    // Hash disamakan supaya checkFormulaUpdates() (kalau triggernya masih
+    // terpasang) tidak langsung menimpa T1 pada eksekusi berikutnya.
+    // Propertinya global (bukan per-sheet) dan memang hanya berarti untuk
+    // dbabsen, jadi sengaja tidak ditulis untuk target lain.
+    try {
+      const payload = JSON.stringify(final);
+      const sig = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, payload);
+      PropertiesService.getScriptProperties()
+        .setProperty('LAST_DB_HASH', Utilities.base64Encode(sig));
+    } catch (e) { /* bukan kegagalan fatal */ }
+  }
 
   return {
     barisBaru: baru.length,

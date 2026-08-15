@@ -33,6 +33,7 @@ export default function ImportNotifier() {
           <div className="min-w-0 flex-1">
             <p className="text-[12px] font-semibold leading-tight">
               Mengimpor data mesin… {job.progres}%
+              {job.totalKelompok > 1 && ` · sheet ${job.kelompokAktif}`}
             </p>
             <div className="mt-1.5 h-1 rounded-full bg-white/15 overflow-hidden">
               <div
@@ -41,7 +42,8 @@ export default function ImportNotifier() {
               />
             </div>
             <p className="mt-1 text-[10px] text-slate-400 tabular-nums">
-              {job.chunkSelesai}/{job.totalChunk} bagian · {job.jumlahBaris} baris ·
+              {job.chunkSelesai}/{job.totalChunk} bagian · {job.jumlahBaris} baris
+              {job.totalKelompok > 1 && ` · sheet ${job.kelompokSelesai}/${job.totalKelompok}`} ·
               {' '}jangan tutup halaman ini
             </p>
           </div>
@@ -52,7 +54,7 @@ export default function ImportNotifier() {
 
   // --- SELESAI (SUKSES / GAGAL) ---
   const sukses = job.status === 'sukses';
-  const r = job.ringkasan;
+  const daftarRingkasan = job.ringkasanList || [];
 
   return (
     <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[120] w-[calc(100%-2rem)] max-w-sm">
@@ -78,28 +80,41 @@ export default function ImportNotifier() {
 
           <div className="min-w-0 flex-1">
             <p className={`text-[13px] font-semibold leading-tight ${sukses ? 'text-slate-900' : 'text-red-700'}`}>
-              {sukses ? 'Import dbabsen selesai' : 'Import dbabsen gagal'}
+              {sukses ? 'Import data mesin selesai' : 'Import data mesin gagal'}
             </p>
             <p className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">
               {sukses
-                ? `${job.jumlahBaris} baris dari ${job.jumlahFile > 1 ? `${job.jumlahFile} file` : 'file'} terkirim.`
+                ? `${job.jumlahBaris} baris dari ${job.jumlahFile > 1 ? `${job.jumlahFile} file` : 'file'} terkirim` +
+                  (job.totalKelompok > 1 ? ` ke ${job.totalKelompok} sheet.` : '.')
                 : job.pesan}
             </p>
 
-            {sukses && r && (
-              <ul className="mt-2 space-y-0.5 text-[11px] text-slate-500 tabular-nums">
-                <li>Baris dari file: <span className="font-semibold text-slate-700">{r.barisBaru}</span></li>
-                {r.mode === 'upsert' && (
-                  <>
-                    <li>Baris lama ditimpa: <span className="font-semibold text-slate-700">{r.barisDitimpa}</span></li>
-                    <li>Baris lama dipertahankan: <span className="font-semibold text-slate-700">{r.barisDipertahankan}</span></li>
-                  </>
-                )}
-                <li className="pt-0.5 flex items-center gap-1.5 text-slate-700 font-semibold">
-                  <Database className="w-3 h-3 text-slate-400" />
-                  Total dbabsen sekarang: {r.totalBaris}
-                </li>
-              </ul>
+            {/* Satu blok per sheet tujuan — biasanya cuma satu (dbabsen),
+                tapi bisa lebih kalau file sumber punya tab yang ke-deteksi
+                sebagai sheet lain (mis. shift). */}
+            {daftarRingkasan.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {daftarRingkasan.map((r, i) => (
+                  <div key={i} className={daftarRingkasan.length > 1 ? 'pt-1.5 border-t border-slate-100 first:border-t-0 first:pt-0' : ''}>
+                    {daftarRingkasan.length > 1 && (
+                      <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">{r.label}</p>
+                    )}
+                    <ul className="mt-0.5 space-y-0.5 text-[11px] text-slate-500 tabular-nums">
+                      <li>Baris dari file: <span className="font-semibold text-slate-700">{r.barisBaru}</span></li>
+                      {r.mode === 'upsert' && (
+                        <>
+                          <li>Baris lama ditimpa: <span className="font-semibold text-slate-700">{r.barisDitimpa}</span></li>
+                          <li>Baris lama dipertahankan: <span className="font-semibold text-slate-700">{r.barisDipertahankan}</span></li>
+                        </>
+                      )}
+                      <li className="pt-0.5 flex items-center gap-1.5 text-slate-700 font-semibold">
+                        <Database className="w-3 h-3 text-slate-400" />
+                        Total {r.label} sekarang: {r.totalBaris}
+                      </li>
+                    </ul>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 

@@ -229,7 +229,7 @@ const LabelKecil = ({ children }) => (
 function AppAbsensiInner() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('login'); 
-  const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [] });
+  const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [], sheetImport: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
   // HARUS SAMA dengan APP_VERSION di Kode.gs yang SEDANG di-deploy.
@@ -278,7 +278,7 @@ const performUpdate = () => { localStorage.clear(); sessionStorage.clear(); if (
     //----FUNGSI LOGOUT / KELUAR APLIKASI----
 const handleLogout = useCallback(() => { 
   setUser(null); 
-  setMasterData({ menus: [], roles: [], divisions: [], shifts: [] }); 
+  setMasterData({ menus: [], roles: [], divisions: [], shifts: [], sheetImport: [] });
   setView('login'); 
   // UBAH: localStorage menjadi sessionStorage
   sessionStorage.removeItem('app_user'); 
@@ -302,7 +302,7 @@ useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemo
 const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumumanAwal, pengumumanDisertakan) => {
   cekVersi(versiServer);
 
-  const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift') };
+  const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift'), sheetImport: rawMasterData.filter(m => m.kategori === 'SheetImport') };
   setMasterData(p);
   setUser(userData);
   setView('dashboard');
@@ -4808,17 +4808,25 @@ function AdminPanel({ user, setView, masterData }) {
                 <div>
                     <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Kategori</label>
                     <select className={inputCls} value={masterInput.kategori} onChange={e => setMasterInput({...masterInput, kategori: e.target.value})}>
-                        <option value="Menu">Menu absensi</option><option value="Role">Role user</option><option value="Divisi">Divisi</option><option value="Shift">Jam shift</option>
+                        <option value="Menu">Menu absensi</option><option value="Role">Role user</option><option value="Divisi">Divisi</option><option value="Shift">Jam shift</option><option value="SheetImport">Sheet tujuan import mesin absen</option>
                     </select>
                 </div>
                 <div>
                     <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Value</label>
-                    <input required type="text" className={inputCls} value={masterInput.value} onChange={e => setMasterInput({...masterInput, value: e.target.value})} placeholder="Nilai yang disimpan sistem" />
+                    <input required type="text" className={inputCls} value={masterInput.value} onChange={e => setMasterInput({...masterInput, value: e.target.value})} placeholder={masterInput.kategori === 'SheetImport' ? 'Nama sheet Google, mis. shift' : 'Nilai yang disimpan sistem'} />
                 </div>
                 <div>
                     <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Label</label>
                     <input required type="text" className={inputCls} value={masterInput.label} onChange={e => setMasterInput({...masterInput, label: e.target.value})} placeholder="Teks yang dilihat pengguna" />
                 </div>
+                {masterInput.kategori === 'SheetImport' && (
+                    <p className="text-[11px] text-slate-400 leading-relaxed -mt-1">
+                        Value dipakai sebagai nama sheet Google (dibuat otomatis kalau belum ada) DAN
+                        sebagai kata kunci pencocokan nama tab di file mesin absen — harus PERSIS sama
+                        (tanpa spasi/strip) dengan nama tab sumbernya, mis. tab "SHIFT" di file → value "shift".
+                        Sheet "dbabsen" selalu jadi tujuan bawaan, tidak perlu didaftarkan di sini.
+                    </p>
+                )}
             </div>
             <div className="p-4 pt-0">
                 <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-60 transition-colors">
@@ -4832,7 +4840,7 @@ function AdminPanel({ user, setView, masterData }) {
 
       {/* KONTEN TAB: IMPORT dbabsen */}
       {activeTab === 'import_db' && user.role === 'admin' && (
-        <ImportDbAbsen user={user} />
+        <ImportDbAbsen user={user} masterData={masterData} />
       )}
 
       {/* KONTEN TAB: INFO HRD */}

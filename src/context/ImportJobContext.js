@@ -19,6 +19,18 @@
 // Request yang gagal TIDAK BOLEH diulang otomatis — tulisnya mungkin
 // sudah berhasil di server dan hanya responsnya yang rusak. Itu sebabnya
 // file ini memakai fetch sendiri, bukan fetchApi() yang punya retry.
+//
+// SATU IMPORT, BEBERAPA SHEET TUJUAN [Agu 2026]
+// -----------------------------------------------
+// Layar Import boleh mendeteksi lebih dari satu sheet tujuan dalam satu
+// pengiriman (mis. sebagian baris ke dbabsen, sebagian ke sheet 'shift').
+// `mulaiImport` sekarang menerima DAFTAR kelompok — satu kelompok per
+// sheet tujuan — dan menjalankannya BERURUTAN (bukan paralel): kelompok
+// berikutnya baru dikirim setelah kelompok sebelumnya selesai. Ini bukan
+// sekadar pilihan desain — backend memakai satu LockService.getScriptLock()
+// global untuk seluruh import, jadi mengirim beberapa kelompok sekaligus
+// hanya akan saling menunggu di server. Progres bar tetap satu, dihitung
+// dari total potongan SEMUA kelompok gabungan.
 // =======================================================
 
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
@@ -30,14 +42,17 @@ export const UKURAN_CHUNK = 400;
 
 const JOB_KOSONG = {
   status: 'idle',       // idle | berjalan | sukses | gagal
-  progres: 0,           // 0-100
+  progres: 0,           // 0-100, gabungan seluruh kelompok
   chunkSelesai: 0,
   totalChunk: 0,
   jumlahBaris: 0,
   mode: 'upsert',
   jumlahFile: 0,
   pesan: '',
-  ringkasan: null,      // ringkasan dari server saat stage === 'done'
+  totalKelompok: 0,     // berapa sheet tujuan terlibat di import ini
+  kelompokSelesai: 0,
+  kelompokAktif: '',    // label sheet tujuan yang sedang dikirim
+  ringkasanList: [],    // [{targetSheet, label, ...hasil server}], terisi progresif
   mulaiPada: null,
   selesaiPada: null,
   dibaca: true,         // false = notifikasi hasil belum ditutup user
@@ -119,84 +134,114 @@ export function ImportJobProvider({ children }) {
    * Menjalankan import di latar. Fungsi ini SENGAJA tidak di-await oleh
    * pemanggilnya: tombol di layar Import cukup memicunya lalu bebas.
    *
-   * @param {Array<Array>} baris  seluruh baris hasil parseWorkbook
-   * @param {'upsert'|'replace'} mode
-   * @param {number} jumlahFile   hanya untuk teks notifikasi
+   * @param {Array<{targetSheet:string, label:string, baris:Array<Array>}>} kelompok
+   *   Satu entri per sheet tujuan. Dikirim BERURUTAN — lihat catatan di
+   *   kepala file soal kenapa tidak paralel.
+   * @param {'upsert'|'replace'} mode  berlaku sama untuk semua kelompok
+   * @param {number} jumlahFile        hanya untuk teks notifikasi
    */
-  const mulaiImport = useCallback((baris, mode, jumlahFile) => {
+  const mulaiImport = useCallback((kelompok, mode, jumlahFile) => {
     if (sedangJalanRef.current) return false;
-    if (!baris || baris.length === 0) return false;
+    if (!Array.isArray(kelompok) || kelompok.length === 0) return false;
+
+    const isi = kelompok.filter((k) => k && Array.isArray(k.baris) && k.baris.length > 0);
+    if (isi.length === 0) return false;
 
     sedangJalanRef.current = true;
 
-    const sessionId = buatSessionId();
-    const totalChunk = Math.ceil(baris.length / UKURAN_CHUNK);
+    const jumlahBarisTotal = isi.reduce((n, k) => n + k.baris.length, 0);
+    const chunkPerKelompok = isi.map((k) => Math.ceil(k.baris.length / UKURAN_CHUNK));
+    const totalChunk = chunkPerKelompok.reduce((n, c) => n + c, 0);
 
     setJob({
       ...JOB_KOSONG,
       status: 'berjalan',
       totalChunk,
-      jumlahBaris: baris.length,
+      jumlahBaris: jumlahBarisTotal,
       mode,
       jumlahFile: jumlahFile || 1,
+      totalKelompok: isi.length,
+      kelompokSelesai: 0,
+      kelompokAktif: isi[0].label || isi[0].targetSheet,
       mulaiPada: Date.now(),
       dibaca: false,
     });
 
     (async () => {
+      let chunkSelesaiGlobal = 0;
+      const ringkasanList = [];
+
       try {
-        for (let i = 0; i < totalChunk; i++) {
-          const potongan = baris.slice(i * UKURAN_CHUNK, (i + 1) * UKURAN_CHUNK);
+        for (let g = 0; g < isi.length; g++) {
+          const { targetSheet, label, baris } = isi[g];
+          const labelTampil = label || targetSheet;
+          const sessionId = buatSessionId();
+          const totalChunkKelompok = chunkPerKelompok[g];
 
-          const res = await kirimSekali({
-            action: 'import_db_absen',
-            sessionId,
-            chunkIndex: i,
-            totalChunks: totalChunk,
-            mode,
-            rows: potongan
-          });
+          setJob((j) => ({ ...j, kelompokAktif: labelTampil }));
 
-          if (res.result !== 'success') {
-            // Pesannya berbeda tergantung potongan ke berapa yang gagal,
-            // karena konsekuensinya ke sheet memang berbeda.
-            const catatan = (i === totalChunk - 1)
-              ? ' Ini potongan terakhir, jadi periksa sheet dbabsen sebelum mengulang.'
-              : ' Sheet dbabsen belum tersentuh, aman untuk diulang dari awal.';
-            throw new Error((res.message || 'Ditolak server.') + catatan);
-          }
+          for (let i = 0; i < totalChunkKelompok; i++) {
+            const potongan = baris.slice(i * UKURAN_CHUNK, (i + 1) * UKURAN_CHUNK);
 
-          const selesai = i + 1;
-          setJob((j) => ({
-            ...j,
-            chunkSelesai: selesai,
-            progres: Math.round((selesai / totalChunk) * 100),
-          }));
+            const res = await kirimSekali({
+              action: 'import_db_absen',
+              sessionId,
+              chunkIndex: i,
+              totalChunks: totalChunkKelompok,
+              mode,
+              targetSheet,
+              rows: potongan
+            });
 
-          if (res.stage === 'done') {
+            if (res.result !== 'success') {
+              // Pesannya berbeda tergantung potongan ke berapa yang gagal,
+              // karena konsekuensinya ke sheet memang berbeda. Kelompok
+              // SEBELUM yang gagal ini sudah tertulis permanen di server —
+              // itu tidak bisa "dibatalkan" dari sini, jadi disebutkan.
+              const catatan = (i === totalChunkKelompok - 1)
+                ? ` Ini potongan terakhir sheet "${labelTampil}", jadi periksa sheet itu sebelum mengulang.`
+                : ` Sheet "${labelTampil}" belum tersentuh, aman untuk diulang dari awal.`;
+              const sudahJalan = g > 0
+                ? ` (${g} sheet sebelumnya sudah selesai tertulis dan TIDAK ikut diulang.)`
+                : '';
+              throw new Error(`Sheet "${labelTampil}": ` + (res.message || 'Ditolak server.') + catatan + sudahJalan);
+            }
+
+            chunkSelesaiGlobal += 1;
+            const selesaiSnapshot = chunkSelesaiGlobal;
             setJob((j) => ({
               ...j,
-              status: 'sukses',
-              progres: 100,
-              ringkasan: res,
-              pesan: 'Import selesai.',
-              selesaiPada: Date.now(),
-              dibaca: false,
+              chunkSelesai: selesaiSnapshot,
+              progres: Math.round((selesaiSnapshot / totalChunk) * 100),
             }));
+
+            if (res.stage === 'done') {
+              ringkasanList.push({ targetSheet, label: labelTampil, ...res });
+              const kelompokSelesaiSnapshot = g + 1;
+              setJob((j) => ({
+                ...j,
+                kelompokSelesai: kelompokSelesaiSnapshot,
+                ringkasanList: [...ringkasanList],
+              }));
+            }
           }
         }
 
-        // Jaring pengaman: kalau server tidak pernah mengirim stage 'done'
-        // (mis. versi backend lama), jangan tinggalkan job menggantung
-        // di status 'berjalan' selamanya.
-        setJob((j) => (j.status === 'berjalan'
-          ? { ...j, status: 'sukses', progres: 100, pesan: 'Import selesai.', selesaiPada: Date.now(), dibaca: false }
-          : j));
+        setJob((j) => ({
+          ...j,
+          status: 'sukses',
+          progres: 100,
+          ringkasanList,
+          pesan: 'Import selesai.',
+          selesaiPada: Date.now(),
+          dibaca: false,
+        }));
 
       } catch (err) {
         setJob((j) => ({
           ...j,
           status: 'gagal',
+          ringkasanList,
           pesan: err.message || 'Import gagal.',
           selesaiPada: Date.now(),
           dibaca: false,
