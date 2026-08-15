@@ -1969,7 +1969,11 @@ function RemarkScreen({ user, setView }) {
     const userRole = user.role ? String(user.role).toLowerCase() : '';
     const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
 
-    const [tglKoreksi, setTglKoreksi] = useState(''); 
+    const [tglKoreksi, setTglKoreksi] = useState('');
+    const [modeTanggalKoreksi, setModeTanggalKoreksi] = useState('single');
+    const [tglKoreksiSelesai, setTglKoreksiSelesai] = useState('');
+    const [tanggalPilihan, setTanggalPilihan] = useState([]);
+    const [tanggalUntukDitambah, setTanggalUntukDitambah] = useState('');
     const [kategori, setKategori] = useState('Koreksi Absensi');
     const [pesan, setPesan] = useState('');
     const [file, setFile] = useState(null);
@@ -2002,6 +2006,16 @@ function RemarkScreen({ user, setView }) {
         if (!value || value === '-' || value === '') return '-';
         const strVal = String(value);
 
+        // Rentang dan tanggal acak dikirim sebagai teks agar tetap kompatibel
+        // dengan satu kolom Remarks yang sudah ada. Format setiap tanggalnya
+        // tetap dipoles saat tampil di aplikasi.
+        if (strVal.includes(' s/d ')) {
+            return strVal.split(' s/d ').map(formatDateDisplay).join(' s/d ');
+        }
+        if (strVal.includes(', ')) {
+            return strVal.split(', ').map(formatDateDisplay).join(', ');
+        }
+
         // 1. Jika format YYYY-MM-DD (dari Input Date/Backend TglKoreksi) -> Ubah ke DD-MM-YYYY
         if (strVal.match(/^\d{4}-\d{2}-\d{2}$/)) {
             const [y, m, d] = strVal.split('-');
@@ -2014,6 +2028,35 @@ function RemarkScreen({ user, setView }) {
         }
 
         return strVal;
+    };
+
+    const tanggalKoreksiUntukDikirim = () => {
+        if (modeTanggalKoreksi === 'single') {
+            return { value: tglKoreksi };
+        }
+        if (modeTanggalKoreksi === 'range') {
+            if (!tglKoreksi || !tglKoreksiSelesai) {
+                return { error: 'Pilih tanggal mulai dan tanggal selesai.' };
+            }
+            if (tglKoreksiSelesai < tglKoreksi) {
+                return { error: 'Tanggal selesai tidak boleh lebih awal dari tanggal mulai.' };
+            }
+            return { value: tglKoreksi === tglKoreksiSelesai ? tglKoreksi : `${tglKoreksi} s/d ${tglKoreksiSelesai}` };
+        }
+        if (tanggalPilihan.length === 0) {
+            return { error: 'Tambahkan minimal satu tanggal koreksi.' };
+        }
+        return { value: [...tanggalPilihan].sort().join(', ') };
+    };
+
+    const tambahTanggalPilihan = () => {
+        if (!tanggalUntukDitambah) return;
+        setTanggalPilihan((sebelumnya) => [...new Set([...sebelumnya, tanggalUntukDitambah])].sort());
+        setTanggalUntukDitambah('');
+    };
+
+    const hapusTanggalPilihan = (tanggal) => {
+        setTanggalPilihan((sebelumnya) => sebelumnya.filter((item) => item !== tanggal));
     };
 
     // Close dropdown logic
@@ -2088,6 +2131,11 @@ function RemarkScreen({ user, setView }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const hasilTanggal = tanggalKoreksiUntukDikirim();
+        if (hasilTanggal.error || !hasilTanggal.value) {
+            alert(hasilTanggal.error || 'Pilih tanggal koreksi terlebih dahulu.');
+            return;
+        }
         setLoading(true);
         try {
             const res = await fetchApi(SCRIPT_URL, {
@@ -2097,7 +2145,7 @@ function RemarkScreen({ user, setView }) {
                     userId: user.id, 
                     nama: user.nama, 
                     divisi: user.divisi,
-                    tglKoreksi, 
+                    tglKoreksi: hasilTanggal.value,
                     kategori, 
                     pesan, 
                     file
@@ -2105,7 +2153,7 @@ function RemarkScreen({ user, setView }) {
             }).then(r => r.json());
             if (res.result === 'success') {
                 alert('Laporan berhasil dikirim ke HRD!');
-                setPesan(''); setTglKoreksi(''); setFile(null); setFileName('');
+                setPesan(''); setTglKoreksi(''); setTglKoreksiSelesai(''); setTanggalPilihan([]); setTanggalUntukDitambah(''); setFile(null); setFileName('');
                 setRefreshTrigger(prev => prev + 1); 
             } else {
                 alert('Gagal mengirim laporan: ' + res.message);
@@ -2302,7 +2350,7 @@ function RemarkScreen({ user, setView }) {
     const isTableMode = viewMode === 'table' && isHRDOrAdmin;
     const containerClass = isTableMode
         ? "fixed inset-0 z-[50] bg-white flex flex-col"
-        : "p-4 h-full overflow-y-auto pb-20 bg-gray-50";
+        : "min-h-full overflow-y-auto bg-slate-50 px-4 pb-24 pt-5 sm:px-6 sm:pt-7";
 
     // --- PANEL STATUS PENGAMBILAN DATA ---
     // Dipakai di kedua mode (list & tabel) supaya sumber kegagalan yang sama
@@ -2360,10 +2408,11 @@ function RemarkScreen({ user, setView }) {
     return (
         <div className={containerClass}>
             {/* HEADER AREA */}
-            <div className={`flex items-center justify-between mb-4 ${isTableMode ? 'px-4 py-3 bg-white border-b shadow-sm' : ''}`}>
+            <div className={`flex items-center justify-between ${isTableMode ? 'mb-4 px-4 py-3 bg-white border-b shadow-sm' : 'mx-auto mb-5 w-full max-w-2xl'}`}>
                 <div>
-                    <h2 className="text-xl font-bold text-gray-800">{isHRDOrAdmin ? 'Respon Laporan Masuk' : 'Lapor & Riwayat'}</h2>
-                    {isHRDOrAdmin && !isTableMode && <p className="text-[10px] text-gray-500">Kelola dan respon laporan karyawan</p>}
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Pusat bantuan</p>
+                    <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">{isHRDOrAdmin ? 'Respon Laporan Masuk' : 'Lapor & Riwayat'}</h2>
+                    {!isTableMode && <p className="mt-1 text-[13px] text-slate-500">{isHRDOrAdmin ? 'Kelola dan respon laporan karyawan' : 'Kirim koreksi atau pertanyaan ke tim HRD.'}</p>}
                 </div>
                 <div className="flex gap-2">
                     {isHRDOrAdmin && (
@@ -2386,44 +2435,120 @@ function RemarkScreen({ user, setView }) {
 
             {/* FORM BUAT LAPORAN (LIST MODE ONLY) */}
             {(!isHRDOrAdmin || viewMode === 'list') && !isHRDOrAdmin && (
-                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 mb-6">
-                    <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Edit className="w-4 h-4"/> Buat Laporan</h3>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div>
-                            <label className="text-xs font-bold text-gray-700 block mb-1">Tanggal Koreksi *</label>
-                            <div className="relative">
-                                <CalendarDays className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-                                {/* State tglKoreksi untuk INPUT tetap YYYY-MM-DD agar valid di HTML input type="date" */}
-                                <input type="date" required className="w-full p-2.5 pl-10 border rounded-lg text-sm bg-white" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
+                <section className="mx-auto mb-8 w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.06)]">
+                    <div className="border-b border-slate-100 bg-gradient-to-r from-slate-900 to-slate-800 px-5 py-5 sm:px-6">
+                        <div className="flex items-start gap-3.5">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
+                                <Edit className="h-5 w-5 text-white" strokeWidth={2}/>
                             </div>
+                            <div>
+                                <h3 className="text-[17px] font-semibold text-white">Buat laporan</h3>
+                                <p className="mt-0.5 text-[12px] leading-relaxed text-slate-300">Lengkapi informasi di bawah agar HRD dapat menindaklanjuti dengan tepat.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <form onSubmit={handleSubmit} className="space-y-5 p-5 sm:p-6">
+                        <div>
+                            <label className="mb-2 block text-[13px] font-medium text-slate-700">Tanggal koreksi <span className="text-rose-500">*</span></label>
+                            <div className="mb-3 grid grid-cols-3 rounded-xl bg-slate-100 p-1" role="group" aria-label="Jenis pilihan tanggal">
+                                {[
+                                    ['single', 'Satu tanggal'],
+                                    ['range', 'Rentang'],
+                                    ['multiple', 'Pilih acak']
+                                ].map(([mode, label]) => (
+                                    <button
+                                        key={mode}
+                                        type="button"
+                                        onClick={() => setModeTanggalKoreksi(mode)}
+                                        aria-pressed={modeTanggalKoreksi === mode}
+                                        className={`min-h-[40px] rounded-lg px-2 text-[11px] font-semibold transition sm:text-[12px] ${modeTanggalKoreksi === mode ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {modeTanggalKoreksi === 'single' && (
+                                <div className="relative">
+                                    <CalendarDays className="pointer-events-none absolute left-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" strokeWidth={1.8}/>
+                                    <input type="date" required className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-3 text-[15px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
+                                </div>
+                            )}
+
+                            {modeTanggalKoreksi === 'range' && (
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal mulai</label>
+                                        <input type="date" required className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal selesai</label>
+                                        <input type="date" required min={tglKoreksi || undefined} className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksiSelesai} onChange={e => setTglKoreksiSelesai(e.target.value)} />
+                                    </div>
+                                </div>
+                            )}
+
+                            {modeTanggalKoreksi === 'multiple' && (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                        <input type="date" className="min-h-[52px] min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tanggalUntukDitambah} onChange={e => setTanggalUntukDitambah(e.target.value)} />
+                                        <button type="button" onClick={tambahTanggalPilihan} disabled={!tanggalUntukDitambah} className="min-h-[52px] rounded-xl bg-slate-900 px-4 text-[13px] font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">Tambah</button>
+                                    </div>
+                                    {tanggalPilihan.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                            {tanggalPilihan.map((tanggal) => (
+                                                <span key={tanggal} className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-white py-1 pl-2.5 pr-1 text-[12px] font-medium text-slate-700 shadow-sm ring-1 ring-slate-200">
+                                                    {formatDateDisplay(tanggal)}
+                                                    <button type="button" onClick={() => hapusTanggalPilihan(tanggal)} className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-600" aria-label={`Hapus tanggal ${formatDateDisplay(tanggal)}`}>
+                                                        <X className="h-3.5 w-3.5" strokeWidth={2}/>
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-[12px] leading-relaxed text-slate-500">Pilih lalu tambahkan tanggal yang terpisah, misalnya 1, 3, dan 7 September.</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {modeTanggalKoreksi === 'range' && (
+                                <p className="mt-2 text-[12px] leading-relaxed text-slate-500">Contoh: pilih 1 September sebagai mulai dan 3 September sebagai selesai.</p>
+                            )}
+                            {modeTanggalKoreksi === 'single' && (
+                                <p className="mt-2 text-[12px] leading-relaxed text-slate-500">Gunakan untuk satu hari koreksi saja.</p>
+                            )}
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold text-gray-700 block mb-1">Jenis Koreksi/Laporan *</label>
-                            <select className="w-full p-2.5 border rounded-lg text-sm bg-white" value={kategori} onChange={e => setKategori(e.target.value)}>
+                            <label className="mb-2 block text-[13px] font-medium text-slate-700">Jenis koreksi atau laporan <span className="text-rose-500">*</span></label>
+                            <div className="relative">
+                            <select className="min-h-[52px] w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pr-11 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={kategori} onChange={e => setKategori(e.target.value)}>
                                 <option>Koreksi Profil (Nama/Divisi/Lainnya)</option>
                                 <option>Koreksi Absensi (Ijin, Lupa Absen Masuk/Pulang)</option>
                                 <option>Koreksi Cuti / Sisa Cuti</option>
                                 <option>Koreksi Shift / Jam Kerja</option>
                                 <option>Koreksi Lainnya</option>
                             </select>
+                            <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" strokeWidth={1.8}/>
+                            </div>
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-gray-700 block mb-1">Keterangan Detail *</label>
-                            <textarea required rows="3" className="w-full p-2.5 border rounded-lg text-sm" placeholder="Jelaskan detail..." value={pesan} onChange={e => setPesan(e.target.value)} ></textarea>
+                            <label className="mb-2 block text-[13px] font-medium text-slate-700">Keterangan detail <span className="text-rose-500">*</span></label>
+                            <textarea required rows="4" className="w-full resize-y rounded-xl border border-slate-200 px-4 py-3 text-[15px] leading-relaxed text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="Jelaskan detail laporan atau koreksi yang diperlukan…" value={pesan} onChange={e => setPesan(e.target.value)} ></textarea>
                         </div>
-                        <div className="bg-blue-50 border border-blue-200 border-dashed rounded-lg p-4 text-center">
+                        <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50/60 p-3 transition-colors hover:border-blue-400 hover:bg-blue-50">
                             <input type="file" id="fileInput" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={handleFileChange}/>
-                            <label htmlFor="fileInput" className="cursor-pointer flex flex-col items-center gap-2">
-                                <Upload className="w-6 h-6 text-blue-500" />
-                                <span className="text-xs font-bold text-blue-600">{fileName ? fileName : "Upload Lampiran"}</span>
+                            <label htmlFor="fileInput" className="flex min-h-[92px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg text-center">
+                                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm ring-1 ring-blue-100"><Upload className="h-5 w-5" strokeWidth={2}/></span>
+                                <span className="mt-1 text-[14px] font-semibold text-blue-700">{fileName || 'Tambahkan lampiran'}</span>
+                                <span className="text-[11px] text-slate-500">Opsional · Foto, PDF, Word, atau Excel · Maks. 5 MB</span>
                             </label>
                         </div>
-                        <button type="submit" disabled={loading} className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700 flex items-center justify-center gap-2">
-                            {loading ? 'Mengirim...' : <><MessageSquare className="w-4 h-4"/> Kirim Laporan</>}
+                        <button type="submit" disabled={loading} className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-[15px] font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/25 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none active:scale-[0.99]">
+                            {loading ? 'Mengirim laporan…' : <><MessageSquare className="h-[18px] w-[18px]" strokeWidth={2}/> Kirim laporan</>}
                         </button>
                     </form>
-                </div>
+                </section>
             )}
 
             {/* --- MODE TABEL (FULL SCREEN WEB REPORT) --- */}
@@ -2523,15 +2648,16 @@ function RemarkScreen({ user, setView }) {
                 </div>
             ) : (
                 /* --- MODE LIST CARD (NORMAL VIEW) --- */
-                <div className="space-y-3">
+                <div className="mx-auto w-full max-w-2xl space-y-3">
                     <StatusPanel />
 
                     {/* Pesan kosong hanya boleh muncul kalau pengambilan data
                         benar-benar BERHASIL dan hasilnya memang nol baris. */}
                     {!remarksLoading && !remarksError && filteredRemarksTable.length === 0 && (
-                        <p className="text-gray-400 text-sm text-center py-4">
-                            {remarks.length > 0 ? 'Tidak ada laporan yang cocok dengan filter.' : 'Belum ada data laporan.'}
-                        </p>
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center">
+                            <ClipboardList className="mx-auto mb-3 h-8 w-8 text-slate-300" strokeWidth={1.5}/>
+                            <p className="text-[14px] font-medium text-slate-500">{remarks.length > 0 ? 'Tidak ada laporan yang cocok dengan filter.' : 'Belum ada data laporan.'}</p>
+                        </div>
                     )}
 
                     {filteredRemarksTable.map((item, idx) => (
