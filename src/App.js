@@ -2,12 +2,13 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers,
+import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List,
   Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import BackButton from './components/BackButton';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
+import { useHariLibur } from './utils/hariLibur';
 import ImportNotifier from './components/ImportNotifier';
 
 // ============================================================
@@ -4941,6 +4942,65 @@ function ChangePasswordScreen({ user, setView }) {
 }
 
 // --- 9. DB ABSEN SCREEN (FIXED FILTER HADIR GABUNGAN & BUTTON AUTO-FILL) ---
+// ============================================================
+// PALET KALENDER DATA MESIN
+//
+// Satu warna per simbol absensi. Ini bukan sekadar hiasan: kode
+// simbolnya (T, TSi, SiPC, AC…) tidak bisa dibaca sekilas, sedangkan
+// warnanya bisa — sebulan penuh langsung terbaca sebagai pola.
+//
+// Pengelompokannya mengikuti arti, bukan huruf:
+//   hijau  = hadir normal
+//   kuning = datang/pulang tidak sesuai jam (masih hadir)
+//   merah muda = ada scan yang hilang
+//   merah  = tidak masuk tanpa keterangan
+//   biru/teal/langit = ketidakhadiran yang sudah berizin
+//   abu    = libur
+// ============================================================
+const GAYA_KALENDER = {
+  H:    { dot: 'bg-emerald-500', tint: 'bg-emerald-50',  teks: 'text-emerald-700' },
+  T:    { dot: 'bg-amber-500',   tint: 'bg-amber-50',    teks: 'text-amber-700'   },
+  TPC:  { dot: 'bg-amber-500',   tint: 'bg-amber-50',    teks: 'text-amber-700'   },
+  PC:   { dot: 'bg-amber-400',   tint: 'bg-amber-50',    teks: 'text-amber-700'   },
+  TSi:  { dot: 'bg-orange-500',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  TSo:  { dot: 'bg-orange-500',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  SiPC: { dot: 'bg-orange-500',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  Si:   { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
+  So:   { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
+  SiSo: { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
+  NF:   { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
+  A:    { dot: 'bg-red-600',     tint: 'bg-red-50',      teks: 'text-red-700'     },
+  AC:   { dot: 'bg-red-600',     tint: 'bg-red-50',      teks: 'text-red-700'     },
+  I:    { dot: 'bg-blue-500',    tint: 'bg-blue-50',     teks: 'text-blue-700'    },
+  S:    { dot: 'bg-violet-500',  tint: 'bg-violet-50',   teks: 'text-violet-700'  },
+  C:    { dot: 'bg-teal-500',    tint: 'bg-teal-50',     teks: 'text-teal-700'    },
+  CB:   { dot: 'bg-teal-500',    tint: 'bg-teal-50',     teks: 'text-teal-700'    },
+  EO:   { dot: 'bg-cyan-500',    tint: 'bg-cyan-50',     teks: 'text-cyan-700'    },
+  DL:   { dot: 'bg-sky-500',     tint: 'bg-sky-50',      teks: 'text-sky-700'     },
+  O:    { dot: 'bg-slate-300',   tint: 'bg-slate-50',    teks: 'text-slate-400'   },
+};
+const GAYA_KAL_LAIN = { dot: 'bg-slate-400', tint: 'bg-slate-100', teks: 'text-slate-600' };
+const gayaKalender = (sym) => GAYA_KALENDER[sym] || GAYA_KAL_LAIN;
+
+const NAMA_BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+// Pekan dimulai Senin, mengikuti kebiasaan kalender kerja di Indonesia.
+const HARI_PENDEK = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
+
+// Empat kelompok di kartu ringkasan bulan. SATU sumber kebenaran yang
+// dipakai untuk MENGHITUNG angkanya sekaligus MENYARING saat kartunya
+// diklik — kalau keduanya punya daftar kode sendiri-sendiri, cepat atau
+// lambat angka yang tertulis tidak akan cocok dengan hari yang menyala.
+const GRUP_RINGKAS = {
+  GRUP_HADIR: { label: 'Hadir',     kode: ['H', 'T', 'TPC', 'PC', 'TSi', 'TSo', 'Si', 'So', 'SiSo', 'SiPC'], warna: 'text-slate-900',  aktif: 'bg-slate-900 text-white' },
+  GRUP_TELAT: { label: 'Telat',     kode: ['T', 'TPC', 'TSi', 'TSo', 'SiPC'],                                warna: 'text-amber-600',  aktif: 'bg-amber-500 text-white' },
+  GRUP_PERLU: { label: 'Perlu cek', kode: ['Si', 'So', 'SiSo', 'A', 'AC', 'NF'],                             warna: 'text-rose-600',   aktif: 'bg-rose-600 text-white' },
+  GRUP_IZIN:  { label: 'Izin/cuti', kode: ['I', 'S', 'C', 'CB', 'DL', 'EO'],                                 warna: 'text-slate-900',  aktif: 'bg-teal-600 text-white' },
+};
+
+/** Date -> 'YYYY-MM-DD' memakai komponen waktu LOKAL (bukan UTC). */
+const kunciHari = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 function DbAbsenScreen({ user, setView }) {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -4951,7 +5011,30 @@ function DbAbsenScreen({ user, setView }) {
   const [filterEnd, setFilterEnd] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [showFilter, setShowFilter] = useState(false);
-  
+
+  // Tampilan kalender jadi bawaan: satu layar memuat sebulan penuh,
+  // sedangkan versi daftar butuh ±30 kali gulir untuk cakupan yang sama.
+  // Daftar tetap dipertahankan — untuk membandingkan beberapa hari
+  // berturut-turut, membaca berjajar masih lebih cepat.
+  const [tampilan, setTampilan] = useState('kalender'); // 'kalender' | 'daftar'
+  const [bulanAktif, setBulanAktif] = useState(null);   // objek Date di tanggal 1
+  const [hariDipilih, setHariDipilih] = useState(null); // 'YYYY-MM-DD'
+
+  // Hari libur nasional. Sumbernya berkas statis di GitHub, di-cache di
+  // localStorage seminggu. Gagal mengambilnya TIDAK menghentikan apa pun —
+  // lihat komentar di utils/hariLibur.js.
+  const { libur, status: statusLibur, tahunAda } = useHariLibur();
+
+  // Memilih tanggal sekaligus memastikan kalender pindah ke bulannya.
+  // Tanpa ini, panah "hari berikutnya" di panel bisa melompat ke bulan
+  // lain sementara kisi di belakangnya masih menampilkan bulan lama.
+  const pilihHari = (k) => {
+    if (!k) return;
+    setHariDipilih(k);
+    const th = Number(k.slice(0, 4)), bl = Number(k.slice(5, 7)) - 1;
+    setBulanAktif((b) => (b && b.getFullYear() === th && b.getMonth() === bl ? b : new Date(th, bl, 1)));
+  };
+
   // DAFTAR KODE YANG MEMICU TOMBOL 'AJUKAN IJIN'
   const TARGET_CODES = ['T', 'TSi', 'TSo', 'Si', 'So'];
 
@@ -5063,31 +5146,172 @@ function DbAbsenScreen({ user, setView }) {
   };
 
   // --- LOGIKA FILTER UTAMA ---
-  const filteredList = list.filter(item => {
-    // 1. Filter Tanggal
-    let matchDate = true;
-    if (filterStart || filterEnd) {
-        const itemDateObj = parseDate(item.tanggal); 
-        if (itemDateObj && !isNaN(itemDateObj.getTime())) {
-             const itemTime = itemDateObj.setHours(0, 0, 0, 0);
-             const startTime = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null;
-             const endTime = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null;
-             matchDate = (!startTime || itemTime >= startTime) && (!endTime || itemTime <= endTime);
-        } else { matchDate = false; }
-    }
+  // Dipecah jadi dua tahap. Alasannya bukan kerapian: angka ringkasan
+  // bulan (Hadir / Telat / Perlu cek / Izin-cuti) harus dihitung dari
+  // data yang sudah disaring TANGGAL tapi BELUM disaring status.
+  // Kalau dihitung dari hasil akhir, begitu satu kartu diklik, tiga
+  // kartu lain langsung jadi 0 dan tidak bisa diklik lagi.
+  const cocokTanggal = (item) => {
+    if (!filterStart && !filterEnd) return true;
+    const itemDateObj = parseDate(item.tanggal);
+    if (!itemDateObj || isNaN(itemDateObj.getTime())) return false;
+    const itemTime = itemDateObj.setHours(0, 0, 0, 0);
+    const startTime = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null;
+    const endTime = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null;
+    return (!startTime || itemTime >= startTime) && (!endTime || itemTime <= endTime);
+  };
 
-    // 2. Filter Status
-    let matchStatus = true;
-    if (filterStatus !== 'All') { 
-        if (filterStatus === 'HADIR_ALL') {
-             const included = ['H', 'I', 'T', 'TSi', 'TSo', 'TPC', 'SiPC', 'So', 'Si', 'PC'];
-             matchStatus = included.includes(item.symbol);
-        } else {
-             matchStatus = item.symbol === filterStatus; 
-        }
+  const cocokStatus = (item) => {
+    if (filterStatus === 'All') return true;
+    // Grup dari kartu ringkasan.
+    if (GRUP_RINGKAS[filterStatus]) return GRUP_RINGKAS[filterStatus].kode.includes(item.symbol);
+    // 'HADIR_ALL' sengaja DIBIARKAN apa adanya: nilai ini juga dipakai
+    // Dashboard lewat handleStatClick, jadi mengubah isinya akan diam-diam
+    // mengubah arti tombol di layar lain.
+    if (filterStatus === 'HADIR_ALL') {
+      return ['H', 'I', 'T', 'TSi', 'TSo', 'TPC', 'SiPC', 'So', 'Si', 'PC'].includes(item.symbol);
     }
-    return matchDate && matchStatus;
+    return item.symbol === filterStatus;
+  };
+
+  const listTanggal = list.filter(cocokTanggal);   // dasar angka ringkasan
+  const filteredList = listTanggal.filter(cocokStatus);  // dasar kisi & daftar
+
+  // ============================================================
+  // INDEKS TANGGAL UNTUK KALENDER
+  //
+  // Disusun dari filteredList, bukan list mentah — supaya panel Filter
+  // dan jalur "klik angka di Dashboard" tetap berlaku sama persis di
+  // kedua tampilan. Memfilter "Telat" lalu membuka kalender akan
+  // menyalakan hanya hari-hari telat.
+  //
+  // tanggalRaw dipakai lebih dulu kalau ada, karena sudah yyyy-MM-dd
+  // dari server dan tidak perlu ditebak formatnya.
+  // ============================================================
+  const tglDariItem = (it) => {
+    if (it.tanggalRaw && /^\d{4}-\d{2}-\d{2}$/.test(it.tanggalRaw)) {
+      // Ditambah T00:00:00 supaya dibaca sebagai waktu LOKAL. Tanpa itu
+      // 'yyyy-MM-dd' polos dibaca sebagai UTC, dan di WIB tanggalnya
+      // mundur satu hari.
+      const d = new Date(it.tanggalRaw + 'T00:00:00');
+      if (!isNaN(d.getTime())) return d;
+    }
+    const d = parseDate(it.tanggal);
+    return d && !isNaN(d.getTime()) ? d : null;
+  };
+
+  const petaHari = {};
+  filteredList.forEach((it) => {
+    const d = tglDariItem(it);
+    if (d) petaHari[kunciHari(d)] = it;
   });
+  const kunciTerurut = Object.keys(petaHari).sort();
+
+  // Bulan yang pertama kali ditampilkan = bulan data TERBARU, bukan bulan
+  // berjalan. Isi dbabsen hanya berubah saat admin melakukan import, jadi
+  // membuka di bulan berjalan sering menampilkan kalender kosong.
+  useEffect(() => {
+    if (bulanAktif || list.length === 0) return;
+    let maks = null;
+    list.forEach((it) => {
+      const d = tglDariItem(it);
+      if (d && (!maks || d > maks)) maks = d;
+    });
+    const p = maks || new Date();
+    setBulanAktif(new Date(p.getFullYear(), p.getMonth(), 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list, bulanAktif]);
+
+  const geserBulan = (delta) => {
+    if (!bulanAktif) return;
+    setBulanAktif(new Date(bulanAktif.getFullYear(), bulanAktif.getMonth() + delta, 1));
+  };
+
+  // Sel-sel grid: sisipan kosong di depan supaya tanggal 1 jatuh di
+  // kolom hari yang benar. getDay() memberi 0 untuk Minggu, sedangkan
+  // pekan di sini mulai Senin — karena itu (+6)%7.
+  const selKalender = (() => {
+    if (!bulanAktif) return [];
+    const th = bulanAktif.getFullYear(), bl = bulanAktif.getMonth();
+    const awal = (new Date(th, bl, 1).getDay() + 6) % 7;
+    const jml = new Date(th, bl + 1, 0).getDate();
+    const sel = [];
+    for (let i = 0; i < awal; i++) sel.push(null);
+    for (let t = 1; t <= jml; t++) sel.push(new Date(th, bl, t));
+    return sel;
+  })();
+
+  const kunciHariIni = kunciHari(new Date());
+
+  // Simbol yang benar-benar muncul di bulan ini — dasar keterangan warna.
+  // Menampilkan seluruh 19 kode sekaligus hanya jadi kamus yang tidak dibaca.
+  const simbolBulanIni = [...new Set(
+    selKalender.filter(Boolean)
+      .map((d) => petaHari[kunciHari(d)])
+      .filter(Boolean)
+      .map((it) => it.symbol)
+      .filter((s) => s && s.trim() !== '')
+  )].sort();
+
+  // ---- LAPIS HARI LIBUR NASIONAL ----
+  // Lapis tambahan, bukan syarat. Kalau sumbernya tidak bisa dihubungi,
+  // `libur` tinggal objek kosong dan seluruh kalender tetap berjalan.
+  const liburBulanIni = selKalender
+    .filter(Boolean)
+    .map((d) => ({ k: kunciHari(d), l: libur[kunciHari(d)] }))
+    .filter((x) => x.l)
+    .map((x) => ({ tgl: Number(x.k.slice(8)), ...x.l }));
+
+  const tahunAktif = bulanAktif ? bulanAktif.getFullYear() : null;
+  // Sumbernya hanya memuat tahun berjalan. Membedakan "tahun ini memang
+  // tidak ada libur" dari "data tahun itu tidak tersedia" mencegah orang
+  // menyimpulkan kalendernya rusak.
+  const liburTakTersedia = statusLibur === 'siap' && tahunAktif && tahunAda.length > 0 && !tahunAda.includes(tahunAktif);
+
+  // Ringkasan bulan berjalan — angka yang paling sering dicari orang saat
+  // membuka layar ini, tanpa harus menghitung sel satu per satu.
+  //
+  // Dihitung dari listTanggal (BELUM disaring status), jadi angkanya tetap
+  // utuh walau salah satu kartunya sedang aktif. Kalau dihitung dari data
+  // yang sudah disaring, mengklik "Telat" akan membuat tiga kartu lain
+  // jatuh ke 0 dan pengguna terkunci di satu grup.
+  const petaHariSemua = {};
+  listTanggal.forEach((it) => {
+    const d = tglDariItem(it);
+    if (d) petaHariSemua[kunciHari(d)] = it;
+  });
+
+  const ringkasBulan = (() => {
+    const r = {};
+    Object.keys(GRUP_RINGKAS).forEach((g) => { r[g] = 0; });
+    selKalender.filter(Boolean).forEach((d) => {
+      const it = petaHariSemua[kunciHari(d)];
+      if (!it) return;
+      Object.keys(GRUP_RINGKAS).forEach((g) => {
+        if (GRUP_RINGKAS[g].kode.includes(it.symbol)) r[g]++;
+      });
+    });
+    return r;
+  })();
+
+  // Klik kartu = saring kalender ke grup itu. Klik lagi = lepas saringan.
+  // Saringan yang hanya bisa dipasang tapi tidak bisa dilepas dari tempat
+  // yang sama adalah jebakan klasik.
+  const klikRingkas = (g) => {
+    setHariDipilih(null);
+    setFilterStatus((f) => (f === g ? 'All' : g));
+  };
+
+  const itemDipilih = hariDipilih ? petaHari[hariDipilih] : null;
+  const liburDipilih = hariDipilih ? libur[hariDipilih] : null;
+  // Navigasi panel menyusuri hari yang PUNYA ISI — entah catatan mesin
+  // atau hari libur. Kalau hanya catatan mesin, panah akan melompati
+  // tanggal merah yang barusan dibuka orang dan terasa seperti bug.
+  const kunciNavigasi = [...new Set([
+    ...kunciTerurut,
+    ...Object.keys(libur),
+  ])].sort();
+  const idxDipilih = hariDipilih ? kunciNavigasi.indexOf(hariDipilih) : -1;
 
   const getStatusStyle = (sym) => {
       if(!sym) return { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' };
@@ -5140,71 +5364,141 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
     setView('form');
   };
 
+  // Aturan tampilnya tombol "Ajukan Form Ijin", dipisah jadi fungsi supaya
+  // kartu daftar dan panel detail kalender memakai syarat yang SAMA.
+  // Sebelumnya logika ini hanya ada inline di dalam map() daftar.
+  const bolehAjukan = (item) => {
+    if (!TARGET_CODES.includes(item.symbol)) return false;
+    const d = parseDate(item.tanggal);
+    if (!d) return true;
+    const hariIni = new Date(); hariIni.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
+    const selisihHari = Math.ceil((hariIni - d) / (1000 * 60 * 60 * 24));
+    return selisihHari >= 0 && selisihHari <= 4;   // batas 4 hari ke belakang
+  };
+
   return (
-    <div className="p-4 h-full overflow-y-auto pb-24 bg-gray-50">
-      {/* HEADER */}
-      <div className="flex items-center justify-between mb-6 sticky top-0 bg-gray-50 z-10 py-2">
-        <div>
-            <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Data Mesin</h2>
-            <p className="text-[10px] text-slate-500 font-medium">Sinkronisasi ID: {user.noPayroll}</p>
-            {lastUpdate && (
-                <div className="flex items-center gap-1 mt-1">
-                    <Clock className="w-4 h-4 text-slate-600"/>
-                    <p className="text-[12px] text-slate-600 font-medium">{calculateTimeAgo(lastUpdate)}</p>
-                </div>
-            )}
+    <div className="p-4 h-full overflow-y-auto pb-24 bg-slate-50">
+      {/* ================= KEPALA ================= */}
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-slate-400 leading-none">Presensi mesin</p>
+            <h2 className="mt-1.5 text-[20px] font-semibold text-slate-900 tracking-tight leading-none">Data Absen</h2>
         </div>
-        
-        <div className="flex items-center gap-2">
-            <button 
-                onClick={() => setShowFilter(!showFilter)} 
-                className={`p-2.5 rounded-xl border transition-all shadow-sm ${showFilter ? 'bg-blue-600 text-white border-blue-600 shadow-blue-200' : 'bg-white text-slate-600 border-gray-200 hover:bg-gray-50'}`}
+
+        <div className="flex items-center gap-2 shrink-0">
+            <button
+                onClick={() => setShowFilter(!showFilter)}
+                className={`relative w-9 h-9 rounded-xl border flex items-center justify-center transition-colors
+                  ${showFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                title="Filter"
             >
-                <Filter className="w-5 h-5" />
+                <Filter className="w-[17px] h-[17px]" strokeWidth={2} />
+                {/* Penanda titik: filter aktif sementara panelnya tertutup
+                    adalah sumber bingung nomor satu di layar seperti ini —
+                    datanya "hilang" tanpa penjelasan yang terlihat. */}
+                {!showFilter && (filterStart || filterEnd || filterStatus !== 'All') && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 border-2 border-slate-50" />
+                )}
             </button>
             <BackButton onClick={() => setView('dashboard')} />
         </div>
       </div>
 
-      {/* FILTER PANEL */}
+      {/* Keterangan sinkronisasi jadi satu baris chip, bukan tiga baris
+          teks kecil bertumpuk seperti sebelumnya. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-4">
+        <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-slate-600">
+            <Fingerprint className="w-3 h-3 text-slate-400" strokeWidth={2} />
+            <span className="font-mono">{user.noPayroll || '-'}</span>
+        </span>
+        {lastUpdate && (
+            <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-slate-600">
+                <Clock className="w-3 h-3 text-slate-400" strokeWidth={2} />
+                {calculateTimeAgo(lastUpdate)}
+            </span>
+        )}
+        {statusLibur === 'siap' && (
+            <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-slate-600">
+                <span className="w-2 h-2 rounded-full bg-rose-500" /> Libur nasional aktif
+            </span>
+        )}
+      </div>
+
+
+      {/* PEMILIH TAMPILAN */}
+      <div className="mb-4 grid grid-cols-2 gap-1 bg-slate-200/60 rounded-xl p-1">
+        {[
+          { id: 'kalender', label: 'Kalender', ikon: CalendarDays },
+          { id: 'daftar',   label: 'Daftar',   ikon: List },
+        ].map(({ id, label, ikon: Ikon }) => (
+          <button
+            key={id}
+            onClick={() => setTampilan(id)}
+            className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-[12px] font-semibold tracking-tight transition-all
+              ${tampilan === id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <Ikon className="w-[15px] h-[15px]" strokeWidth={2} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ================= PANEL FILTER ================= */}
       {showFilter && (
-        <div className="bg-white p-5 rounded-2xl shadow-lg shadow-blue-50/50 border border-blue-100 mb-6 animate-in slide-in-from-top-4 duration-300">
-            <div className="flex justify-between items-center mb-4">
-                <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2"><Filter className="w-4 h-4 text-blue-500"/> Filter Data</h4>
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm mb-4 overflow-hidden">
+            <header className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <p className="text-[13px] font-semibold text-slate-900 tracking-tight">Filter data</p>
                 {(filterStart || filterEnd || filterStatus !== 'All') && (
-                    <button onClick={clearFilter} className="text-[10px] text-red-500 font-bold bg-red-50 px-2 py-1 rounded-md hover:bg-red-100 transition">
-                        Reset Filter
+                    <button onClick={clearFilter} className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 transition-colors">
+                        Reset
                     </button>
                 )}
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3 mb-3">
-                <div>
-                    <label className="text-[10px] font-bold text-slate-400 block mb-1">Mulai</label>
-                    <input type="date" className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} />
+            </header>
+
+            <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                        <LabelKecil>Mulai</LabelKecil>
+                        <input type="date" className={`${INPUT_FORM} focus:border-slate-400 focus:ring-slate-900/5 tabular-nums`}
+                            value={filterStart} onChange={(e) => setFilterStart(e.target.value)} />
+                    </div>
+                    <div>
+                        <LabelKecil>Sampai</LabelKecil>
+                        <input type="date" className={`${INPUT_FORM} focus:border-slate-400 focus:ring-slate-900/5 tabular-nums`}
+                            value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} />
+                    </div>
                 </div>
+
                 <div>
-                    <label className="text-[10px] font-bold text-slate-400 block mb-1">Sampai</label>
-                    <input type="date" className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} />
+                    <LabelKecil>Status kehadiran</LabelKecil>
+                    <div className="relative">
+                        <select className={`${INPUT_FORM} focus:border-slate-400 focus:ring-slate-900/5 appearance-none pr-10 cursor-pointer`}
+                            value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                            <option value="All">Semua status</option>
+                            <option value="HADIR_ALL">Hadir (total)</option>
+                            {/* Grup yang sama dengan kartu ringkasan. Harus ada
+                                di sini juga: tanpa <option> yang cocok, select
+                                akan tampil KOSONG saat salah satu kartu diklik. */}
+                            <optgroup label="Kelompok">
+                                {Object.keys(GRUP_RINGKAS).map((g) => (
+                                    <option key={g} value={g}>{GRUP_RINGKAS[g].label}</option>
+                                ))}
+                            </optgroup>
+                            <optgroup label="Kode mesin">
+                                {availableStatusOptions.map((sym) => (
+                                    <option key={sym} value={sym}>{KETERANGAN_MAP[sym] || sym} ({sym})</option>
+                                ))}
+                            </optgroup>
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
                 </div>
             </div>
 
-            {/* DROPDOWN STATUS */}
-            <div>
-                <label className="text-[10px] font-bold text-slate-400 block mb-1">Status Kehadiran</label>
-                <select className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-                    <option value="All">Semua Status</option>
-                    <option value="HADIR_ALL" className="font-bold text-emerald-600">☑️ Hadir (Total)</option>
-                    {availableStatusOptions.map((sym) => (
-                        <option key={sym} value={sym}>
-                            {KETERANGAN_MAP[sym] || sym} ({sym})
-                        </option>
-                    ))}
-                </select>
-            </div>
-            
-            <div className="mt-4 pt-3 border-t border-dashed border-gray-100 text-[10px] text-slate-400 text-center font-medium">
-                Menampilkan <strong>{filteredList.length}</strong> data presensi
+            <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-center">
+                <span className="text-[11px] text-slate-500">
+                    Menampilkan <span className="font-semibold text-slate-800 tabular-nums">{filteredList.length}</span> dari {list.length} catatan
+                </span>
             </div>
         </div>
       )}
@@ -5214,6 +5508,202 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
               <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-3"></div>
               <p className="text-xs font-bold text-slate-400">Mengambil Data Mesin...</p>
           </div>
+      ) : tampilan === 'kalender' ? (
+        /* ================= TAMPILAN KALENDER ================= */
+        <div className="space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+
+            {/* Navigasi bulan */}
+            <div className="flex items-center justify-between px-3 py-3 border-b border-slate-100">
+              <button onClick={() => geserBulan(-1)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors active:scale-90">
+                <ChevronLeft className="w-[18px] h-[18px]" strokeWidth={2.2} />
+              </button>
+              <div className="text-center">
+                <p className="text-[14px] font-semibold text-slate-900 tracking-tight leading-none">
+                  {bulanAktif ? `${NAMA_BULAN[bulanAktif.getMonth()]} ${bulanAktif.getFullYear()}` : '—'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1 tabular-nums">
+                  {selKalender.filter((d) => d && petaHari[kunciHari(d)]).length} hari tercatat
+                </p>
+              </div>
+              <button onClick={() => geserBulan(1)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors active:scale-90">
+                <ChevronRight className="w-[18px] h-[18px]" strokeWidth={2.2} />
+              </button>
+            </div>
+
+            {/* Nama hari */}
+            <div className="grid grid-cols-7 px-2 pt-2.5">
+              {HARI_PENDEK.map((h, i) => (
+                <div key={h} className={`text-center text-[10px] font-semibold uppercase tracking-wide ${i === 6 ? 'text-rose-300' : 'text-slate-300'}`}>{h}</div>
+              ))}
+            </div>
+
+            {/* Kisi tanggal */}
+            <div className="grid grid-cols-7 gap-1 p-2">
+              {selKalender.map((d, i) => {
+                if (!d) return <div key={`k${i}`} />;
+                const k = kunciHari(d);
+                const it = petaHari[k];
+                const g = it ? gayaKalender(it.symbol) : null;
+                const hariLibur = libur[k];
+                const minggu = d.getDay() === 0;
+                const dipilih = hariDipilih === k;
+                const hariIni = k === kunciHariIni;
+
+                // Sel bisa diketuk kalau ada isinya — catatan mesin ATAU
+                // hari libur. Tanggal merah yang kosong pun layak dibuka:
+                // justru itu yang menjelaskan kenapa hari itu tidak ada data.
+                const adaIsi = !!(it || hariLibur);
+
+                return (
+                  <button
+                    key={k}
+                    disabled={!adaIsi}
+                    onClick={() => pilihHari(k)}
+                    className={`relative aspect-square rounded-xl flex flex-col items-center justify-center transition-all
+                      ${it ? `${g.tint} active:scale-90 cursor-pointer` : ''}
+                      ${!it && hariLibur ? 'bg-rose-50/70 active:scale-90 cursor-pointer' : ''}
+                      ${!adaIsi ? 'cursor-default' : ''}
+                      ${dipilih ? 'ring-2 ring-slate-900 ring-offset-1' : ''}`}
+                  >
+                    {/* Angka merah untuk tanggal merah dan hari Minggu —
+                        konvensi kalender cetak, langsung dikenali tanpa
+                        perlu membaca keterangan apa pun. */}
+                    <span className={`text-[13px] font-semibold tabular-nums leading-none
+                      ${it ? g.teks : (hariLibur || minggu) ? 'text-rose-500' : 'text-slate-300'}`}>
+                      {d.getDate()}
+                    </span>
+
+                    {/* Titik warna: pembeda kedua selain latar, supaya tetap
+                        terbaca di layar berkontras rendah atau kena matahari. */}
+                    {it
+                      ? <span className={`mt-1 w-1.5 h-1.5 rounded-full ${g.dot}`} />
+                      : <span className="mt-1 w-1.5 h-1.5" />}
+
+                    {/* Segitiga sudut = libur nasional. Ditempatkan di pojok
+                        supaya tidak berebut tempat dengan warna status: satu
+                        hari bisa libur DAN punya catatan mesin (mis. lembur). */}
+                    {hariLibur && (
+                      <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-rose-500 ring-2 ring-white" />
+                    )}
+
+                    {/* Penanda hari ini — garis bawah, bukan lingkaran penuh,
+                        supaya tidak bertabrakan dengan warna status. */}
+                    {hariIni && <span className="absolute bottom-1 w-3 h-[2px] rounded-full bg-slate-900/70" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Ringkasan bulan — bisa diklik untuk menyaring kalender */}
+            <div className="grid grid-cols-4 divide-x divide-slate-100 border-t border-slate-100">
+              {Object.keys(GRUP_RINGKAS).map((g) => {
+                const grup = GRUP_RINGKAS[g];
+                const nilai = ringkasBulan[g];
+                const aktif = filterStatus === g;
+                // Nilai 0 tidak bisa diklik: menyaring ke grup kosong hanya
+                // menghasilkan kalender kosong tanpa satu pun petunjuk kenapa.
+                const bisa = nilai > 0;
+
+                return (
+                  <button
+                    key={g}
+                    disabled={!bisa}
+                    onClick={() => klikRingkas(g)}
+                    className={`px-2 py-3 text-center transition-colors
+                      ${aktif ? grup.aktif : bisa ? 'hover:bg-slate-50 active:bg-slate-100' : 'cursor-default'}`}
+                  >
+                    <p className={`text-[19px] leading-none font-semibold tabular-nums tracking-tight
+                      ${aktif ? 'text-white' : bisa ? grup.warna : 'text-slate-300'}`}>
+                      {nilai}
+                    </p>
+                    <p className={`mt-1 text-[10px] leading-tight ${aktif ? 'text-white/80' : 'text-slate-400'}`}>
+                      {grup.label}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Baris pelepas saringan. Kartu yang aktif sudah berwarna, tapi
+                di layar kecil bagian bawah kartu bisa tidak ikut terlihat —
+                jadi statusnya dinyatakan sekali lagi dengan kata-kata. */}
+            {GRUP_RINGKAS[filterStatus] && (
+              <button
+                onClick={() => setFilterStatus('All')}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 border-t border-slate-100 bg-slate-50 text-[11px] font-medium text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-3 h-3" strokeWidth={2.4} />
+                Hanya menampilkan {GRUP_RINGKAS[filterStatus].label.toLowerCase()} — ketuk untuk melepas
+              </button>
+            )}
+          </div>
+
+          {/* Keterangan warna — hanya simbol yang muncul di bulan ini */}
+          {simbolBulanIni.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-400 mb-2">Keterangan</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {simbolBulanIni.map((s) => (
+                  <span key={s} className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
+                    <span className={`w-2 h-2 rounded-full ${gayaKalender(s).dot}`} />
+                    {KETERANGAN_MAP[s] || s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ---- HARI LIBUR BULAN INI ---- */}
+          {liburBulanIni.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+              <header className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
+                <span className="w-8 h-8 shrink-0 rounded-[10px] bg-rose-50 text-rose-600 flex items-center justify-center">
+                  <CalendarDays className="w-[15px] h-[15px]" strokeWidth={2} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-900 tracking-tight leading-tight">Libur nasional</p>
+                  <p className="text-[10.5px] text-slate-400 leading-tight mt-0.5">
+                    {liburBulanIni.length} hari di bulan ini
+                  </p>
+                </div>
+              </header>
+              <div className="divide-y divide-slate-100">
+                {liburBulanIni.map((h) => (
+                  <button
+                    key={h.tgl}
+                    onClick={() => pilihHari(kunciHari(new Date(bulanAktif.getFullYear(), bulanAktif.getMonth(), h.tgl)))}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors"
+                  >
+                    <span className="w-8 shrink-0 text-[15px] font-semibold text-rose-500 tabular-nums text-center">{h.tgl}</span>
+                    <span className="flex-1 min-w-0 text-[12.5px] text-slate-700 leading-snug">{h.nama}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Status pengambilan data libur — hanya ditampilkan kalau ada
+              yang perlu dijelaskan. Diam saat semuanya normal. */}
+          {(statusLibur === 'gagal' || liburTakTersedia) && (
+            <div className="flex items-start gap-2 px-4 py-2.5 bg-slate-100/70 rounded-xl">
+              <CircleAlert className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-px" strokeWidth={2} />
+              <p className="text-[10.5px] text-slate-500 leading-relaxed">
+                {liburTakTersedia
+                  ? <>Penanda libur nasional hanya tersedia untuk tahun {tahunAda.join(', ')}. Data absensinya tetap lengkap.</>
+                  : <>Daftar libur nasional gagal diambil — butuh koneksi internet. Kalender absensi tetap berfungsi normal.</>}
+              </p>
+            </div>
+          )}
+
+          {selKalender.length > 0 && selKalender.filter((d) => d && petaHari[kunciHari(d)]).length === 0 && (
+            <div className="text-center py-10 bg-white rounded-2xl border border-dashed border-slate-300">
+              <Fingerprint className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+              <p className="text-[13px] font-semibold text-slate-500">Tidak ada data di bulan ini</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Geser bulan dengan panah di atas</p>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="space-y-4">
             {filteredList.length === 0 && (
@@ -5231,28 +5721,9 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                 const dateParts = splitDate(item.tanggal, item.week);
                 const keterangan = KETERANGAN_MAP[item.symbol] || '-';
                 
-                // --- LOGIKA TOMBOL FORM (REVISI) ---
-                // Cek apakah Kode Absen termasuk dalam daftar TARGET_CODES
-                const isTargetCode = TARGET_CODES.includes(item.symbol);
-                
-                // Tambahan: Validasi Tanggal Max 4 Hari (Opsional, jika ingin tetap dipakai)
-                let isWithinTimeLimit = true;
-                const itemDate = parseDate(item.tanggal);
-                if (itemDate) {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    itemDate.setHours(0, 0, 0, 0);
-                    const diffTime = today - itemDate;
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    // Jika lebih dari 4 hari yang lalu, button tidak muncul (Business Rule)
-                    if (diffDays < 0 || diffDays > 4) {
-                        isWithinTimeLimit = false;
-                    }
-                }
-
-                // Tampilkan tombol jika Kode Cocok DAN Masih dalam batas waktu
-                const showButton = isTargetCode && isWithinTimeLimit;
-                
+                // Syaratnya pindah ke bolehAjukan() supaya panel detail di
+                // tampilan kalender memakai aturan yang sama persis.
+                const showButton = bolehAjukan(item);
                 const isIjinDisabled = ijinCount >= 4;
 
                 return (
@@ -5326,6 +5797,166 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
             })}
         </div>
       )}
+
+      {/* ================= PANEL DETAIL HARIAN ================= */}
+      {/* Muncul dari bawah setelah satu tanggal diketuk. Dipilih bentuk
+          panel, bukan pindah layar, supaya kalendernya tetap terlihat dan
+          orang bisa meloncat dari satu tanggal ke tanggal lain tanpa
+          kehilangan konteks bulan. */}
+      {(itemDipilih || liburDipilih) && (() => {
+        const g = itemDipilih ? gayaKalender(itemDipilih.symbol) : null;
+        // Tanggal panel diambil dari kunci hari, bukan dari item — supaya
+        // hari libur yang TIDAK punya catatan mesin tetap punya judul.
+        const tgl = new Date(hariDipilih + 'T00:00:00');
+        const ket = itemDipilih ? (KETERANGAN_MAP[itemDipilih.symbol] || itemDipilih.symbol || '-') : null;
+        const adaTelat = itemDipilih && itemDipilih.telat && itemDipilih.telat !== 'FALSE' && itemDipilih.telat !== '00:00:00';
+        const bisaAjukan = itemDipilih ? bolehAjukan(itemDipilih) : false;
+        const ijinHabis = ijinCount >= 4;
+
+        return (
+          <div className="fixed inset-0 z-[110] flex items-end justify-center">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" onClick={() => setHariDipilih(null)} />
+
+            <div className="relative w-full max-w-md bg-white rounded-t-3xl shadow-2xl max-h-[85vh] overflow-y-auto"
+                 style={{ animation: 'panelNaik 0.26s cubic-bezier(0.22,1,0.36,1)' }}>
+              <style>{`@keyframes panelNaik { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
+
+              {/* Gagang + navigasi antar tanggal yang ADA datanya */}
+              <div className="sticky top-0 bg-white/95 backdrop-blur-sm px-4 pt-3 pb-3 border-b border-slate-100 z-10">
+                <div className="w-9 h-1 rounded-full bg-slate-200 mx-auto mb-3" />
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    disabled={idxDipilih <= 0}
+                    onClick={() => pilihHari(kunciNavigasi[idxDipilih - 1])}
+                    className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 disabled:opacity-25 disabled:hover:bg-transparent transition-colors"
+                    title="Tanggal sebelumnya"
+                  >
+                    <ChevronLeft className="w-[18px] h-[18px]" strokeWidth={2.2} />
+                  </button>
+
+                  <div className="text-center min-w-0">
+                    <p className="text-[14px] font-semibold text-slate-900 tracking-tight leading-tight truncate">
+                      {tgl && !isNaN(tgl.getTime()) ? formatDateIndo(tgl) : hariDipilih}
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-1 mt-1">
+                      {itemDipilih && (
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10.5px] font-semibold ${g.tint} ${g.teks}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} /> {ket}
+                        </span>
+                      )}
+                      {liburDipilih && (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10.5px] font-semibold bg-rose-50 text-rose-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Libur nasional
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    disabled={idxDipilih < 0 || idxDipilih >= kunciNavigasi.length - 1}
+                    onClick={() => pilihHari(kunciNavigasi[idxDipilih + 1])}
+                    className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 disabled:opacity-25 disabled:hover:bg-transparent transition-colors"
+                    title="Tanggal berikutnya"
+                  >
+                    <ChevronRight className="w-[18px] h-[18px]" strokeWidth={2.2} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-3">
+
+                {/* Nama hari liburnya. Inilah yang menjelaskan kenapa
+                    sebuah tanggal tidak punya catatan mesin sama sekali —
+                    pertanyaan yang dulu tidak terjawab di layar ini. */}
+                {liburDipilih && (
+                  <div className="rounded-2xl bg-rose-50 border border-rose-100 px-4 py-3">
+                    <p className="text-[13px] font-semibold text-rose-900 leading-snug">{liburDipilih.nama}</p>
+                    <p className="text-[10.5px] text-rose-700/80 mt-0.5">Hari libur nasional</p>
+                  </div>
+                )}
+
+                {!itemDipilih && (
+                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center">
+                    <Fingerprint className="w-6 h-6 text-slate-300 mx-auto mb-2" strokeWidth={1.8} />
+                    <p className="text-[12.5px] font-medium text-slate-500">Tidak ada catatan mesin</p>
+                    <p className="text-[10.5px] text-slate-400 mt-0.5">Wajar untuk tanggal merah</p>
+                  </div>
+                )}
+
+                {itemDipilih && <>
+                {/* Masuk & pulang */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-2xl border border-slate-200/80 p-3.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="text-[10.5px] font-medium text-slate-500">Masuk</span>
+                    </div>
+                    <p className="mt-2 text-[26px] leading-none font-semibold text-slate-900 tabular-nums tracking-tight">
+                      {formatTimeOnly(itemDipilih.masuk)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/80 p-3.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                      <span className="text-[10.5px] font-medium text-slate-500">Pulang</span>
+                    </div>
+                    <p className="mt-2 text-[26px] leading-none font-semibold text-slate-900 tabular-nums tracking-tight">
+                      {formatTimeOnly(itemDipilih.pulang)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Rincian */}
+                <div className="rounded-2xl border border-slate-200/80 divide-y divide-slate-100">
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-[11.5px] text-slate-500">Jam kerja</span>
+                    <span className="text-[12.5px] font-semibold text-slate-900 tabular-nums">{itemDipilih.jamKerja || '-'}</span>
+                  </div>
+                  {adaTelat && (
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-[11.5px] text-slate-500">Terlambat</span>
+                      <span className="text-[12.5px] font-semibold text-amber-600 tabular-nums">{formatTimeOnly(itemDipilih.telat)}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between px-4 py-2.5 gap-3">
+                    <span className="text-[11.5px] text-slate-500 shrink-0">Kode</span>
+                    <span className="text-[12.5px] font-semibold text-slate-900 font-mono">{itemDipilih.symbol || '-'}</span>
+                  </div>
+                  <div className="px-4 py-2.5">
+                    <p className="text-[11.5px] text-slate-500 mb-1">Waktu scan mesin</p>
+                    <p className="text-[11px] font-mono text-slate-700 leading-relaxed break-words">
+                      {itemDipilih.waktuScan ? itemDipilih.waktuScan.replace(/,/g, ', ') : '-'}
+                    </p>
+                  </div>
+                </div>
+                </>}
+
+                {bisaAjukan && (
+                  <button
+                    disabled={ijinHabis}
+                    onClick={() => handleAjukanIjin(itemDipilih)}
+                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[13px] font-semibold transition-all border active:scale-[0.99]
+                      ${ijinHabis
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                        : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'}`}
+                  >
+                    <FileText className="w-4 h-4" strokeWidth={2} />
+                    {ijinHabis ? 'Kuota Form Ijin sudah habis (4×)' : 'Ajukan Form Ijin'}
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setHariDipilih(null)}
+                  className="w-full py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-[13px] font-semibold text-slate-700 transition-colors active:scale-[0.99]"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="h-10"></div>
     </div>
   );
