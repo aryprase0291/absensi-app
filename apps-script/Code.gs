@@ -811,10 +811,17 @@ function handleGetDbAbsen(data) {
   const sheetUser = SS.getSheetByName(SHEET_USERS); // [cite: 163]
   const rowsUser = bacaSheet(sheetUser, 8); // butuh index 0 dan 7 saja
   let userNik = data.noPayroll;
+  let namaUser = data.nama || '-';
 
   if (!userNik) {
     const foundUser = rowsUser.slice(1).find(r => String(r[0]) === String(data.userId));
-    if (foundUser) userNik = foundUser[7];
+    if (foundUser) {
+      userNik = foundUser[7];
+      namaUser = foundUser[3] || '-';
+    }
+  } else {
+    const foundUser = rowsUser.slice(1).find(r => String(r[7]).trim() === String(userNik).trim());
+    if (foundUser) namaUser = foundUser[3] || '-';
   }
 
   if (!userNik || userNik === '-') return responseJSON({ result: 'success', list: [] });
@@ -870,13 +877,122 @@ function handleGetDbAbsen(data) {
          // Data Tambahan untuk Fitur Baru:
          canRequestIjin: showAjukanBtn, // Boolean: True/False
          shiftStart: shiftStart,        // "08:00"
-         shiftEnd: shiftEnd             // "17:00"
+         shiftEnd: shiftEnd,            // "17:00"
+         sumber: 'mesin',
+         onlineRecords: []
        });
     }
   }
 
-  list.sort((a, b) => b._sortDate - a._sortDate);
-  return responseJSON({ result: 'success', list: list, lastUpdate: lastUpdateStr });
+  // ================================================================
+  // GABUNG ABSEN ONLINE KE DATA MESIN
+  //
+  // Absensi online tersimpan di sheet Absensi, sedangkan data mesin
+  // berasal dari dbabsen. Keduanya disatukan berdasarkan NIK + tanggal.
+  // Jika hari itu belum ada scan mesin, dibuat satu baris virtual agar
+  // tetap muncul di kalender Data Absen.
+  // ================================================================
+  const onlineByDate = {};
+  let latestOnlineTimestamp = 0;
+  const sheetOnline = SS.getSheetByName(SHEET_ABSENSI);
+  const rowsOnline = sheetOnline ? bacaSheet(sheetOnline, 17) : [];
+
+  for (let i = 1; i < rowsOnline.length; i++) {
+    const row = rowsOnline[i];
+    const rowUserId = String(row[2]);
+    const tipe = String(row[4] || '').trim();
+    const status = String(row[12] || '').trim();
+
+    // Hanya catatan tombol Absen Masuk/Pulang yang ditampilkan sebagai
+    // presensi online. Pengajuan Ijin/Cuti tetap berada di menu masing-masing.
+    if (rowUserId !== String(data.userId) || status === 'Rejected' || !['Hadir', 'Pulang'].includes(tipe)) continue;
+
+    const waktu = row[1];
+    const tanggalRaw = formatDateYMD_Strict(waktu);
+    if (!tanggalRaw) continue;
+
+    const timestamp = new Date(waktu).getTime();
+    if (!isNaN(timestamp) && timestamp > latestOnlineTimestamp) latestOnlineTimestamp = timestamp;
+
+    if (!onlineByDate[tanggalRaw]) {
+      onlineByDate[tanggalRaw] = { masuk: '', pulang: '', onlineRecords: [], _sortDate: timestamp || new Date(tanggalRaw).getTime() };
+    }
+
+    const bucket = onlineByDate[tanggalRaw];
+    const record = {
+      tipe: tipe,
+      waktu: formatTimeOnly_Backend(waktu),
+      status: status || 'Verified',
+      catatan: row[6] || '-',
+      lokasi: row[5] || '-'
+    };
+    bucket.onlineRecords.push(record);
+
+    // Jika ada lebih dari satu tap pada hari yang sama, masuk mengambil
+    // waktu paling awal dan pulang mengambil waktu paling akhir.
+    const waktuMenit = timestamp || 0;
+    if (tipe === 'Hadir' && (!bucket._masukTimestamp || waktuMenit < bucket._masukTimestamp)) {
+      bucket.masuk = record.waktu;
+      bucket._masukTimestamp = waktuMenit;
+    }
+    if (tipe === 'Pulang' && (!bucket._pulangTimestamp || waktuMenit > bucket._pulangTimestamp)) {
+      bucket.pulang = record.waktu;
+      bucket._pulangTimestamp = waktuMenit;
+    }
+  }
+
+  const machineByDate = {};
+  list.forEach((item) => {
+    if (item.tanggalRaw) machineByDate[item.tanggalRaw] = item;
+  });
+
+  const semuaTanggal = [...new Set([...Object.keys(machineByDate), ...Object.keys(onlineByDate)])];
+  const mergedList = semuaTanggal.map((tanggalRaw) => {
+    const mesin = machineByDate[tanggalRaw];
+    const online = onlineByDate[tanggalRaw];
+
+    if (mesin) {
+      return {
+        ...mesin,
+        sumber: online ? 'mesin+online' : 'mesin',
+        onlineMasuk: online ? online.masuk : '',
+        onlinePulang: online ? online.pulang : '',
+        onlineRecords: online ? online.onlineRecords : []
+      };
+    }
+
+    // Tidak ada scan mesin pada tanggal ini, tetapi ada absen online.
+    // Bentuknya sengaja mengikuti kontrak item dbabsen agar kalender,
+    // filter, dan tampilan daftar dapat memakainya tanpa jalur khusus.
+    return {
+      nik: userNik,
+      nama: namaUser,
+      tanggal: formatDate(online._sortDate || tanggalRaw),
+      tanggalRaw: tanggalRaw,
+      jamKerja: '-',
+      masuk: online.masuk || '-',
+      pulang: online.pulang || '-',
+      telat: '-',
+      symbol: 'ONL',
+      waktuScan: '-',
+      week: '',
+      _sortDate: online._sortDate || new Date(tanggalRaw).getTime(),
+      canRequestIjin: false,
+      shiftStart: '',
+      shiftEnd: '',
+      sumber: 'online',
+      onlineMasuk: online.masuk,
+      onlinePulang: online.pulang,
+      onlineRecords: online.onlineRecords
+    };
+  });
+
+  if (latestOnlineTimestamp && (!lastUpdateStr || latestOnlineTimestamp > new Date(lastUpdateStr).getTime())) {
+    lastUpdateStr = new Date(latestOnlineTimestamp).toISOString();
+  }
+
+  mergedList.sort((a, b) => b._sortDate - a._sortDate);
+  return responseJSON({ result: 'success', list: mergedList, lastUpdate: lastUpdateStr });
 }
 
 // ==========================================

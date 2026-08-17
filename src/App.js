@@ -5112,6 +5112,7 @@ const GAYA_KALENDER = {
   EO:   { dot: 'bg-cyan-500',    tint: 'bg-cyan-50',     teks: 'text-cyan-700'    },
   DL:   { dot: 'bg-sky-500',     tint: 'bg-sky-50',      teks: 'text-sky-700'     },
   O:    { dot: 'bg-slate-300',   tint: 'bg-slate-50',    teks: 'text-slate-400'   },
+  ONL:  { dot: 'bg-indigo-500',  tint: 'bg-indigo-50',   teks: 'text-indigo-700'  },
 };
 const GAYA_KAL_LAIN = { dot: 'bg-slate-400', tint: 'bg-slate-100', teks: 'text-slate-600' };
 const gayaKalender = (sym) => GAYA_KALENDER[sym] || GAYA_KAL_LAIN;
@@ -5125,7 +5126,7 @@ const HARI_PENDEK = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
 // diklik — kalau keduanya punya daftar kode sendiri-sendiri, cepat atau
 // lambat angka yang tertulis tidak akan cocok dengan hari yang menyala.
 const GRUP_RINGKAS = {
-  GRUP_HADIR: { label: 'Hadir',     kode: ['H', 'T', 'TPC', 'PC', 'TSi', 'TSo', 'Si', 'So', 'SiSo', 'SiPC'], warna: 'text-slate-900',  aktif: 'bg-slate-900 text-white' },
+  GRUP_HADIR: { label: 'Hadir',     kode: ['H', 'T', 'TPC', 'PC', 'TSi', 'TSo', 'Si', 'So', 'SiSo', 'SiPC', 'ONL'], warna: 'text-slate-900',  aktif: 'bg-slate-900 text-white' },
   GRUP_TELAT: { label: 'Telat',     kode: ['T', 'TPC', 'TSi', 'TSo', 'SiPC'],                                warna: 'text-amber-600',  aktif: 'bg-amber-500 text-white' },
   GRUP_PERLU: { label: 'Perlu cek', kode: ['Si', 'So', 'SiSo', 'A', 'AC', 'NF'],                             warna: 'text-rose-600',   aktif: 'bg-rose-600 text-white' },
   GRUP_IZIN:  { label: 'Izin/cuti', kode: ['I', 'S', 'C', 'CB', 'DL', 'EO'],                                 warna: 'text-slate-900',  aktif: 'bg-teal-600 text-white' },
@@ -5186,13 +5187,13 @@ function DbAbsenScreen({ user, setView }) {
       'H': 'Hadir', 'T': 'Terlambat', 'O': 'Off / Libur', 'CB': 'Cuti Bersama',
       'PC': 'Pulang Cepat', 'Si': 'Tdk Absen IN', 'So': 'Tdk Absen OUT',
       'I': 'Ijin', 'S': 'Sakit', 'C': 'Cuti', 'A': 'Alpa',
-      'DL': 'Dinas Luar', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
+      'DL': 'Dinas Luar', 'ONL': 'Absen online', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
       'TSi': 'Telat & No Scan In', 'SiSo': 'Tdk Absen IN & OUT',
       'SiPC': 'Tdk Absen IN & Pulang Cepat', 'AC': 'Alpa (Lebih Cuti)',
       'EO': 'Extra Ordinary', 'NF': 'Tidak Absen'
   };
   
-  const availableStatusOptions = [...new Set(list.map(item => item.symbol))]
+  const availableStatusOptions = [...new Set(list.flatMap(item => [item.symbol, ...(Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0 ? ['ONL'] : [])]))]
       .filter(s => s && s.trim() !== '')
       .sort();
 
@@ -5255,7 +5256,7 @@ function DbAbsenScreen({ user, setView }) {
       try {
         const res = await fetchApi(SCRIPT_URL, { 
             method: 'POST', 
-            body: JSON.stringify({ action: 'get_db_absen', userId: user.id, noPayroll: user.noPayroll }) 
+            body: JSON.stringify({ action: 'get_db_absen', userId: user.id, nama: user.nama, noPayroll: user.noPayroll })
         });
         const data = await res.json();
         if (data.result === 'success') {
@@ -5297,13 +5298,14 @@ function DbAbsenScreen({ user, setView }) {
 
   const cocokStatus = (item) => {
     if (filterStatus === 'All') return true;
+    if (filterStatus === 'ONL') return item.symbol === 'ONL' || (Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0);
     // Grup dari kartu ringkasan.
     if (GRUP_RINGKAS[filterStatus]) return GRUP_RINGKAS[filterStatus].kode.includes(item.symbol);
     // 'HADIR_ALL' sengaja DIBIARKAN apa adanya: nilai ini juga dipakai
     // Dashboard lewat handleStatClick, jadi mengubah isinya akan diam-diam
     // mengubah arti tombol di layar lain.
     if (filterStatus === 'HADIR_ALL') {
-      return ['H', 'I', 'T', 'TSi', 'TSo', 'TPC', 'SiPC', 'So', 'Si', 'PC'].includes(item.symbol);
+      return ['H', 'I', 'T', 'TSi', 'TSo', 'TPC', 'SiPC', 'So', 'Si', 'PC', 'ONL'].includes(item.symbol);
     }
     return item.symbol === filterStatus;
   };
@@ -5711,7 +5713,10 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                     {/* Titik warna: pembeda kedua selain latar, supaya tetap
                         terbaca di layar berkontras rendah atau kena matahari. */}
                     {it
-                      ? <span className={`mt-1 w-1.5 h-1.5 rounded-full ${g.dot}`} />
+                      ? <span className="mt-1 flex items-center justify-center gap-0.5">
+                          <span className={`w-1.5 h-1.5 rounded-full ${g.dot}`} />
+                          {Array.isArray(it.onlineRecords) && it.onlineRecords.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 ring-1 ring-white" title="Ada absen online" />}
+                        </span>
                       : <span className="mt-1 w-1.5 h-1.5" />}
 
                     {/* Segitiga sudut = libur nasional. Ditempatkan di pojok
@@ -5859,6 +5864,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                 // tampilan kalender memakai aturan yang sama persis.
                 const showButton = bolehAjukan(item);
                 const isIjinDisabled = ijinCount >= 4;
+                const adaOnline = Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0;
 
                 return (
                     <div key={idx} className="bg-white rounded-2xl p-0 shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-all duration-300 group">
@@ -5872,8 +5878,11 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                 <div className="flex justify-between items-start mb-3">
                                     <div>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{dateParts.dayName}</p>
-                                        <div className={`inline-flex items-center px-2.5 py-1 rounded-lg border ${style.bg} ${style.border} ${style.text}`}>
-                                            <span className="text-[10px] font-extrabold tracking-wide uppercase">{keterangan}</span>
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <div className={`inline-flex items-center px-2.5 py-1 rounded-lg border ${style.bg} ${style.border} ${style.text}`}>
+                                                <span className="text-[10px] font-extrabold tracking-wide uppercase">{keterangan}</span>
+                                            </div>
+                                            {adaOnline && <span className="inline-flex items-center rounded-lg border border-indigo-100 bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700">Absen online</span>}
                                         </div>
                                     </div>
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black border-2 ${style.bg} ${style.border} ${style.text}`}>
@@ -5882,14 +5891,26 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                 </div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                                     <div className="relative pl-3 border-l-2 border-green-400">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Masuk</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Masuk online' : 'Masuk mesin'}</p>
                                         <p className="text-base font-black text-slate-800">{formatTimeOnly(item.masuk)}</p>
                                     </div>
                                     <div className="relative pl-3 border-l-2 border-red-400">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">Pulang</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Pulang online' : 'Pulang mesin'}</p>
                                         <p className="text-base font-black text-slate-800">{formatTimeOnly(item.pulang)}</p>
                                     </div>
                                 </div>
+                                {adaOnline && (
+                                    <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/60 px-3 py-2">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="text-[9px] font-bold uppercase tracking-wide text-indigo-500">Absen online</p>
+                                            <span className="text-[10px] font-medium text-indigo-500">{item.onlineRecords.length} catatan</span>
+                                        </div>
+                                        <div className="mt-1.5 grid grid-cols-2 gap-3">
+                                            <p className="text-xs font-semibold text-indigo-900">Masuk <span className="font-mono">{formatTimeOnly(item.onlineMasuk)}</span></p>
+                                            <p className="text-xs font-semibold text-indigo-900">Pulang <span className="font-mono">{formatTimeOnly(item.onlinePulang)}</span></p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <div className="bg-slate-50/50 px-4 py-3 border-t border-slate-100 flex items-center justify-between">
@@ -5944,6 +5965,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
         const tgl = new Date(hariDipilih + 'T00:00:00');
         const ket = itemDipilih ? (KETERANGAN_MAP[itemDipilih.symbol] || itemDipilih.symbol || '-') : null;
         const adaTelat = itemDipilih && itemDipilih.telat && itemDipilih.telat !== 'FALSE' && itemDipilih.telat !== '00:00:00';
+        const adaAbsenOnline = itemDipilih && Array.isArray(itemDipilih.onlineRecords) && itemDipilih.onlineRecords.length > 0;
         const bisaAjukan = itemDipilih ? bolehAjukan(itemDipilih) : false;
         const ijinHabis = ijinCount >= 4;
 
@@ -6023,7 +6045,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                   <div className="rounded-2xl border border-slate-200/80 p-3.5">
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="text-[10.5px] font-medium text-slate-500">Masuk</span>
+                      <span className="text-[10.5px] font-medium text-slate-500">{itemDipilih.sumber === 'online' ? 'Masuk online' : 'Masuk mesin'}</span>
                     </div>
                     <p className="mt-2 text-[26px] leading-none font-semibold text-slate-900 tabular-nums tracking-tight">
                       {formatTimeOnly(itemDipilih.masuk)}
@@ -6032,7 +6054,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                   <div className="rounded-2xl border border-slate-200/80 p-3.5">
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      <span className="text-[10.5px] font-medium text-slate-500">Pulang</span>
+                      <span className="text-[10.5px] font-medium text-slate-500">{itemDipilih.sumber === 'online' ? 'Pulang online' : 'Pulang mesin'}</span>
                     </div>
                     <p className="mt-2 text-[26px] leading-none font-semibold text-slate-900 tabular-nums tracking-tight">
                       {formatTimeOnly(itemDipilih.pulang)}
@@ -6057,12 +6079,38 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                     <span className="text-[12.5px] font-semibold text-slate-900 font-mono">{itemDipilih.symbol || '-'}</span>
                   </div>
                   <div className="px-4 py-2.5">
-                    <p className="text-[11.5px] text-slate-500 mb-1">Waktu scan mesin</p>
+                    <p className="text-[11.5px] text-slate-500 mb-1">{itemDipilih.sumber === 'online' ? 'Sumber data' : 'Waktu scan mesin'}</p>
                     <p className="text-[11px] font-mono text-slate-700 leading-relaxed break-words">
-                      {itemDipilih.waktuScan ? itemDipilih.waktuScan.replace(/,/g, ', ') : '-'}
+                      {itemDipilih.sumber === 'online' ? 'Absen online dari aplikasi' : (itemDipilih.waktuScan ? itemDipilih.waktuScan.replace(/,/g, ', ') : '-')}
                     </p>
                   </div>
                 </div>
+
+                {adaAbsenOnline && (
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 border-b border-indigo-100 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700"><Smartphone className="h-4 w-4" strokeWidth={2}/></span>
+                        <div>
+                          <p className="text-[12px] font-semibold text-indigo-900">Absen online</p>
+                          <p className="text-[10px] text-indigo-600">Terbaca dari aplikasi</p>
+                        </div>
+                      </div>
+                      <span className="rounded-lg bg-white/80 px-2 py-1 text-[10px] font-semibold text-indigo-700">{itemDipilih.onlineRecords.length} catatan</span>
+                    </div>
+                    <div className="divide-y divide-indigo-100/80">
+                      {itemDipilih.onlineRecords.map((record, index) => (
+                        <div key={`${record.tipe}-${record.waktu}-${index}`} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                          <div>
+                            <p className="text-[11px] font-medium text-indigo-700">{record.tipe === 'Hadir' ? 'Masuk' : 'Pulang'}</p>
+                            {record.catatan && record.catatan !== '-' && <p className="mt-0.5 max-w-[190px] truncate text-[10px] text-indigo-600/80">{record.catatan}</p>}
+                          </div>
+                          <span className="font-mono text-[15px] font-semibold tabular-nums text-indigo-950">{formatTimeOnly(record.waktu)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 </>}
 
                 {bisaAjukan && (
