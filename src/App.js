@@ -3,7 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List,
-  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
+  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
 import { FRONTEND_VERSION } from './config/updateManifest';
 import BackButton from './components/BackButton';
@@ -424,11 +424,20 @@ const KartuAbsen = ({ onClick, label, jam, Ikon, warna, keadaan }) => {
   );
 };
 
-    // KOMPONEN JAM ANALOG
-const AnalogClock = ({ time }) => { const s = time.getSeconds(), m = time.getMinutes(), h = time.getHours(); const sD = (s/60)*360, mD = (m/60)*360+(s/60)*6, hD = ((h%12)/12)*360+(m/60)*30; return (<div className="relative w-28 h-28 flex items-center justify-center bg-white rounded-full shadow-inner border-4 border-slate-100">{[...Array(12)].map((_, i) => { const n = i+1, r = n*30; return (<div key={n} className="absolute w-full h-full text-center pt-1" style={{transform:`rotate(${r}deg)`}}><span className="inline-block text-[10px] font-bold text-slate-400" style={{transform:`rotate(-${r}deg)`}}>{n}</span></div>); })}{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-0.5 h-1 bg-slate-200 rounded-full" style={{transform:`rotate(${i*30}deg) translate(0, -38px)`}}></div>))}<div className="absolute w-1.5 h-7 bg-slate-800 rounded-full origin-bottom z-10" style={{transform:`rotate(${hD}deg)`, bottom:'50%'}}></div><div className="absolute w-1 h-9 bg-blue-500 rounded-full origin-bottom z-10" style={{transform:`rotate(${mD}deg)`, bottom:'50%'}}></div><div className="absolute w-0.5 h-10 bg-red-500 rounded-full origin-bottom z-10" style={{transform:`rotate(${sD}deg)`, bottom:'50%'}}></div><div className="absolute w-2.5 h-2.5 bg-slate-800 rounded-full z-20 border-2 border-white"></div></div>); };
+// Ikon cuaca dari kode WMO Open-Meteo. Jika data cuaca belum tersedia,
+// fallback tetap mengikuti waktu hari agar header tidak pernah kosong.
+const IkonCuaca = ({ kode, malam }) => {
+  if (kode === null || kode === undefined) return malam ? <Moon className="h-4 w-4 text-indigo-100" strokeWidth={1.8} /> : <CloudSun className="h-4 w-4 text-amber-200" strokeWidth={1.8} />;
+  if (kode === 0) return malam ? <Moon className="h-4 w-4 text-indigo-100" strokeWidth={1.8} /> : <Sun className="h-4 w-4 text-amber-200" strokeWidth={1.8} />;
+  if ([1, 2, 3, 45, 48].includes(kode)) return <Cloud className="h-4 w-4 text-blue-100" strokeWidth={1.8} />;
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(kode)) return <CloudRain className="h-4 w-4 text-blue-100" strokeWidth={1.8} />;
+  if ([71, 73, 75, 77].includes(kode)) return <Snowflake className="h-4 w-4 text-blue-100" strokeWidth={1.8} />;
+  if ([95, 96, 99].includes(kode)) return <CloudLightning className="h-4 w-4 text-amber-200" strokeWidth={1.8} />;
+  return <CloudSun className="h-4 w-4 text-amber-200" strokeWidth={1.8} />;
+};
 
     // DASHBOARD SCREEN (CLICKABLE STATS)
-function Dashboard({ user, setUser, setView, handleLogout, masterData }) { const [time, setTime] = useState(new Date()); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
+function Dashboard({ user, setUser, setView, handleLogout, masterData }) { const [time, setTime] = useState(new Date()); const [cuaca, setCuaca] = useState(null); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
 // Gagal-ambil vs benar-benar-nol dulu tampil identik (semua angka 0 dan
 // periode '-'), jadi request yang gagal terbaca seperti "user belum punya
 // data". Dua state ini memisahkannya.
@@ -479,6 +488,28 @@ useEffect(() => { (async () => {
   
     // LOGIC TIMER / DETAK JAM REAL-TIME
 useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
+
+// Cuaca bersifat tambahan saja: izin lokasi ditolak, API gagal, atau perangkat
+// offline tidak boleh menghambat proses login maupun absensi.
+useEffect(() => {
+  let hidup = true;
+  if (!navigator.geolocation) return () => { hidup = false; };
+  navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+    try {
+      const params = new URLSearchParams({
+        latitude: String(coords.latitude),
+        longitude: String(coords.longitude),
+        current: 'temperature_2m,weather_code',
+        timezone: 'auto'
+      });
+      const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (hidup && data.current) setCuaca({ suhu: data.current.temperature_2m, kode: data.current.weather_code });
+    } catch (e) { /* cuaca opsional — abaikan gangguan jaringan */ }
+  }, () => {}, { enableHighAccuracy: false, timeout: 5000, maximumAge: 900000 });
+  return () => { hidup = false; };
+}, []);
 
     // LOGIC FETCH STATISTIK DASHBOARD
 useEffect(() => {
@@ -563,8 +594,8 @@ if (hour >= 11 && hour < 15) {
 }
 
     // FORMAT TANGGAL BAHASA INDONESIA
-const dateOptions = { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' };
-const dateString = time.toLocaleDateString('id-ID', dateOptions);
+const hariString = time.toLocaleDateString('id-ID', { weekday: 'long' });
+const tanggalString = time.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 
     // KOMPONEN HELPER LOADING (SKELETON)
 const Skeleton = ({ className }) => (
@@ -647,6 +678,10 @@ const Skeleton = ({ className }) => (
   };
 
   const jamSekarang = time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const jamDigital = time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const namaPerusahaan = String(user.perusahaan || 'JPT').trim() || 'JPT';
+  const panjangNama = String(user.nama || '').trim().length;
+  const ukuranNama = panjangNama > 32 ? 'text-[18px]' : panjangNama > 24 ? 'text-[21px]' : 'text-[25px]';
 
   // --- RENDER UI ---
   const sHadir  = Number(stats.total_hadir) || 0;
@@ -662,86 +697,71 @@ const Skeleton = ({ className }) => (
   const sPctHadir = sTercatat > 0 ? Math.round((sHadir / sTercatat) * 100) : 0;
 
   return (
-    <div className="p-4 pb-24 bg-gray-50 min-h-screen font-sans flex flex-col"> 
+    <div className="min-h-screen bg-slate-50 px-4 pb-24 pt-4 font-sans flex flex-col">
       
       {/* --- KARTU PROFIL HEADER --- */}
-      <div className="relative rounded-[2.5rem] p-6 shadow-xl shadow-slate-200 mb-6 overflow-hidden bg-white border border-white">
-        <div className="absolute top-0 left-0 w-full h-28 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
-        <div className="absolute top-20 left-0 w-full h-10 bg-white rounded-t-[2.5rem]"></div>
- 
-        {/* HEADER KIRI ATAS */}
-        <div className="absolute top-5 left-6 z-20 flex items-center gap-2">
-            <div className="bg-white/10 backdrop-blur-md p-2 rounded-full border border-white/20 shadow-lg animate-[pulse_3s_infinite]">
-                <ScanLine className="w-5 h-5 text-blue-100" />
+      <section className="mb-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_12px_35px_-24px_rgba(15,23,42,0.55)]">
+        <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-600 to-indigo-700 px-5 pb-5 pt-4 text-white">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-white/15 blur-3xl" />
+          <div className="relative flex items-center justify-between">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                <ScanLine className="h-[18px] w-[18px] text-blue-200" strokeWidth={1.8} />
+              </div>
+              <div className="min-w-0">
+                <p className="break-words text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-100">Absensi {namaPerusahaan}</p>
+                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium text-blue-50">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Sistem aktif
+                </div>
+              </div>
             </div>
-            <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-blue-100 tracking-widest uppercase">Secure</span>
-                <span className="text-[10px] font-bold text-white tracking-widest uppercase leading-none">Access</span>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => setView('ganti_password')} className="flex h-9 w-9 items-center justify-center rounded-xl text-white/80 transition-colors hover:bg-white/15 hover:text-white active:scale-95" title="Ubah password" aria-label="Ubah password">
+                <KeyRound className="h-[17px] w-[17px]" strokeWidth={1.8} />
+              </button>
+              <button onClick={handleLogout} className="flex h-9 w-9 items-center justify-center rounded-xl text-white/80 transition-colors hover:bg-white/15 hover:text-white active:scale-95" title="Keluar aplikasi" aria-label="Keluar aplikasi">
+                <LogOut className="h-[17px] w-[17px]" strokeWidth={1.8} />
+              </button>
             </div>
+          </div>
+
+          <div className="relative mt-7 flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-blue-50">
+                <IkonCuaca kode={cuaca?.kode} malam={hour >= 18 || hour < 5} />
+                <span>{greeting}</span>
+                {cuaca && <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-white">{Math.round(Number(cuaca.suhu))}°C</span>}
+              </div>
+              <h1 className={`${ukuranNama} max-w-[15rem] break-words font-semibold leading-[1.08] tracking-[-0.03em]`}>{user.nama}</h1>
+              <p className="mt-1 break-words text-[11px] font-medium text-blue-100">{user.divisi || 'Karyawan'} <span className="px-1 text-blue-200/70">·</span> {user.lokasi || 'All'}</p>
+            </div>
+            <div className="shrink-0 text-right leading-tight">
+              <p className="text-[17px] font-semibold capitalize tracking-[-0.02em] text-white">{hariString}</p>
+              <p className="mt-1 font-mono text-[31px] font-medium leading-none tracking-[-0.06em] text-white tabular-nums">{jamDigital}</p>
+              <p className="mt-2 text-[14px] font-medium text-blue-100">{tanggalString}</p>
+            </div>
+          </div>
         </div>
 
-        {/* HEADER KANAN ATAS */}
-        <div className="absolute top-5 right-6 z-20 flex gap-2">
-             <button onClick={() => setView('ganti_password')} className="bg-white/20 hover:bg-white/40 p-2.5 rounded-full backdrop-blur-md transition-all duration-300 text-white border border-white/30 shadow-lg active:scale-90 hover:rotate-12 group" title="Ubah Password">
-                <KeyRound className="w-5 h-5 group-hover:text-yellow-300 transition-colors" />
-             </button>
-             <button onClick={handleLogout} className="bg-red-500/80 hover:bg-red-600 p-2.5 rounded-full backdrop-blur-md transition-all duration-300 text-white border border-red-400/50 shadow-lg active:scale-90 hover:animate-[tada_1s_ease-in-out]" title="Keluar Aplikasi">
-                <LogOut className="w-5 h-5" />
-             </button>
+        <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 bg-white">
+          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
+            <Building className="h-4 w-4 shrink-0 text-blue-500" strokeWidth={1.8} />
+            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Perusahaan</p><p className="truncate text-[12px] font-semibold text-slate-700">{user.perusahaan || 'JPT Group'}</p></div>
+          </div>
+          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
+            <CreditCard className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={1.8} />
+            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">ID akun</p><p className="truncate font-mono text-[12px] font-semibold text-slate-700">{user.noPayroll || '-'}</p></div>
+          </div>
+          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
+            <User className="h-4 w-4 shrink-0 text-emerald-500" strokeWidth={1.8} />
+            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Status</p><p className="truncate text-[12px] font-semibold text-slate-700">{user.statusKaryawan || '-'}</p></div>
+          </div>
+          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
+            <PieChart className="h-4 w-4 shrink-0 text-amber-500" strokeWidth={1.8} />
+            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Cuti tersedia</p><p className="truncate text-[12px] font-semibold text-slate-700">{user.sisaCuti ?? 0} hari</p></div>
+          </div>
         </div>
-
-        <div className="relative z-10 flex flex-col items-center mt-6">
-            <div className="mb-4 transform hover:scale-105 transition-transform duration-500 ease-out shadow-2xl rounded-full bg-white p-1">
-                 <AnalogClock time={time} />
-            </div>
-
-            <div className="text-center mb-6 w-full">
-                <div className="flex items-center justify-center gap-2 mb-1">
-                    <CloudSun className="w-4 h-4 text-orange-400 animate-bounce-slow" />
-                    <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">{greeting}</p>
-                </div>
-                <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-tight truncate px-2">{user.nama}</h2>
-                <div className="flex items-center justify-center gap-2 mt-1 text-xs font-bold text-slate-500">
-                    <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 border border-slate-200">{user.divisi}</span>
-                    <span className="text-slate-300">•</span>
-                    <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 border border-slate-200">{user.lokasi || 'All'}</span>
-                </div>
-                <p className="text-[10px] text-slate-400 font-medium mt-2">{dateString}</p>
-            </div>
-
-            {/* INFO CHIPS */}
-            <div className="grid grid-cols-2 gap-3 w-full">
-                 <div className="bg-blue-50/50 p-2.5 rounded-2xl border border-blue-100 flex items-center gap-3 hover:bg-blue-50 transition-colors">
-                    <div className="bg-blue-500 p-2 rounded-xl text-white shadow-sm shadow-blue-200"><Building className="w-4 h-4"/></div>
-                    <div className="overflow-hidden">
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Perusahaan</p>
-                        <p className="text-xs font-bold text-slate-700 truncate">{user.perusahaan || 'JPT Group'}</p>
-                    </div>
-                 </div>
-                 <div className="bg-indigo-50/50 p-2.5 rounded-2xl border border-indigo-100 flex items-center gap-3 hover:bg-indigo-50 transition-colors">
-                    <div className="bg-indigo-500 p-2 rounded-xl text-white shadow-sm shadow-indigo-200"><CreditCard className="w-4 h-4"/></div>
-                     <div>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">ID Akun</p>
-                        <p className="text-xs font-bold text-slate-700 font-mono">{user.noPayroll || '-'}</p>
-                    </div>
-                 </div>
-                 <div className="bg-emerald-50/50 p-2.5 rounded-2xl border border-emerald-100 flex items-center gap-3 hover:bg-emerald-50 transition-colors">
-                    <div className="bg-emerald-500 p-2 rounded-xl text-white shadow-sm shadow-emerald-200"><User className="w-4 h-4"/></div>
-                     <div>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Status</p>
-                        <p className="text-xs font-bold text-slate-700">{user.statusKaryawan || '-'}</p>
-                    </div>
-                 </div>
-                 <div className="bg-amber-50/50 p-2.5 rounded-2xl border border-amber-100 flex items-center gap-3 hover:bg-amber-50 transition-colors">
-                    <div className="bg-amber-500 p-2 rounded-xl text-white shadow-sm shadow-amber-200"><PieChart className="w-4 h-4"/></div>
-                     <div>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Cuti Tersedia</p>
-                        <p className="text-xs font-bold text-slate-700">{user.sisaCuti} </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-      </div> 
+      </section>
 
       {/* --- ABSEN HARI INI --- */}
       {/* Dulu "Absen Masuk" dan "Absen Pulang" hanya dua baris di antara
@@ -750,11 +770,14 @@ const Skeleton = ({ className }) => (
           keduanya naik ke atas sebagai satu kartu tersendiri, dan jamnya
           langsung terbaca tanpa harus membuka Riwayat. */}
       {adaTombolAbsen && (
-        <div className="mb-4 bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+        <div className="mb-5 overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)]">
 
-            <div className="flex items-center justify-between px-4 pt-3.5 pb-1">
-                <h3 className="text-[13px] font-semibold text-slate-900 tracking-tight">Absensi hari ini</h3>
-                <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 tabular-nums">
+            <div className="flex items-center justify-between px-4 pb-1 pt-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-[14px] font-semibold tracking-tight text-slate-900">Absensi hari ini</h3>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-emerald-600">Live</span>
+                </div>
+                <span className="flex items-center gap-1.5 text-[11px] font-medium tabular-nums text-slate-400">
                     <Clock className="w-3 h-3" strokeWidth={2} />
                     {jamSekarang}
                 </span>
@@ -797,7 +820,7 @@ const Skeleton = ({ className }) => (
             {/* Baris bawah hanya muncul kalau ada yang bisa dikatakan.
                 Tanpa ini, kartu punya footer kosong sepanjang pagi. */}
             {(durasiKerja || (jamMasuk && !jamPulang)) && (
-                <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-2 flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5">
                     <Timer className="w-3 h-3 text-slate-400" strokeWidth={2} />
                     <span className="text-[10.5px] font-medium text-slate-500">
                         {durasiKerja
@@ -814,34 +837,34 @@ const Skeleton = ({ className }) => (
           berbeda-beda + scroll horizontal, jadi scrollbar-nya ikut terlihat di layar kecil.
           Posisinya dinaikkan ke atas kartu Statistik (Agu 2026): ini navigasi, dan
           navigasi tidak boleh berada di bawah blok angka setinggi satu layar. */}
-      <div className="mb-5 bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+      <div className="mb-6 overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)]">
         <div className={`grid divide-x divide-slate-100 ${canApprove && canAccessPanel ? 'grid-cols-5' : (canApprove || canAccessPanel ? 'grid-cols-4' : 'grid-cols-3')}`}>
 
-            <button onClick={() => setView('history')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                <History className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+            <button onClick={() => setView('history')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><History className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
                 <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Riwayat</span>
             </button>
 
-            <button onClick={() => setView('db_absen')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                <Fingerprint className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+            <button onClick={() => setView('db_absen')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><Fingerprint className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
                 <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Data mesin</span>
             </button>
 
-            <button onClick={() => setView('remark')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                <MessageSquareText className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+            <button onClick={() => setView('remark')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><MessageSquareText className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
                 <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">{isHRDOrAdmin ? 'Respon' : 'Lapor HRD'}</span>
             </button>
 
             {canApprove && (
-                <button onClick={() => setView('approval')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                    <UsersRound className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <button onClick={() => setView('approval')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><UsersRound className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
                     <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Approval</span>
                 </button>
             )}
 
             {canAccessPanel && (
-                <button onClick={() => setView('admin')} className="flex flex-col items-center gap-1.5 px-1 py-3.5 transition-colors hover:bg-slate-50 active:bg-slate-100">
-                    <SlidersHorizontal className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.75} />
+                <button onClick={() => setView('admin')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><SlidersHorizontal className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
                     <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Panel</span>
                 </button>
             )}
@@ -851,12 +874,12 @@ const Skeleton = ({ className }) => (
       {/* --- STATISTIK (CLICKABLE) --- */}
       <div className="mb-5">
 
-        <div className="flex items-baseline justify-between mb-2.5 px-1">
+        <div className="mb-3 flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
-                <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight">Statistik</h3>
+                <h3 className="text-[17px] font-semibold tracking-tight text-slate-900">Ringkasan kehadiran</h3>
                 {loadingStats && <Loader2 className="w-3 h-3 text-slate-400 animate-spin"/>}
             </div>
-            <span className="text-[11px] text-slate-400 font-medium">
+            <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-slate-400 shadow-sm ring-1 ring-slate-200/80">
                 {loadingStats ? "Menyinkronkan…" : (statsError ? <span className="text-red-500 font-semibold">gagal dimuat</span> : stats.periode_db)}
             </span>
         </div>
@@ -881,7 +904,7 @@ const Skeleton = ({ className }) => (
             </div>
         )}
 
-        <div className={`bg-white rounded-2xl border overflow-hidden ${statsError && !loadingStats ? 'border-red-200 opacity-60' : 'border-slate-200/70'}`}>
+        <div className={`overflow-hidden rounded-[22px] border bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)] ${statsError && !loadingStats ? 'border-red-200 opacity-60' : 'border-slate-200/80'}`}>
 
             {/* BARIS UTAMA — dua angka yang paling sering dilihat */}
             <div className="grid grid-cols-2 divide-x divide-slate-100">
