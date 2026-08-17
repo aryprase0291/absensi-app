@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List,
   Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
+import { FRONTEND_VERSION } from './config/updateManifest';
 import BackButton from './components/BackButton';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
@@ -232,26 +233,32 @@ function AppAbsensiInner() {
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [], sheetImport: [] });
   const [editItem, setEditItem] = useState(null);
   const logoutTimerRef = useRef(null);
-  // HARUS SAMA dengan APP_VERSION di Kode.gs yang SEDANG di-deploy.
-  // Backend produksi sudah di Versi 127 (APP_VERSION 1.0.14) sejak 12 Agu 13.13.
-  // Aturan urutannya: deploy Apps Script DULU, baru naikkan angka ini.
-  // Kalau frontend lebih baru dari backend, layar "Update Tersedia" memblokir
-  // semua user dan reload tidak menyelesaikan apa pun.
-  const CLIENT_VERSION = "1.0.14";
+  // Versi frontend dibuat oleh `npm run update:prepare` dari
+  // updates/frontend/releases. Jangan menulis angka versi langsung di sini.
+  const CLIENT_VERSION = FRONTEND_VERSION;
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
 
     //----LOGIKA CEK UPDATE----
-    // Request 'check_version' saat mount DIHAPUS. Alasannya terukur:
-    // membuka aplikasi tadinya menembak 4 request Apps Script berurutan,
-    // dan backend sedang saturasi — klien menunggu 45-60 detik padahal
-    // eksekusi server hanya 1-5 detik. Menghapus satu request memotong
-    // 25% beban pada jalur buka-aplikasi.
-    //
-    // Versi server sekarang dibawa di dalam respons 'login' (field version),
-    // jadi fiturnya tetap ada tanpa round trip tambahan.
+    // Login membawa versi server di respons yang sama. Request check_version
+    // hanya dipakai ketika sesi lama dipulihkan, sehingga aplikasi tetap bisa
+    // mendeteksi deployment baru tanpa menambah request pada login normal.
 const cekVersi = useCallback((versiServer) => {
   if (!versiServer || versiServer === CLIENT_VERSION) return;
+  const angka = (v) => String(v).split('.').map((n) => Number(n) || 0);
+  const client = angka(CLIENT_VERSION);
+  const server = angka(versiServer);
+  let perbandingan = 0;
+  for (let i = 0; i < Math.max(client.length, server.length); i += 1) {
+    if ((server[i] || 0) !== (client[i] || 0)) {
+      perbandingan = (server[i] || 0) - (client[i] || 0);
+      break;
+    }
+  }
+  const serverLebihBaru = perbandingan > 0;
+  // Backend lama tetap kompatibel dengan bundle baru. Yang wajib di-update
+  // hanya ketika server sudah memiliki kontrak/API yang lebih baru.
+  if (!serverLebihBaru) return;
   const sudahCoba = new URLSearchParams(window.location.search).get('v');
   if (sudahCoba === versiServer) {
     console.warn(`Versi tetap tidak cocok setelah reload (client v${CLIENT_VERSION}, server v${versiServer}). Tidak memblokir.`);
@@ -269,8 +276,15 @@ useEffect(() => {
     setUser(JSON.parse(u)); 
     if (m) setMasterData(JSON.parse(m)); 
     setView('dashboard'); 
+    // Sesi yang dipulihkan tidak melewati LoginScreen. Cek versi di sini agar
+    // user tetap menerima update backend/frontend terbaru saat membuka ulang
+    // tab atau aplikasi mobile.
+    fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })
+      .then((response) => response.json())
+      .then((data) => { if (data.result === 'success') cekVersi(data.version); })
+      .catch(() => { /* kegagalan cek versi tidak boleh menghalangi aplikasi */ });
   } 
-}, []);
+}, [cekVersi]);
 
     //----FUNGSI EKSEKUSI UPDATE (MEMBERSIHKAN CACHE)----
 const performUpdate = () => { localStorage.clear(); sessionStorage.clear(); if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())); window.location.href = window.location.href.split('?')[0] + '?v=' + newVersion + '&t=' + Date.now(); };

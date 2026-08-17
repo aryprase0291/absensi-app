@@ -142,7 +142,11 @@ function doPost(e) {
 
     // --- FITUR CHECK VERSION (BARU) ---
     if (action === 'check_version') {
-        return responseJSON({ result: 'success', version: APP_VERSION });
+        return responseJSON({
+          result: 'success',
+          version: APP_VERSION,
+          history: typeof BACKEND_UPDATE_HISTORY === 'undefined' ? [] : BACKEND_UPDATE_HISTORY
+        });
     }
     
     // --- FITUR ANNOUNCEMENT ---

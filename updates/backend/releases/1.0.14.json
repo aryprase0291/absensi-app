@@ -1,0 +1,8 @@
+{
+  "version": "1.0.14",
+  "releasedAt": "2026-08-12",
+  "required": true,
+  "notes": [
+    "Optimasi pembacaan statistik dan pengumuman pada proses login."
+  ]
+}

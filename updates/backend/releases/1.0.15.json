@@ -1,0 +1,8 @@
+{
+  "version": "1.0.15",
+  "releasedAt": "2026-08-17",
+  "required": true,
+  "notes": [
+    "Perbaikan geofence multi-lokasi dan validasi token login."
+  ]
+}

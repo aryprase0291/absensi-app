@@ -1,0 +1,8 @@
+{
+  "version": "1.0.14",
+  "releasedAt": "2026-08-12",
+  "required": true,
+  "notes": [
+    "Performa pembukaan aplikasi ditingkatkan dengan membawa statistik dan pengumuman bersama respons login."
+  ]
+}

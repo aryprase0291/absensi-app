@@ -1,0 +1,48 @@
+{
+  "frontend": {
+    "currentVersion": "1.0.15",
+    "history": [
+      {
+        "file": "1.0.15.json",
+        "version": "1.0.15",
+        "releasedAt": "2026-08-17",
+        "required": true,
+        "notes": [
+          "Perbaikan geofence, validasi sesi, dan penyegaran tampilan aplikasi mobile."
+        ]
+      },
+      {
+        "file": "1.0.14.json",
+        "version": "1.0.14",
+        "releasedAt": "2026-08-12",
+        "required": true,
+        "notes": [
+          "Performa pembukaan aplikasi ditingkatkan dengan membawa statistik dan pengumuman bersama respons login."
+        ]
+      }
+    ]
+  },
+  "backend": {
+    "currentVersion": "1.0.15",
+    "history": [
+      {
+        "file": "1.0.15.json",
+        "version": "1.0.15",
+        "releasedAt": "2026-08-17",
+        "required": true,
+        "notes": [
+          "Perbaikan geofence multi-lokasi dan validasi token login."
+        ]
+      },
+      {
+        "file": "1.0.14.json",
+        "version": "1.0.14",
+        "releasedAt": "2026-08-12",
+        "required": true,
+        "notes": [
+          "Optimasi pembacaan statistik dan pengumuman pada proses login."
+        ]
+      }
+    ]
+  }
+}
