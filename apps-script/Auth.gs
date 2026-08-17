@@ -390,3 +390,42 @@ function PREFLIGHT_CEK_ROLE() {
   Logger.log(aman ? 'HASIL: aman untuk lanjut deploy.' : 'HASIL: ada yang perlu diperiksa dulu (lihat di atas).');
   Logger.log('='.repeat(60));
 }
+
+// =======================================================
+// DIAGNOSTIK — read-only. Menguji pipeline token tanpa kredensial user.
+// =======================================================
+function DIAG_TOKEN() {
+  Logger.log("--- 1. cek secret ---");
+  var s;
+  try { s = _getSecret(); Logger.log("secret ADA, panjang " + s.length); }
+  catch (e) { Logger.log("GAGAL ambil secret: " + e.message); return; }
+
+  Logger.log("--- 2. buat token uji ---");
+  var tok;
+  try {
+    tok = createAuthToken({ id: "DIAG-TEST", role: "karyawan", divisi: "X", lokasi: "All" });
+    Logger.log("token OK, panjang " + tok.length + ", jumlah titik " + (tok.split(".").length - 1));
+  } catch (e) { Logger.log("GAGAL createAuthToken: " + e.message); Logger.log(e.stack); return; }
+
+  Logger.log("--- 3. verifikasi token uji ---");
+  try { Logger.log("hasil: " + JSON.stringify(verifyAuthToken(tok))); }
+  catch (e) { Logger.log("GAGAL verify: " + e.message); return; }
+
+  Logger.log("--- 4. pakai data user NYATA (baris 2 sheet Users) ---");
+  try {
+    var rows = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users").getDataRange().getValues();
+    var u = rows[1];
+    Logger.log("id=" + u[0] + " role=" + u[5] + " divisi=" + u[4] + " lokasi=" + u[13]);
+    var t2 = createAuthToken({ id: u[0], role: u[5], divisi: u[4], lokasi: u[13] });
+    Logger.log("token user nyata OK, panjang " + t2.length);
+    Logger.log("verifikasi: " + JSON.stringify(verifyAuthToken(t2)));
+  } catch (e) { Logger.log("GAGAL di data user nyata: " + e.message); Logger.log(e.stack); }
+
+  Logger.log("--- 5. simulasi responseJSON lengkap seperti handleLogin ---");
+  try {
+    var out = handleLogin({ action: "login", username: "__tidak_ada__", password: "__x__" });
+    Logger.log("handleLogin (user tidak ada) mengembalikan objek: " + (out ? "ya" : "tidak"));
+  } catch (e) { Logger.log("GAGAL handleLogin: " + e.message); Logger.log(e.stack); }
+
+  Logger.log("--- SELESAI ---");
+}
