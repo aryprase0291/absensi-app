@@ -38,7 +38,7 @@ const ACTION_AMAN_DIULANG = [
   'ping', 'check_version', 'login', 'get_latest_announcement',
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
   'get_remarks', 'get_shift_history', 'get_approval_list',
-  'get_user_list_admin', 'get_analysis_data'
+  'get_user_list_admin', 'get_analysis_data', 'get_geofence_config'
 ];
 
 const MAKS_PERCOBAAN = 3;
@@ -2888,6 +2888,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
 
   const isPhotoRequired = PHOTO_REQUIRED_TYPES.includes(type);
   const isGpsRequired = !NO_GPS_TYPES.includes(type);
+  const isGeofenceRequired = !isEditMode && ['Hadir', 'Pulang'].includes(type) && user.geofenceRequired === true;
   const isH3Required = H3_REQUIRED_TYPES.includes(type);
   const isUploadAllowed = UPLOAD_ALLOWED_TYPES.includes(type);
   const isIntervalType = !['Hadir', 'Pulang'].includes(type);
@@ -3395,7 +3396,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
             <SeksiForm
               ikon={LocateFixed}
               judul="Lokasi"
-              catatan={location ? 'Titik GPS terkunci' : 'Mencari sinyal GPS…'}
+              catatan={location ? (isGeofenceRequired ? 'GPS terkunci · wajib di area kantor' : 'Titik GPS terkunci') : (isGeofenceRequired ? 'Mencari GPS dan memeriksa area kantor…' : 'Mencari sinyal GPS…')}
               warnaIkon={tema.chip}
               padat
               aksi={location
@@ -3416,6 +3417,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
               {location && (
                 <p className="mt-2 text-[10px] text-slate-400 font-mono tabular-nums text-center">
                   {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                </p>
+              )}
+              {isGeofenceRequired && (
+                <p className="mt-2 text-[10.5px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2 text-center">
+                  Absen hanya diterima jika berada di salah satu area kantor yang ditetapkan Admin.
                 </p>
               )}
             </SeksiForm>
@@ -4505,6 +4511,12 @@ function AdminPanel({ user, setView, masterData }) {
   const [adminUserList, setAdminUserList] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loadingList, setLoadingList] = useState(false);
+  const [geofenceUsers, setGeofenceUsers] = useState([]);
+  const [geofenceConfigs, setGeofenceConfigs] = useState({});
+  const [geofenceUserId, setGeofenceUserId] = useState('');
+  const [geofenceRequired, setGeofenceRequired] = useState(false);
+  const [geofenceAreas, setGeofenceAreas] = useState([]);
+  const [loadingGeofence, setLoadingGeofence] = useState(false);
 
   // State Lainnya
   const [newsInput, setNewsInput] = useState('');
@@ -4534,7 +4546,53 @@ function AdminPanel({ user, setView, masterData }) {
 
   useEffect(() => {
     if (activeTab === 'master_user') fetchAdminUserList();
+    if (activeTab === 'geofence') fetchGeofenceConfig();
   }, [activeTab]);
+
+  const applyGeofenceUser = (userId, configs = geofenceConfigs) => {
+    const cfg = configs[String(userId)] || { required: false, areas: [] };
+    setGeofenceUserId(String(userId || ''));
+    setGeofenceRequired(!!cfg.required);
+    setGeofenceAreas((cfg.areas || []).map(area => ({
+      nama: area.nama || 'Area kantor', lat: area.lat, lng: area.lng,
+      radius: area.radius || 150, aktif: area.aktif !== false
+    })));
+  };
+
+  const fetchGeofenceConfig = async () => {
+    setLoadingGeofence(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_geofence_config', roleRequester: user.role }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        const users = data.users || [];
+        const configs = data.configs || {};
+        setGeofenceUsers(users); setGeofenceConfigs(configs);
+        if (users.length) applyGeofenceUser(geofenceUserId || users[0].id, configs);
+      } else alert(data.message || 'Gagal memuat konfigurasi geofence.');
+    } catch (e) { alert('Gagal koneksi saat memuat geofence.'); }
+    finally { setLoadingGeofence(false); }
+  };
+
+  const handleGeofenceUserChange = (e) => applyGeofenceUser(e.target.value);
+  const handleAddGeofenceArea = () => setGeofenceAreas(prev => [...prev, { nama: '', lat: '', lng: '', radius: 150, aktif: true }]);
+  const handleUpdateGeofenceArea = (index, field, value) => setGeofenceAreas(prev => prev.map((area, i) => i === index ? { ...area, [field]: value } : area));
+  const handleRemoveGeofenceArea = (index) => setGeofenceAreas(prev => prev.filter((_, i) => i !== index));
+  const handleSaveGeofence = async () => {
+    if (!geofenceUserId) return alert('Pilih karyawan terlebih dahulu.');
+    if (geofenceRequired && geofenceAreas.length === 0) return alert('Tambahkan minimal satu area aktif.');
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+        action: 'save_geofence_config', roleRequester: user.role, userId: geofenceUserId,
+        required: geofenceRequired, areas: geofenceAreas
+      }) });
+      const data = await res.json();
+      if (data.result === 'success') { alert(data.message); fetchGeofenceConfig(); }
+      else alert(data.message || 'Gagal menyimpan geofence.');
+    } catch (e) { alert('Gagal koneksi saat menyimpan geofence.'); }
+    finally { setLoading(false); }
+  };
 
   const handleResetPassword = async (uuid, namaUser) => {
     if(!window.confirm(`Reset password "${namaUser}" jadi "123"?`)) return;
@@ -4596,6 +4654,7 @@ function AdminPanel({ user, setView, masterData }) {
           case 'master': return 'Master Data';
           case 'import_db': return 'Import Data Mesin Absen';
           case 'news': return 'Broadcast Info HRD';
+          case 'geofence': return 'Area Geofence Absen Online';
           default: return 'Admin Panel';
       }
   };
@@ -4663,6 +4722,12 @@ function AdminPanel({ user, setView, masterData }) {
                                 <FileUp className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'import_db' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
                                 <span className="flex-1 leading-tight">Import data mesin absen</span>
                                 {activeTab === 'import_db' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+
+                            <button onClick={() => switchTab('geofence')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'geofence' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <LocateFixed className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'geofence' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Geofence absen online</span>
+                                {activeTab === 'geofence' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
                             </button>
                         </>
                         )}
@@ -4841,6 +4906,52 @@ function AdminPanel({ user, setView, masterData }) {
       {/* KONTEN TAB: IMPORT dbabsen */}
       {activeTab === 'import_db' && user.role === 'admin' && (
         <ImportDbAbsen user={user} masterData={masterData} />
+      )}
+
+      {/* KONTEN TAB: GEOFENCE ABSEN ONLINE */}
+      {activeTab === 'geofence' && user.role === 'admin' && (
+        <div className="animate-in fade-in duration-300 space-y-3">
+          {loadingGeofence ? (
+            <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin" /></div>
+          ) : (
+            <>
+              <div className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Karyawan</label>
+                  <select className={inputCls} value={geofenceUserId} onChange={handleGeofenceUserChange}>
+                    {geofenceUsers.map(u => <option key={u.id} value={u.id}>{u.nama} · {u.username}</option>)}
+                  </select>
+                </div>
+                <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
+                  <input type="checkbox" checked={geofenceRequired} onChange={e => setGeofenceRequired(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
+                  <span><span className="block text-[13px] font-semibold text-slate-800">Wajib berada di area geofence</span><span className="block mt-0.5 text-[11px] leading-relaxed text-slate-500">Hanya berlaku untuk absen online Hadir dan Pulang. User tanpa centang tetap dapat absen dari lokasi mana saja.</span></span>
+                </label>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+                <div className="p-4 flex items-center justify-between gap-3 border-b border-slate-100">
+                  <div><p className="text-[13px] font-semibold text-slate-800">Area kantor yang diizinkan</p><p className="text-[11px] text-slate-400 mt-0.5">Bisa lebih dari satu alamat per karyawan.</p></div>
+                  <button type="button" onClick={handleAddGeofenceArea} className="shrink-0 px-3 py-2 rounded-lg bg-slate-900 text-white text-[12px] font-medium hover:bg-slate-800">+ Tambah area</button>
+                </div>
+                {geofenceAreas.length === 0 && <p className="p-6 text-center text-[12px] text-slate-400">Belum ada area. Tambahkan jika geofence diwajibkan.</p>}
+                <div className="p-4 space-y-3">
+                  {geofenceAreas.map((area, index) => (
+                    <div key={index} className="rounded-xl border border-slate-200 p-3 space-y-2.5">
+                      <div className="flex items-center justify-between"><span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Area {index + 1}</span><button type="button" onClick={() => handleRemoveGeofenceArea(index)} className="text-[11px] font-medium text-rose-500 hover:text-rose-700">Hapus</button></div>
+                      <input className={inputCls} value={area.nama} onChange={e => handleUpdateGeofenceArea(index, 'nama', e.target.value)} placeholder="Nama area, mis. Kantor Surabaya" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input className={inputCls} type="number" step="any" min="-90" max="90" value={area.lat} onChange={e => handleUpdateGeofenceArea(index, 'lat', e.target.value)} placeholder="Latitude" />
+                        <input className={inputCls} type="number" step="any" min="-180" max="180" value={area.lng} onChange={e => handleUpdateGeofenceArea(index, 'lng', e.target.value)} placeholder="Longitude" />
+                      </div>
+                      <div className="flex items-center gap-2"><input className={inputCls} type="number" min="1" max="100000" value={area.radius} onChange={e => handleUpdateGeofenceArea(index, 'radius', e.target.value)} placeholder="Radius meter" /><span className="shrink-0 text-[11px] text-slate-400">meter</span></div>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-4 pt-0"><button type="button" onClick={handleSaveGeofence} disabled={loading || !geofenceUserId} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">{loading && <Loader2 className="w-4 h-4 animate-spin" />} {loading ? 'Menyimpan…' : 'Simpan konfigurasi geofence'}</button></div>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* KONTEN TAB: INFO HRD */}

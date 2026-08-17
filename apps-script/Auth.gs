@@ -178,6 +178,7 @@ const ACTION_ROLES = {
 
   // --- Admin & HRD ---
   'get_user_list_admin': ['admin', 'hrd'],
+  'get_geofence_config': ['admin', 'hrd'],
   'tambah_announcement': ['admin', 'hrd'],
   'update_remark_status': ['admin', 'hrd'],
   'update_status_absen': ['admin', 'hrd'],
@@ -185,6 +186,7 @@ const ACTION_ROLES = {
 
   // --- Admin saja ---
   'reset_password_user': ['admin'],
+  'save_geofence_config': ['admin'],
   'tambah_user': ['admin'],
   'tambah_master': ['admin'],
   'delete_absensi': ['admin'],
