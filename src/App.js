@@ -1036,7 +1036,7 @@ const Skeleton = ({ className }) => (
       <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
           <p className="text-[10px] text-slate-400 font
           -bold uppercase tracking-widest">
-              Version {masterData?.appVersion || '1.0.13'} | &copy; {new Date().getFullYear()}
+              Version {FRONTEND_VERSION} | &copy; {new Date().getFullYear()}
           </p>
       </div>
 
