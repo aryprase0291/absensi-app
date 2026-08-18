@@ -23,7 +23,9 @@
 //   dan bukan diam-diam (put() yang kebesaran gagal tanpa exception).
 // =======================================================
 
-const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V1';
+// V2 menambahkan jumlah Alpa per tanggal agar Alpa dapat dikecualikan
+// ketika pada tanggal yang sama ada absen masuk online.
+const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V2';
 
 // 6 jam. Bukan pengaman kebasian — invalidasi sebenarnya dilakukan oleh
 // bersihkanIndeksDbAbsen() saat import. TTL ini hanya jaring pengaman
@@ -79,7 +81,8 @@ function _susunIndeksDbAbsen(cache) {
     if (!e) {
       e = idx[nik] = {
         hadir: 0, telat_freq: 0, telat_menit: 0, sakit: 0, alpa: 0,
-        no_scan_in: 0, no_scan_out: 0, min_ts: null, max_ts: null
+        no_scan_in: 0, no_scan_out: 0, min_ts: null, max_ts: null,
+        alpa_by_date: {}
       };
     }
 
@@ -102,7 +105,13 @@ function _susunIndeksDbAbsen(cache) {
 
     if (IDX_HADIR_SYMBOLS.indexOf(symbol) !== -1) e.hadir++;
     if (symbol === 'S') e.sakit++;
-    if (symbol === 'A' || symbol === 'AC') e.alpa++;
+    if (symbol === 'A' || symbol === 'AC') {
+      e.alpa++;
+      if (ts !== null) {
+        const tanggal = Utilities.formatDate(new Date(ts), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        e.alpa_by_date[tanggal] = (e.alpa_by_date[tanggal] || 0) + 1;
+      }
+    }
 
     if (symbol.indexOf('T') !== -1 ||
         (telatStr && telatStr !== '00:00:00' && telatStr !== '-' && telatStr !== 'FALSE')) {

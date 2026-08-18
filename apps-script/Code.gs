@@ -971,9 +971,14 @@ function handleGetDbAbsen(data) {
     const online = onlineByDate[tanggalRaw];
 
     if (mesin) {
+      // Bila ada masuk online di tanggal yang sama, catatan mesin yang masih
+      // berstatus Alpa tidak lagi menjadi status utama. Tampilkan sebagai
+      // presensi online agar daftar Data Mesin konsisten dengan dashboard.
+      const alpaTertutupOnline = online && online.masuk && ['A', 'AC'].includes(String(mesin.symbol));
       return {
         ...mesin,
         sumber: online ? 'mesin+online' : 'mesin',
+        symbol: alpaTertutupOnline ? 'ONL' : mesin.symbol,
         onlineMasuk: online ? online.masuk : '',
         onlinePulang: online ? online.pulang : '',
         onlineRecords: online ? online.onlineRecords : []
@@ -1451,6 +1456,12 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
     const tzSkrip = Session.getScriptTimeZone();
     const tglHariIni = Utilities.formatDate(new Date(), tzSkrip, 'yyyy-MM-dd');
 
+    // Tanggal dengan absen masuk online menjadi hari hadir. Jika dbabsen
+    // masih memiliki simbol Alpa pada tanggal yang sama, Alpa tersebut tidak
+    // dihitung lagi agar sumber presensi online dan mesin tidak bertentangan.
+    const onlineHadirByDate = {};
+    const alpaManualByDate = {};
+
     // 1. HITUNG STATISTIK MANUAL (Sheet Absensi - Ijin, Sakit, Alpa)
     for (let i = 1; i < rowsAbsensi.length; i++) {
         if (String(rowsAbsensi[i][2]) === targetId) {
@@ -1464,6 +1475,10 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
             // Baris Rejected tetap diabaikan, sama seperti hitungan lain.
             if (status !== 'Rejected' && (tipe === 'Hadir' || tipe === 'Pulang')) {
                 const wkt = rowsAbsensi[i][1];
+                const tanggalOnline = formatDateYMD_Strict(wkt);
+                if (tipe === 'Hadir' && tanggalOnline) {
+                    onlineHadirByDate[tanggalOnline] = (onlineHadirByDate[tanggalOnline] || 0) + 1;
+                }
                 if (wkt) {
                     const dWkt = new Date(wkt);
                     if (!isNaN(dWkt.getTime()) &&
@@ -1494,10 +1509,22 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
                 // if (tipe === 'Cuti' || tipe === 'Cuti EO') stats.total_cuti++;
                 
                 if (tipe === 'Sakit') stats.total_sakit++;
-                if (tipe === 'Alpa') stats.total_alpa++;
+                if (tipe === 'Alpa') {
+                    stats.total_alpa++;
+                    const tanggalAlpa = formatDateYMD_Strict(rowsAbsensi[i][1]);
+                    if (tanggalAlpa) alpaManualByDate[tanggalAlpa] = (alpaManualByDate[tanggalAlpa] || 0) + 1;
+                }
             }
         } 
     }
+
+    // Alpa manual juga dibatalkan bila pada hari yang sama ada tap masuk
+    // online yang valid. Satu tap online hanya membatalkan satu catatan Alpa.
+    Object.keys(alpaManualByDate).forEach((tanggal) => {
+        if (onlineHadirByDate[tanggal]) {
+            stats.total_alpa -= Math.min(alpaManualByDate[tanggal], onlineHadirByDate[tanggal]);
+        }
+    });
 
     // 2. CARI NIK USER & AMBIL DATA CUTI DARI MASTER
     let userNik = '';
@@ -1548,7 +1575,13 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
 
             stats.total_hadir        = e.hadir;
             stats.total_sakit       += e.sakit;   // ditambahkan ke hitungan sheet Absensi
-            stats.total_alpa        += e.alpa;    // (perilaku lama dipertahankan)
+            let alpaMesin = e.alpa;
+            Object.keys(e.alpa_by_date || {}).forEach((tanggal) => {
+                if (onlineHadirByDate[tanggal]) {
+                    alpaMesin -= Math.min(e.alpa_by_date[tanggal], onlineHadirByDate[tanggal]);
+                }
+            });
+            stats.total_alpa        += Math.max(0, alpaMesin);
             stats.total_telat_freq   = e.telat_freq;
             stats.total_telat_menit  = e.telat_menit;
             stats.total_no_scan_in   = e.no_scan_in;
