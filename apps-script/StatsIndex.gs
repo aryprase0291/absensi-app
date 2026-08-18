@@ -23,9 +23,10 @@
 //   dan bukan diam-diam (put() yang kebesaran gagal tanpa exception).
 // =======================================================
 
-// V2 menambahkan jumlah Alpa per tanggal agar Alpa dapat dikecualikan
-// ketika pada tanggal yang sama ada absen masuk online.
-const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V2';
+// V3 menambahkan jumlah Alpa dan Hadir per tanggal agar data online dapat
+// digabung tanpa menghitung ganda atau mempertahankan Alpa yang tertutup.
+const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V3';
+const KUNCI_REV_IDX_DBABSEN = 'DBABSEN_IDX_REVISION_V1';
 
 // 6 jam. Bukan pengaman kebasian — invalidasi sebenarnya dilakukan oleh
 // bersihkanIndeksDbAbsen() saat import. TTL ini hanya jaring pengaman
@@ -50,13 +51,20 @@ const IDX_HADIR_SYMBOLS = ['H', 'I', 'T', 'Si', 'So', 'TSo', 'TSi', 'TPC'];
  *              no_scan_in, no_scan_out, min_ts, max_ts }, ...
  * }
  */
-function getIndeksDbAbsen() {
+function _kunciIndeksDbAbsen_(periode) {
+  const revisi = PropertiesService.getScriptProperties().getProperty(KUNCI_REV_IDX_DBABSEN) || '1';
+  return `${KUNCI_IDX_DBABSEN}_R${revisi}_${periode.mulai}_${periode.selesai}`;
+}
+
+function getIndeksDbAbsen(periodeDiketahui) {
+  const periode = periodeDiketahui || getPeriodeAbsenAktif_();
+  const kunci = _kunciIndeksDbAbsen_(periode);
   const cache = CacheService.getScriptCache();
-  const hit = cache.get(KUNCI_IDX_DBABSEN);
+  const hit = cache.get(kunci);
   if (hit) {
     try { return JSON.parse(hit); } catch (e) { /* cache rusak, susun ulang */ }
   }
-  return _susunIndeksDbAbsen(cache);
+  return _susunIndeksDbAbsen(cache, periode, kunci);
 }
 
 /**
@@ -65,7 +73,9 @@ function getIndeksDbAbsen() {
  * IDX_HANGATKAN() sesudah import, tanpa menunggu ada user yang login.
  * @private
  */
-function _susunIndeksDbAbsen(cache) {
+function _susunIndeksDbAbsen(cache, periodeDiketahui, kunciDiketahui) {
+  const periode = periodeDiketahui || getPeriodeAbsenAktif_();
+  const kunci = kunciDiketahui || _kunciIndeksDbAbsen_(periode);
   const sheetDb = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DB_ABSEN);
 
   // Kolom terjauh yang dipakai di bawah: index 14 (Symbol) -> 15 kolom.
@@ -77,15 +87,6 @@ function _susunIndeksDbAbsen(cache) {
     const nik = String(rows[j][2]).trim();
     if (!nik || nik === '-' || nik === 'undefined') continue;
 
-    let e = idx[nik];
-    if (!e) {
-      e = idx[nik] = {
-        hadir: 0, telat_freq: 0, telat_menit: 0, sakit: 0, alpa: 0,
-        no_scan_in: 0, no_scan_out: 0, min_ts: null, max_ts: null,
-        alpa_by_date: {}
-      };
-    }
-
     // --- Periode ---
     const rawDate = rows[j][4];
     let ts = null;
@@ -94,16 +95,31 @@ function _susunIndeksDbAbsen(cache) {
       const parsed = new Date(rawDate);
       if (!isNaN(parsed.getTime())) ts = parsed.getTime();
     }
-    if (ts !== null) {
-      if (e.min_ts === null || ts < e.min_ts) e.min_ts = ts;
-      if (e.max_ts === null || ts > e.max_ts) e.max_ts = ts;
+    const tanggalBaris = ts === null ? '' : Utilities.formatDate(new Date(ts), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    if (!tanggalDalamPeriode_(tanggalBaris, periode)) continue;
+
+    let e = idx[nik];
+    if (!e) {
+      e = idx[nik] = {
+        hadir: 0, telat_freq: 0, telat_menit: 0, sakit: 0, alpa: 0,
+        no_scan_in: 0, no_scan_out: 0, min_ts: null, max_ts: null,
+        alpa_by_date: {}, hadir_by_date: {}
+      };
     }
+    if (e.min_ts === null || ts < e.min_ts) e.min_ts = ts;
+    if (e.max_ts === null || ts > e.max_ts) e.max_ts = ts;
 
     // --- Simbol ---
     const symbol = String(rows[j][14]);
     const telatStr = rows[j][10];
 
-    if (IDX_HADIR_SYMBOLS.indexOf(symbol) !== -1) e.hadir++;
+    if (IDX_HADIR_SYMBOLS.indexOf(symbol) !== -1) {
+      e.hadir++;
+      if (ts !== null) {
+        const tanggal = Utilities.formatDate(new Date(ts), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        e.hadir_by_date[tanggal] = (e.hadir_by_date[tanggal] || 0) + 1;
+      }
+    }
     if (symbol === 'S') e.sakit++;
     if (symbol === 'A' || symbol === 'AC') {
       e.alpa++;
@@ -135,7 +151,7 @@ function _susunIndeksDbAbsen(cache) {
                    'Cache dilewati — get_stats kembali menyisir sheet tiap request.',
                    payload.length, IDX_BATAS_BYTE);
     } else {
-      cache.put(KUNCI_IDX_DBABSEN, payload, IDX_TTL_DETIK);
+      cache.put(kunci, payload, IDX_TTL_DETIK);
     }
   } catch (e) {
     console.warn('Indeks dbabsen gagal di-cache: ' + e.message);
@@ -152,7 +168,11 @@ function _susunIndeksDbAbsen(cache) {
  */
 function bersihkanIndeksDbAbsen() {
   try {
-    CacheService.getScriptCache().remove(KUNCI_IDX_DBABSEN);
+    const props = PropertiesService.getScriptProperties();
+    const revisiLama = Number(props.getProperty(KUNCI_REV_IDX_DBABSEN) || 1);
+    props.setProperty(KUNCI_REV_IDX_DBABSEN, String(revisiLama + 1));
+    const periode = getPeriodeAbsenAktif_();
+    CacheService.getScriptCache().remove(_kunciIndeksDbAbsen_(periode));
   } catch (e) {
     console.warn('Gagal membersihkan indeks dbabsen: ' + e.message);
   }
@@ -165,7 +185,8 @@ function bersihkanIndeksDbAbsen() {
  */
 function IDX_HANGATKAN() {
   const t0 = new Date().getTime();
-  const idx = _susunIndeksDbAbsen(CacheService.getScriptCache());
+  const periode = getPeriodeAbsenAktif_();
+  const idx = _susunIndeksDbAbsen(CacheService.getScriptCache(), periode, _kunciIndeksDbAbsen_(periode));
   const durasi = new Date().getTime() - t0;
   Logger.log('Indeks dbabsen disusun ulang: %s NIK dalam %s ms', Object.keys(idx).length, durasi);
   return idx;

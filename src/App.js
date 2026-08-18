@@ -39,7 +39,7 @@ const ACTION_AMAN_DIULANG = [
   'ping', 'check_version', 'login', 'get_latest_announcement',
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
   'get_remarks', 'get_shift_history', 'get_approval_list',
-  'get_user_list_admin', 'get_analysis_data', 'get_geofence_config'
+  'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period'
 ];
 
 const MAKS_PERCOBAAN = 3;
@@ -3770,6 +3770,7 @@ const handleDecision = async (uuid, decision, namaUser) => {
 // --- 5. HISTORY SCREEN (FIXED: ADDED APPROVE/REJECT BUTTONS IN REPORT) ---
 function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [history, setHistory] = useState([]);
+  const [historyPeriod, setHistoryPeriod] = useState(null);
   const [shiftReport, setShiftReport] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [sendingEmail, setSendingEmail] = useState(false);
@@ -3857,11 +3858,16 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         userId: user.id,
         canViewAll: canViewAll, 
         requestorLokasi: isSuperAdmin ? locationFilter : (user.lokasi || 'All'), 
-        targetUserIds: canViewAll ? selectedUserIds : [] 
+        targetUserIds: canViewAll ? selectedUserIds : [],
+        filterStart,
+        filterEnd
       };
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json();
-      if (data.result === 'success') setHistory(data.history);
+      if (data.result === 'success') {
+        setHistory(data.history || []);
+        setHistoryPeriod(data.period || null);
+      }
     } catch (e) { alert('Gagal ambil data history'); } finally { setLoading(false); }
   };
 
@@ -3880,7 +3886,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   };
 
   useEffect(() => { if(canViewAll) fetchUsers(); }, [locationFilter]);
-  useEffect(() => { fetchHistory(); }, [selectedUserIds]);
+  useEffect(() => { fetchHistory(); }, [selectedUserIds, filterStart, filterEnd]);
   useEffect(() => { 
       if (showWebReport && reportCategory === 'RunningShift') {
           fetchShiftReport();
@@ -4156,7 +4162,16 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const isEditable = (waktuStr, status) => { if (status === 'Approved' || status === 'Rejected') return false;
     if (!waktuStr || waktuStr === '-') return false; try { return (new Date().getTime() - new Date(waktuStr).getTime()) / (1000 * 60 * 60) <= 1; } catch (e) { return false; } };
   
-  const getFilteredHistory = () => { return history.filter(item => { const itemDate = new Date(item.waktu).setHours(0, 0, 0, 0); const start = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null; const end = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null; return ((!start && !end) || (itemDate >= start && itemDate <= end)) && (filterType === 'All' || item.tipe === filterType) && (filterStatus === 'All' || item.status === filterStatus); }); };
+  const getFilteredHistory = () => {
+    return history.filter(item => {
+      const itemStart = new Date(item.tglMulai && item.tglMulai !== '-' ? item.tglMulai : item.waktu).setHours(0, 0, 0, 0);
+      const itemEnd = new Date(item.tglSelesai && item.tglSelesai !== '-' ? item.tglSelesai : item.waktu).setHours(23, 59, 59, 999);
+      const start = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null;
+      const end = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null;
+      const matchesDate = (!start && !end) || (!isNaN(itemStart) && !isNaN(itemEnd) && itemEnd >= (start || -Infinity) && itemStart <= (end || Infinity));
+      return matchesDate && (filterType === 'All' || item.tipe === filterType) && (filterStatus === 'All' || item.status === filterStatus);
+    });
+  };
   
   const getStatusColor = (status) => { if (status === 'Approved' || status === 'Verified') return 'bg-emerald-100 text-emerald-700 border-emerald-200'; if (status === 'Rejected') return 'bg-rose-100 text-rose-700 border-rose-200'; return 'bg-amber-100 text-amber-700 border-amber-200'; };
   const toggleUserSelection = (id) => { if(selectedUserIds.includes(id)) { setSelectedUserIds(selectedUserIds.filter(x => x !== id)); } else { setSelectedUserIds([...selectedUserIds, id]); } };
@@ -4477,6 +4492,11 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           <div><label className="text-[9px] font-bold text-slate-400 block mb-0.5">Dari Tanggal</label><input type="date" className="w-full border border-gray-200 rounded-lg p-1.5 text-xs font-semibold text-slate-700 focus:ring-1 focus:ring-blue-100 outline-none" value={filterStart} onChange={e => setFilterStart(e.target.value)} /></div> 
           <div><label className="text-[9px] font-bold text-slate-400 block mb-0.5">Sampai Tanggal</label><input type="date" className="w-full border border-gray-200 rounded-lg p-1.5 text-xs font-semibold text-slate-700 focus:ring-1 focus:ring-blue-100 outline-none" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} /></div> 
         </div>
+        {historyPeriod?.aktif && !filterStart && !filterEnd && (
+          <p className="mb-2 text-[10px] font-medium text-slate-400">
+            Periode aktif: {formatDateShort(historyPeriod.aktif.mulai)} – {formatDateShort(historyPeriod.aktif.selesai)}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-2"> 
              <div><label className="text-[9px] font-bold text-slate-400 block mb-0.5">Tipe Absen</label><div className="relative"><select className="w-full border border-gray-200 rounded-lg p-1.5 text-xs font-semibold text-slate-700 bg-white appearance-none focus:ring-1 focus:ring-blue-100 outline-none" value={filterType} onChange={(e) => setFilterType(e.target.value)}>{uniqueTypes.map((t, i) => ( <option key={i} value={t}>{t === 'All' ? 'Semua Form' : t}</option> ))}</select><ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-2 pointer-events-none"/></div></div>
              <div><label className="text-[9px] font-bold text-slate-400 block mb-0.5">Status Approval</label><div className="relative"><select className="w-full border border-gray-200 rounded-lg p-1.5 text-xs font-semibold text-slate-700 bg-white appearance-none focus:ring-1 focus:ring-blue-100 outline-none" value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}><option value="All">Semua Status</option><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option><option value="Verified">Verified</option></select><ChevronDown className="w-3 h-3 text-gray-400 absolute right-2 top-2 pointer-events-none"/></div></div>
@@ -4554,6 +4574,9 @@ function AdminPanel({ user, setView, masterData }) {
   const [geofenceRequired, setGeofenceRequired] = useState(false);
   const [geofenceAreas, setGeofenceAreas] = useState([]);
   const [loadingGeofence, setLoadingGeofence] = useState(false);
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
+  const [loadingPeriod, setLoadingPeriod] = useState(false);
 
   // State Lainnya
   const [newsInput, setNewsInput] = useState('');
@@ -4584,7 +4607,35 @@ function AdminPanel({ user, setView, masterData }) {
   useEffect(() => {
     if (activeTab === 'master_user') fetchAdminUserList();
     if (activeTab === 'geofence') fetchGeofenceConfig();
+    if (activeTab === 'period') fetchAbsencePeriod();
   }, [activeTab]);
+
+  const fetchAbsencePeriod = async () => {
+    setLoadingPeriod(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_absence_period' }) });
+      const data = await res.json();
+      if (data.result === 'success' && data.period) {
+        setPeriodStart(data.period.mulai || '');
+        setPeriodEnd(data.period.selesai || '');
+      } else alert(data.message || 'Gagal memuat periode absensi.');
+    } catch (e) { alert('Gagal koneksi saat memuat periode absensi.'); }
+    finally { setLoadingPeriod(false); }
+  };
+
+  const handleSaveAbsencePeriod = async (e) => {
+    e.preventDefault();
+    if (!periodStart || !periodEnd) return alert('Lengkapi tanggal mulai dan tanggal selesai.');
+    if (periodStart > periodEnd) return alert('Tanggal mulai tidak boleh setelah tanggal selesai.');
+    setLoadingPeriod(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'save_absence_period', mulai: periodStart, selesai: periodEnd }) });
+      const data = await res.json();
+      if (data.result === 'success') alert(data.message || 'Periode absensi berhasil disimpan.');
+      else alert(data.message || 'Gagal menyimpan periode absensi.');
+    } catch (e) { alert('Gagal koneksi saat menyimpan periode absensi.'); }
+    finally { setLoadingPeriod(false); }
+  };
 
   const applyGeofenceUser = (userId, configs = geofenceConfigs) => {
     const cfg = configs[String(userId)] || { required: false, areas: [] };
@@ -4692,6 +4743,7 @@ function AdminPanel({ user, setView, masterData }) {
           case 'import_db': return 'Import Data Mesin Absen';
           case 'news': return 'Broadcast Info HRD';
           case 'geofence': return 'Area Geofence Absen Online';
+          case 'period': return 'Periode Absensi';
           default: return 'Admin Panel';
       }
   };
@@ -4765,6 +4817,12 @@ function AdminPanel({ user, setView, masterData }) {
                                 <LocateFixed className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'geofence' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
                                 <span className="flex-1 leading-tight">Geofence absen online</span>
                                 {activeTab === 'geofence' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+
+                            <button onClick={() => switchTab('period')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'period' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <CalendarRange className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'period' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Periode absensi</span>
+                                {activeTab === 'period' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
                             </button>
                         </>
                         )}
@@ -4988,6 +5046,48 @@ function AdminPanel({ user, setView, masterData }) {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* KONTEN TAB: PERIODE ABSENSI */}
+      {activeTab === 'period' && user.role === 'admin' && (
+        <div className="animate-in fade-in duration-300">
+          <form onSubmit={handleSaveAbsencePeriod} className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white">
+            <div className="border-b border-slate-100 p-4">
+              <div className="mb-1 flex items-center gap-2">
+                <CalendarRange className="h-4 w-4 text-blue-600" strokeWidth={1.8} />
+                <p className="text-[14px] font-semibold text-slate-900">Periode absensi aktif</p>
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-500">Periode ini menjadi default dashboard dan histori. Kuota pengajuan Ijin maksimal 4 kali akan dihitung ulang dari awal setiap periode.</p>
+            </div>
+            {loadingPeriod ? (
+              <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3 p-4">
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal mulai</label>
+                    <input required type="date" className={`${inputCls} tabular-nums`} value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal selesai</label>
+                    <input required type="date" className={`${inputCls} tabular-nums`} value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+                  </div>
+                </div>
+                <div className="px-4 pb-4">
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-800">
+                    Contoh periode: <strong>21 Juli 2026 – 20 Agustus 2026</strong>. Setelah disimpan, karyawan akan melihat periode ini sebagai default dan statistik hadir, Alpa, sakit, serta Ijin akan mengikuti interval tersebut.
+                  </div>
+                </div>
+                <div className="bg-slate-50/60 p-4">
+                  <button type="submit" disabled={loadingPeriod} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-[14px] font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-60">
+                    {loadingPeriod && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {loadingPeriod ? 'Menyimpan…' : 'Simpan periode aktif'}
+                  </button>
+                </div>
+              </>
+            )}
+          </form>
         </div>
       )}
 

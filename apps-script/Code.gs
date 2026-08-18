@@ -148,6 +148,9 @@ function doPost(e) {
           history: typeof BACKEND_UPDATE_HISTORY === 'undefined' ? [] : BACKEND_UPDATE_HISTORY
         });
     }
+
+    if (action === 'get_absence_period') return handleGetAbsencePeriod(data);
+    if (action === 'save_absence_period') return handleSaveAbsencePeriod(data);
     
     // --- FITUR ANNOUNCEMENT ---
     if (action === 'get_latest_announcement') return handleGetLatestAnnouncement(data);
@@ -248,6 +251,7 @@ function handleAbsen(data) {
 
   if (TYPES_CHECK_DUPLICATE.includes(data.tipe)) {
       const rowsAbsen = sheet.getDataRange().getValues();
+      const periodeAktif = getPeriodeAbsenAktif_();
       
       // Tentukan Tanggal Input yang akan dicek (Format: yyyy-MM-dd)
       let inputDateStr = "";
@@ -271,32 +275,37 @@ function handleAbsen(data) {
               continue;
           }
 
-          // A. Hitung Kuota Ijin (Khusus Tipe Ijin)
-          if (data.tipe === 'Ijin' && rTipe === 'Ijin') {
+          // Ambil interval baris lama. Jika tanggal akhir kosong, baris
+          // dianggap hanya berlaku pada tanggal mulai / waktu input.
+          let rStartStr = '';
+          let rEndStr = '';
+          if (rowsAbsen[i][8] && rowsAbsen[i][8] !== '-' && rowsAbsen[i][8] !== '') {
+              rStartStr = formatDateYMD_Strict(rowsAbsen[i][8]);
+          }
+          if (rowsAbsen[i][9] && rowsAbsen[i][9] !== '-' && rowsAbsen[i][9] !== '') {
+              rEndStr = formatDateYMD_Strict(rowsAbsen[i][9]);
+          }
+          if (!rStartStr) rStartStr = formatDateYMD_Strict(rowsAbsen[i][1]);
+          if (!rEndStr) rEndStr = rStartStr;
+          if (rStartStr > rEndStr) {
+              const tukar = rStartStr;
+              rStartStr = rEndStr;
+              rEndStr = tukar;
+          }
+
+          // A. Hitung Kuota Ijin (khusus Ijin yang masuk periode aktif).
+          const masukPeriodeAktif = rStartStr && rEndStr &&
+              !(rEndStr < periodeAktif.mulai || rStartStr > periodeAktif.selesai);
+          if (data.tipe === 'Ijin' && rTipe === 'Ijin' && masukPeriodeAktif) {
               countIjinExisting++;
           }
 
           // B. Cek Duplikasi Tanggal (Hanya jika Tipe Sama)
-          // Contoh: Jika input "Sakit", cek apakah sudah ada "Sakit" di tanggal tsb
-          if (rTipe === data.tipe) {
-               let rDateStr = "";
-               // Ambil tanggal dari Kolom I (tglMulai)
-               if (rowsAbsen[i][8] && rowsAbsen[i][8] !== '-' && rowsAbsen[i][8] !== '') {
-                   const d = new Date(rowsAbsen[i][8]);
-                   if(!isNaN(d.getTime())) rDateStr = Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
-               } else {
-                   // Fallback ke Kolom B (Waktu Input) jika tglMulai kosong
-                   const d = new Date(rowsAbsen[i][1]);
-                   if(!isNaN(d.getTime())) rDateStr = Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
-               }
-
-               // JIKA TANGGAL SAMA -> TOLAK
-               if (rDateStr === inputDateStr) {
-                   return responseJSON({ 
-                       result: 'error', 
-                       message: `GAGAL: Anda sudah mengajukan "${data.tipe}" pada tanggal ${inputDateStr}. Tanggal tidak boleh sama.` 
-                   });
-               }
+          if (rTipe === data.tipe && rStartStr === inputDateStr) {
+              return responseJSON({
+                  result: 'error',
+                  message: `GAGAL: Anda sudah mengajukan "${data.tipe}" pada tanggal ${inputDateStr}. Tanggal tidak boleh sama.`
+              });
           }
       }
 
@@ -1414,12 +1423,13 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
     // Dulu dibaca penuh (46 kolom) tiap dashboard dibuka.
     const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
     const rowsAbsensi = bacaSheet(sheetAbsensi, 13);
+    const periodeAktif = getPeriodeAbsenAktif_();
 
     // Data mesin TIDAK lagi disisir per request. Diambil dari indeks
     // agregat per NIK yang disusun sekali lalu di-cache (StatsIndex.gs).
     // Dulu: 6.700 baris dbabsen disisir ulang setiap dashboard dibuka,
     // hanya untuk mengambil angka satu orang.
-    const idxDb = getIndeksDbAbsen();
+    const idxDb = getIndeksDbAbsen(periodeAktif);
 
     // [UPDATE] Ambil Data MASTER-CUTI — DARI CACHE (lihat Cache.gs).
     // Dulu membaca sheet MASTER-CUTI PENUH di setiap pemanggilan get_stats.
@@ -1439,7 +1449,9 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
         total_no_scan_out: 0,
         ijin_count: 0,
         remarks_open: 0,
-        periode_db: 'Belum ada data',
+        periode_db: _labelPeriodeAbsen_(periodeAktif),
+        periode_absen_mulai: periodeAktif.mulai,
+        periode_absen_selesai: periodeAktif.selesai,
 
         // Jam absen HARI INI, dipakai kartu "Absensi hari ini" di dashboard.
         // Sengaja diisi di dalam loop sheet Absensi yang sudah ada di bawah:
@@ -1467,6 +1479,21 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
         if (String(rowsAbsensi[i][2]) === targetId) {
             const tipe = rowsAbsensi[i][4];
             const status = rowsAbsensi[i][12];
+            // Untuk formulir berperiode (Ijin/Sakit/Alpa), gunakan tanggal
+            // yang dipilih karyawan pada kolom tglMulai. Fallback ke waktu
+            // input untuk absen masuk/pulang lama yang tidak punya tanggal.
+            const tanggalBaris = formatDateYMD_Strict(
+                rowsAbsensi[i][8] && rowsAbsensi[i][8] !== '-'
+                    ? rowsAbsensi[i][8]
+                    : rowsAbsensi[i][1]
+            );
+            const tanggalSelesaiBaris = formatDateYMD_Strict(
+                rowsAbsensi[i][9] && rowsAbsensi[i][9] !== '-'
+                    ? rowsAbsensi[i][9]
+                    : tanggalBaris
+            );
+            const masukPeriode = !!tanggalBaris && !!tanggalSelesaiBaris &&
+                !(tanggalSelesaiBaris < periodeAktif.mulai || tanggalBaris > periodeAktif.selesai);
 
             // JAM MASUK / PULANG HARI INI
             //
@@ -1476,12 +1503,12 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
             if (status !== 'Rejected' && (tipe === 'Hadir' || tipe === 'Pulang')) {
                 const wkt = rowsAbsensi[i][1];
                 const tanggalOnline = formatDateYMD_Strict(wkt);
-                if (tipe === 'Hadir' && tanggalOnline) {
+                if (tipe === 'Hadir' && tanggalOnline && masukPeriode) {
                     onlineHadirByDate[tanggalOnline] = (onlineHadirByDate[tanggalOnline] || 0) + 1;
                 }
                 if (wkt) {
                     const dWkt = new Date(wkt);
-                    if (!isNaN(dWkt.getTime()) &&
+                    if (masukPeriode && !isNaN(dWkt.getTime()) &&
                         Utilities.formatDate(dWkt, tzSkrip, 'yyyy-MM-dd') === tglHariIni) {
                         const jam = Utilities.formatDate(dWkt, tzSkrip, 'HH:mm');
                         // Kalau seseorang absen dua kali di hari yang sama:
@@ -1500,7 +1527,7 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
                 }
             }
 
-            if (status !== 'Rejected') {
+            if (status !== 'Rejected' && masukPeriode) {
                 if (tipe === 'Ijin') {
                     stats.ijin_count++;
                     stats.total_ijin++;
@@ -1511,8 +1538,7 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
                 if (tipe === 'Sakit') stats.total_sakit++;
                 if (tipe === 'Alpa') {
                     stats.total_alpa++;
-                    const tanggalAlpa = formatDateYMD_Strict(rowsAbsensi[i][1]);
-                    if (tanggalAlpa) alpaManualByDate[tanggalAlpa] = (alpaManualByDate[tanggalAlpa] || 0) + 1;
+                    if (tanggalBaris) alpaManualByDate[tanggalBaris] = (alpaManualByDate[tanggalBaris] || 0) + 1;
                 }
             }
         } 
@@ -1573,7 +1599,13 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
             minTimestamp = e.min_ts;
             maxTimestamp = e.max_ts;
 
-            stats.total_hadir        = e.hadir;
+            // Tambahkan hari yang hanya tercatat dari tombol Absen Masuk
+            // online. Satu tanggal dihitung satu kali dan tidak menggandakan
+            // tanggal yang sudah memiliki presensi mesin.
+            const hadirOnlineTambahan = Object.keys(onlineHadirByDate).reduce((jumlah, tanggal) => {
+                return jumlah + (e.hadir_by_date && e.hadir_by_date[tanggal] ? 0 : 1);
+            }, 0);
+            stats.total_hadir        = e.hadir + hadirOnlineTambahan;
             stats.total_sakit       += e.sakit;   // ditambahkan ke hitungan sheet Absensi
             let alpaMesin = e.alpa;
             Object.keys(e.alpa_by_date || {}).forEach((tanggal) => {
@@ -1590,19 +1622,16 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
             // [UPDATE] Cuti Bersama (CB) dari DB tetap dimatikan agar tidak
             // bentrok dengan Master Cuti — sama seperti sebelumnya.
         }
+        if (!e) {
+            // User bisa saja belum punya baris di dbabsen, tetapi sudah
+            // tercatat melalui absen online. Tetap hitung sebagai hadir.
+            stats.total_hadir = Object.keys(onlineHadirByDate).length;
+        }
     }
 
-    // 4. Format Periode Data
-    if (dataMesinFound && minTimestamp !== null && maxTimestamp !== null) {
-        const tz = Session.getScriptTimeZone();
-        const strMin = Utilities.formatDate(new Date(minTimestamp), tz, "dd MMM yyyy");
-        const strMax = Utilities.formatDate(new Date(maxTimestamp), tz, "dd MMM yyyy");
-        stats.periode_db = `${strMin} - ${strMax}`;
-    } else if (!userNik || userNik === '-') {
-        stats.periode_db = "NIK User Kosong";
-    } else if (!dataMesinFound) {
-        stats.periode_db = "Data Mesin Kosong";
-    }
+    // 4. Periode dashboard selalu mengikuti periode absensi aktif yang
+    // ditetapkan admin, bukan rentang seluruh data mesin.
+    stats.periode_db = _labelPeriodeAbsen_(periodeAktif);
 
     // 5. Remarks Counter
     const sheetRemarks = SS.getSheetByName(SHEET_REMARKS);
@@ -2049,6 +2078,19 @@ function handleGetHistory(data) {
   const rowsAbsen = sheetAbsen.getDataRange().getValues();
   const sheetUser = SS.getSheetByName(SHEET_USERS);
   const rowsUser = sheetUser.getDataRange().getValues();
+  const periodeAktif = getPeriodeAbsenAktif_();
+  // Tanpa filter dari user, histori memakai periode admin sebagai default.
+  // Saat user mengisi tanggal sendiri, rentang itu dipakai sebagai pilihan
+  // histori lain di luar periode aktif.
+  const periodeFilter = {
+    mulai: /^\d{4}-\d{2}-\d{2}$/.test(String(data.filterStart || '')) ? String(data.filterStart) : periodeAktif.mulai,
+    selesai: /^\d{4}-\d{2}-\d{2}$/.test(String(data.filterEnd || '')) ? String(data.filterEnd) : periodeAktif.selesai
+  };
+  if (periodeFilter.mulai > periodeFilter.selesai) {
+    const sementara = periodeFilter.mulai;
+    periodeFilter.mulai = periodeFilter.selesai;
+    periodeFilter.selesai = sementara;
+  }
   
   // Mapping User Data (Index 4 = Divisi, Index 7 = NoPayroll/ID Akun)
   const userMap = {};
@@ -2083,6 +2125,10 @@ function handleGetHistory(data) {
          if (String(userData.lokasi).toLowerCase() !== String(requestorLokasi).toLowerCase()) continue;
       }
 
+      const tanggalMulai = formatDateYMD_Strict(rowsAbsen[i][8] && rowsAbsen[i][8] !== '-' ? rowsAbsen[i][8] : rowsAbsen[i][1]);
+      const tanggalSelesai = formatDateYMD_Strict(rowsAbsen[i][9] && rowsAbsen[i][9] !== '-' ? rowsAbsen[i][9] : rowsAbsen[i][1]);
+      if (!tanggalMulai || !tanggalSelesai || tanggalSelesai < periodeFilter.mulai || tanggalMulai > periodeFilter.selesai) continue;
+
       history.push({
         uuid: rowsAbsen[i][0],
         waktu: rowsAbsen[i][1],
@@ -2113,7 +2159,7 @@ function handleGetHistory(data) {
     if (!data.canViewAll && history.length >= 50) break;
     if (data.canViewAll && history.length >= 500) break;
   }
-  return responseJSON({ result: 'success', history: history });
+  return responseJSON({ result: 'success', history: history, period: { ...periodeFilter, aktif: periodeAktif } });
 }
 
 // 2. UPDATE FUNGSI GET SHIFT HISTORY (Join Data User untuk ID Akun & Divisi)

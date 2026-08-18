@@ -162,6 +162,7 @@ const ACTION_ROLES = {
   'get_db_absen': '*',
   'get_user_list_simple': '*',
   'get_stats': '*',
+  'get_absence_period': '*',
   'ganti_password': '*',
   'upload_profile': '*',
   'send_remark': '*',
@@ -187,6 +188,7 @@ const ACTION_ROLES = {
   // --- Admin saja ---
   'reset_password_user': ['admin'],
   'save_geofence_config': ['admin'],
+  'save_absence_period': ['admin'],
   'tambah_user': ['admin'],
   'tambah_master': ['admin'],
   'delete_absensi': ['admin'],
