@@ -1383,7 +1383,15 @@ function _normalisasiBooleanGeofence(value, defaultValue) {
   return ['ya', 'yes', 'true', '1', 'wajib', 'aktif', 'on'].indexOf(text) !== -1;
 }
 
+// Dipakai oleh handleLogin dan handleAbsen (lewat _ambilGeofenceUser) — dua
+// jalur tersibuk di aplikasi. Dibungkus cache (lihat Cache.gs) supaya sheet
+// Geofence tidak dibaca ulang di setiap login/absen, hanya sekali per 10
+// menit atau sampai admin menyimpan konfigurasi baru.
 function _ambilKonfigurasiGeofence() {
+  return getGeofenceConfigCached();
+}
+
+function _susunKonfigurasiGeofence_() {
   const sheet = SS.getSheetByName(SHEET_GEOFENCE);
   const map = {};
   if (!sheet || sheet.getLastRow() < 2) return map;
@@ -1479,6 +1487,13 @@ function handleSaveGeofenceConfig(data) {
   const rows = bacaSheet(sheet, GEOFENCE_HEADERS.length);
   for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][0]).trim() === userId) sheet.deleteRow(i + 1);
   if (areas.length) sheet.getRange(sheet.getLastRow() + 1, 1, areas.length, GEOFENCE_HEADERS.length).setValues(areas.map(area => [userId, userRow[3], required ? 'YA' : 'TIDAK', area.nama, area.lat, area.lng, area.radius, 'YA']));
+
+  // WAJIB: tanpa ini, login/absen user lain masih memakai konfigurasi lama
+  // dari cache sampai TTL-nya habis (lihat Cache.gs).
+  if (typeof GEOFENCE_CACHE_BERSIHKAN === 'function') {
+    try { GEOFENCE_CACHE_BERSIHKAN(); } catch (e) { console.warn('Gagal bersihkan cache geofence: ' + e.message); }
+  }
+
   return responseJSON({ result: 'success', message: required ? 'Geofence diwajibkan dan disimpan.' : 'Geofence opsional dan disimpan.', config: { required: required, areas: areas } });
 }
 
@@ -1640,9 +1655,17 @@ function handleTambahUser(data) {
 
 function handleTambahMaster(data) {
   if (data.roleRequester !== 'admin') return responseJSON({ result: 'error', message: 'Akses Ditolak.' });
-  const sheet = SS.getSheetByName(SHEET_MASTER); 
-  sheet.appendRow([data.kategori, data.value, data.label]); 
-  return responseJSON({ result: 'success' }); 
+  const sheet = SS.getSheetByName(SHEET_MASTER);
+  sheet.appendRow([data.kategori, data.value, data.label]);
+
+  // WAJIB: getMasterDataCached() (Cache.gs) dipakai di handleLogin. Tanpa
+  // ini, departemen/master baru yang baru saja ditambahkan admin baru
+  // muncul untuk user LAIN setelah TTL cache (10 menit) habis — admin yang
+  // menambahkannya sendiri tidak menyadari ini karena layarnya diperbarui
+  // langsung dari state lokal, bukan dari cache.
+  try { CacheService.getScriptCache().remove(KUNCI_MASTERDATA); } catch (e) { console.warn('Gagal bersihkan cache MasterData: ' + e.message); }
+
+  return responseJSON({ result: 'success' });
 }
 
 function handleGantiPassword(data) {

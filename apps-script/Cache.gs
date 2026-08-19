@@ -27,6 +27,7 @@ const CACHE_TTL_DETIK = 600; // 10 menit
 // supaya cache lama tidak terpakai.
 const KUNCI_MASTERDATA = 'MASTERDATA_V1';
 const KUNCI_PETA_CUTI  = 'PETACUTI_V1';
+const KUNCI_GEOFENCE   = 'GEOFENCE_V1';
 
 /**
  * MasterData (kategori, value, label) — dipakai untuk menyusun menu.
@@ -111,6 +112,47 @@ function getPetaCutiCached() {
 }
 
 /**
+ * Konfigurasi Geofence per user (peta userId -> {required, areas}).
+ *
+ * LATAR BELAKANG (Agu 2026): sheet Geofence dibaca PENUH tanpa cache di
+ * DUA jalur yang sering dipanggil — handleLogin (sekali per login) DAN
+ * handleAbsen -> validasiGeofence (setiap kali Hadir/Pulang, jalur paling
+ * sering dipakai di seluruh aplikasi). Ukurannya kecil per baris, tapi
+ * tetap satu round-trip baca sheet yang sebenarnya bisa dihindari kalau
+ * datanya jarang berubah (hanya saat admin menyimpan konfigurasi baru).
+ *
+ * _susunKonfigurasiGeofence_ (di Code.gs) melakukan pembacaan sheet yang
+ * sesungguhnya; fungsi ini hanya lapisan cache di depannya, mengikuti pola
+ * yang sama seperti getMasterDataCached/getPetaCutiCached.
+ * @return {Object} { "USR-123": {required, areas: [...]}, ... }
+ */
+function getGeofenceConfigCached() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(KUNCI_GEOFENCE);
+  if (hit) {
+    try { return JSON.parse(hit); } catch (e) { /* cache rusak, ambil ulang */ }
+  }
+
+  const map = _susunKonfigurasiGeofence_();
+
+  try {
+    cache.put(KUNCI_GEOFENCE, JSON.stringify(map), CACHE_TTL_DETIK);
+  } catch (e) {
+    console.warn('Konfigurasi geofence gagal di-cache: ' + e.message);
+  }
+  return map;
+}
+
+/**
+ * Kosongkan cache geofence. WAJIB dipanggil setiap kali konfigurasi
+ * geofence disimpan (lihat handleSaveGeofenceConfig di Code.gs) — kalau
+ * tidak, perubahan admin baru terlihat oleh user lain setelah TTL habis.
+ */
+function GEOFENCE_CACHE_BERSIHKAN() {
+  CacheService.getScriptCache().remove(KUNCI_GEOFENCE);
+}
+
+/**
  * Baris terakhir yang benar-benar berisi data pada satu kolom.
  *
  * sheet.getLastRow() mengembalikan baris terakhir yang terisi di SELURUH
@@ -138,7 +180,7 @@ function _lastRowKolom(sh, kolom) {
  * atau MASTER-CUTI kalau tidak mau menunggu 10 menit.
  */
 function CACHE_BERSIHKAN() {
-  CacheService.getScriptCache().removeAll([KUNCI_MASTERDATA, KUNCI_PETA_CUTI]);
+  CacheService.getScriptCache().removeAll([KUNCI_MASTERDATA, KUNCI_PETA_CUTI, KUNCI_GEOFENCE]);
   Logger.log('Cache dikosongkan. Pembacaan berikutnya mengambil data terbaru dari sheet.');
 }
 
