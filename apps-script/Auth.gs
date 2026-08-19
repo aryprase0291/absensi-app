@@ -174,8 +174,9 @@ const ACTION_ROLES = {
   'request_approval_email': '*',
 
   // --- Penyetuju (sesuai App.js: canApprove) ---
-  'get_approval_list': ['admin', 'hrd', 'manager'],
-  'process_approval': ['admin', 'hrd', 'manager'],
+  // Kepala divisi/supervisor diberi jalur yang sama seperti manager.
+  'get_approval_list': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
+  'process_approval': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
 
   // --- Admin & HRD ---
   'get_user_list_admin': ['admin', 'hrd'],
@@ -186,6 +187,8 @@ const ACTION_ROLES = {
   'get_analysis_data': ['admin', 'hrd'],
 
   // --- Admin saja ---
+  'get_approval_team_config': ['admin'],
+  'save_approval_team_config': ['admin'],
   'reset_password_user': ['admin'],
   'save_geofence_config': ['admin'],
   'save_absence_period': ['admin'],
@@ -258,7 +261,7 @@ function authorizeRequest(data) {
   //   - handleAbsen      : lokasi GPS tempat absen (data user, jangan ditimpa!)
   //   - handleGetApprovalList : lokasi kantor si admin (scope, harus ditimpa)
   // Karena itu penimpaan dilakukan per-action, bukan menyeluruh.
-  if (action === 'get_approval_list') {
+  if (action === 'get_approval_list' || action === 'process_approval') {
     data.lokasi = auth.l;
     data.divisi = auth.d;
   }

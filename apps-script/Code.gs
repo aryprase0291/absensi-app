@@ -11,7 +11,10 @@ const SHEET_RUNNING_SHIFT = "running shift"; // Sheet Jadwal Shift
 const SHEET_ANNOUNCEMENTS = "Announcements"; // Sheet Informasi HRD
 const SHEET_MASTER_CUTI_NAME = "MASTER-CUTI";
 const SHEET_GEOFENCE = "Geofence";
+const SHEET_APPROVAL_TEAMS = "ApprovalTeams";
 const GEOFENCE_HEADERS = ["UserID", "Nama", "Wajib", "Nama Area", "Latitude", "Longitude", "RadiusMeter", "Aktif"];
+const APPROVAL_TEAM_HEADERS = ["KepalaID", "KepalaNama", "AnggotaID", "AnggotaNama", "Departemen", "UpdatedAt", "UpdatedBy"];
+const APPROVAL_ROLE_VALUES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
 
 
 // --- KONFIGURASI EMAIL HRD ---
@@ -156,6 +159,8 @@ function doPost(e) {
     if (action === 'get_latest_announcement') return handleGetLatestAnnouncement(data);
     if (action === 'tambah_announcement') return handleTambahAnnouncement(data);
     if (action === 'get_user_list_admin') return handleGetUserListAdmin(data); // Ambil list user lengkap
+    if (action === 'get_approval_team_config') return handleGetApprovalTeamConfig(data);
+    if (action === 'save_approval_team_config') return handleSaveApprovalTeamConfig(data);
     if (action === 'get_geofence_config') return handleGetGeofenceConfig(data);
     if (action === 'save_geofence_config') return handleSaveGeofenceConfig(data);
     if (action === 'reset_password_user') return handleResetPasswordUser(data); // Reset password
@@ -1987,16 +1992,144 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
     return stats;
 }
 
+function _isApprovalRoleValue(role) {
+  return APPROVAL_ROLE_VALUES.indexOf(String(role || '').trim().toLowerCase()) !== -1;
+}
+
+function _pastikanSheetApprovalTeams() {
+  let sheet = SS.getSheetByName(SHEET_APPROVAL_TEAMS);
+  if (!sheet) sheet = SS.insertSheet(SHEET_APPROVAL_TEAMS);
+  if (sheet.getLastRow() < 1 || sheet.getRange(1, 1, 1, APPROVAL_TEAM_HEADERS.length).getValues()[0].join('').trim() === '') {
+    sheet.getRange(1, 1, 1, APPROVAL_TEAM_HEADERS.length).setValues([APPROVAL_TEAM_HEADERS]);
+  }
+  return sheet;
+}
+
+function _ambilApprovalTeamAssignments() {
+  const sheet = SS.getSheetByName(SHEET_APPROVAL_TEAMS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const rows = bacaSheet(sheet, APPROVAL_TEAM_HEADERS.length);
+  return rows.slice(1)
+    .filter(row => String(row[0] || '').trim() && String(row[2] || '').trim())
+    .map(row => ({
+      kepalaId: String(row[0] || '').trim(),
+      kepalaNama: row[1] || '',
+      anggotaId: String(row[2] || '').trim(),
+      anggotaNama: row[3] || '',
+      departemen: row[4] || '-',
+      updatedAt: row[5] || '',
+      updatedBy: row[6] || ''
+    }));
+}
+
+function _approvalMemberMapForKepala(kepalaId) {
+  const assignments = _ambilApprovalTeamAssignments();
+  const map = {};
+  assignments.forEach(a => {
+    if (a.kepalaId === String(kepalaId || '').trim()) {
+      map[a.anggotaId] = a;
+    }
+  });
+  return map;
+}
+
+function _buildAdminUserList(rowsUsers) {
+  return rowsUsers.slice(1)
+    .filter(row => row[0] !== '' && row[0] !== null && row[0] !== undefined)
+    .map(row => ({
+      uuid: row[0],
+      username: row[1],
+      nama: row[3],
+      divisi: row[4],
+      role: row[5],
+      jabatan: row[5],
+      lokasi: row[13] || ''
+    }))
+    .sort((a, b) => String(a.nama || '').localeCompare(String(b.nama || '')));
+}
+
+function handleGetApprovalTeamConfig(data) {
+  if (String(data.roleRequester || '').toLowerCase() !== 'admin') {
+    return responseJSON({ result: 'error', message: 'Hanya Admin yang boleh mengatur tim approval.' });
+  }
+
+  _pastikanSheetApprovalTeams();
+  const rowsUsers = bacaSheet(SS.getSheetByName(SHEET_USERS), 14);
+  return responseJSON({
+    result: 'success',
+    users: _buildAdminUserList(rowsUsers),
+    assignments: _ambilApprovalTeamAssignments()
+  });
+}
+
+function handleSaveApprovalTeamConfig(data) {
+  if (String(data.roleRequester || '').toLowerCase() !== 'admin') {
+    return responseJSON({ result: 'error', message: 'Hanya Admin yang boleh mengatur tim approval.' });
+  }
+
+  const kepalaId = String(data.kepalaId || '').trim();
+  const departemen = String(data.departemen || '').trim();
+  const memberIds = Array.isArray(data.memberIds)
+    ? [...new Set(data.memberIds.map(id => String(id || '').trim()).filter(Boolean))]
+    : [];
+
+  if (!kepalaId) return responseJSON({ result: 'error', message: 'Pilih kepala divisi terlebih dahulu.' });
+  if (!departemen) return responseJSON({ result: 'error', message: 'Pilih departemen terlebih dahulu.' });
+
+  const rowsUsers = bacaSheet(SS.getSheetByName(SHEET_USERS), 14);
+  const userMap = {};
+  rowsUsers.slice(1).forEach(row => {
+    const id = String(row[0] || '').trim();
+    if (id) userMap[id] = { id: id, nama: row[3] || '', divisi: row[4] || '', role: row[5] || '' };
+  });
+
+  const kepala = userMap[kepalaId];
+  if (!kepala) return responseJSON({ result: 'error', message: 'Kepala divisi tidak ditemukan.' });
+  if (!_isApprovalRoleValue(kepala.role)) return responseJSON({ result: 'error', message: 'Role kepala divisi harus role approval, misalnya kepala_divisi, supervisor, spv, pimpinan, atau manager.' });
+
+  const cleanMemberIds = memberIds.filter(id => id !== kepalaId && userMap[id]);
+  const sheet = _pastikanSheetApprovalTeams();
+  const rows = bacaSheet(sheet, APPROVAL_TEAM_HEADERS.length);
+
+  for (let i = rows.length - 1; i >= 1; i--) {
+    const rowKepalaId = String(rows[i][0] || '').trim();
+    const rowDepartemen = String(rows[i][4] || '').trim();
+    if (rowKepalaId === kepalaId && rowDepartemen === departemen) {
+      sheet.deleteRow(i + 1);
+    }
+  }
+
+  if (cleanMemberIds.length) {
+    const now = new Date();
+    const values = cleanMemberIds.map(memberId => {
+      const member = userMap[memberId];
+      return [kepalaId, kepala.nama, memberId, member.nama, departemen, now, data._auth ? data._auth.u : 'admin'];
+    });
+    sheet.getRange(sheet.getLastRow() + 1, 1, values.length, APPROVAL_TEAM_HEADERS.length).setValues(values);
+  }
+
+  return responseJSON({
+    result: 'success',
+    message: cleanMemberIds.length
+      ? `Tim approval ${departemen} untuk ${kepala.nama} berhasil disimpan.`
+      : `Tim approval ${departemen} untuk ${kepala.nama} dikosongkan.`,
+    assignments: _ambilApprovalTeamAssignments()
+  });
+}
+
 function handleGetApprovalList(data) {
   const role = data.role ? String(data.role).toLowerCase() : '';
   const adminLokasi = data.lokasi;
-  if (role !== 'admin' && role !== 'hrd' && role !== 'manager') { return responseJSON({ result: 'success', list: [] }); }
+  const isApprovalRole = _isApprovalRoleValue(role);
+  if (!isApprovalRole) { return responseJSON({ result: 'success', list: [] }); }
   
   const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
   const rowsAbsen = sheetAbsensi.getDataRange().getValues();
   const sheetUsers = SS.getSheetByName(SHEET_USERS);
   const rowsUsers = sheetUsers.getDataRange().getValues();
   const userMap = {}; 
+  const teamMemberMap = (role === 'admin' || role === 'hrd') ? {} : _approvalMemberMapForKepala(data.userId);
+  const hasTeamMapping = Object.keys(teamMemberMap).length > 0;
   
   for (let u = 1; u < rowsUsers.length; u++) {
     const uId = String(rowsUsers[u][0]);
@@ -2004,6 +2137,7 @@ function handleGetApprovalList(data) {
   }
 
   const list = [];
+  const divisiCounts = {};
   for (let i = 1; i < rowsAbsen.length; i++) {
     const row = rowsAbsen[i];
     const status = row[12]; 
@@ -2021,11 +2155,14 @@ function handleGetApprovalList(data) {
       
       if (isLokasiMatch) {
           if (role === 'admin' || role === 'hrd') isEligible = true;
-          else if (role === 'manager') { if (dataPemohon.divisi === data.divisi) isEligible = true; }
+          else if (hasTeamMapping) isEligible = !!teamMemberMap[userIdPemohon];
+          else if (isApprovalRole) { if (dataPemohon.divisi === data.divisi) isEligible = true; }
       }
       if (userIdPemohon === String(data.userId)) isEligible = false;
 
       if (isEligible) {
+        const approvalAssignment = teamMemberMap[userIdPemohon];
+        const displayDivisi = approvalAssignment ? approvalAssignment.departemen : (dataPemohon.divisi || '-');
         // --- 1. FORMAT TIMESTAMP PENGAJUAN (DD-MM-YYYY HH:mm) ---
         // row[1] adalah Waktu Input
         let timestampDisplay = formatDateTimeFull(row[1]); 
@@ -2062,7 +2199,7 @@ function handleGetApprovalList(data) {
         list.push({
           uuid: row[0], 
           nama: row[3], 
-          divisi: dataPemohon.divisi || '-', 
+          divisi: displayDivisi, 
           lokasi: dataPemohon.lokasi || '-', 
           tipe: row[4], 
           waktu: timestampDisplay, // Dikirim sudah format rapi
@@ -2073,6 +2210,9 @@ function handleGetApprovalList(data) {
           foto: row[7] || '',       
           lampiran: row[15] || ''   
         });
+
+        const divisiKey = displayDivisi;
+        divisiCounts[divisiKey] = (divisiCounts[divisiKey] || 0) + 1;
       }
     }
   }
@@ -2080,10 +2220,53 @@ function handleGetApprovalList(data) {
   // Sort (Terlama di bawah)
   list.reverse();
   
-  return responseJSON({ result: 'success', list: list });
+  return responseJSON({ result: 'success', list: list, divisiCounts: divisiCounts });
+}
+
+function _bolehApproveRowManual(row, data, rowsUsers) {
+  const role = String(data.role || '').toLowerCase();
+  if (role === 'admin' || role === 'hrd') return true;
+  if (!_isApprovalRoleValue(role)) return false;
+
+  const userIdPemohon = String(row[2] || '').trim();
+  if (!userIdPemohon || userIdPemohon === String(data.userId || '').trim()) return false;
+
+  let dataPemohon = null;
+  for (let u = 1; u < rowsUsers.length; u++) {
+    if (String(rowsUsers[u][0] || '').trim() === userIdPemohon) {
+      dataPemohon = { divisi: rowsUsers[u][4], lokasi: rowsUsers[u][13] || '' };
+      break;
+    }
+  }
+  if (!dataPemohon) return false;
+
+  const isLokasiMatch = (data.lokasi === 'All') || (data.lokasi === dataPemohon.lokasi);
+  if (!isLokasiMatch) return false;
+
+  const teamMemberMap = _approvalMemberMapForKepala(data.userId);
+  if (Object.keys(teamMemberMap).length > 0) return !!teamMemberMap[userIdPemohon];
+
+  return dataPemohon.divisi === data.divisi;
 }
 
 function handleProcessApprovalManual(data) {
+  const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
+  const rowsAbsen = sheetAbsensi.getDataRange().getValues();
+  const rowsUsers = SS.getSheetByName(SHEET_USERS).getDataRange().getValues();
+  let targetRow = null;
+
+  for (let i = 1; i < rowsAbsen.length; i++) {
+    if (String(rowsAbsen[i][0]) === String(data.uuid)) {
+      targetRow = rowsAbsen[i];
+      break;
+    }
+  }
+
+  if (!targetRow) return responseJSON({ result: 'error', message: 'Data tidak ditemukan.' });
+  if (!_bolehApproveRowManual(targetRow, data, rowsUsers)) {
+    return responseJSON({ result: 'error', message: 'Anda tidak terdaftar sebagai approver untuk pengajuan ini.' });
+  }
+
   const res = processApprovalLogic(data.uuid, data.decision, data.approverName, data.alasan);
   return responseJSON(res);
 }

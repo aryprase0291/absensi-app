@@ -38,9 +38,13 @@ import ImportNotifier from './components/ImportNotifier';
 const ACTION_AMAN_DIULANG = [
   'ping', 'check_version', 'login', 'get_latest_announcement',
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
-  'get_remarks', 'get_shift_history', 'get_approval_list',
+  'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config',
   'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period'
 ];
+
+const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
+const isApprovalRole = (role) => APPROVAL_ROLES.includes(String(role || '').toLowerCase());
+const approvalMenuHidden = (role) => !isApprovalRole(role);
 
 const MAKS_PERCOBAAN = 3;
 
@@ -232,6 +236,7 @@ function AppAbsensiInner() {
   const [view, setView] = useState('login'); 
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [], sheetImport: [] });
   const [editItem, setEditItem] = useState(null);
+  const [approvalNotice, setApprovalNotice] = useState(null);
   const logoutTimerRef = useRef(null);
   // Versi frontend dibuat oleh `npm run update:prepare` dari
   // updates/frontend/releases. Jangan menulis angka versi langsung di sini.
@@ -288,6 +293,7 @@ const performUpdate = () => { localStorage.clear(); sessionStorage.clear(); if (
 const handleLogout = useCallback(() => { 
   setUser(null); 
   setMasterData({ menus: [], roles: [], divisions: [], shifts: [], sheetImport: [] });
+  setApprovalNotice(null);
   setView('login'); 
   // UBAH: localStorage menjadi sessionStorage
   sessionStorage.removeItem('app_user'); 
@@ -314,6 +320,7 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift'), sheetImport: rawMasterData.filter(m => m.kategori === 'SheetImport') };
   setMasterData(p);
   setUser(userData);
+  setApprovalNotice(null);
   setView('dashboard');
   // UBAH: localStorage menjadi sessionStorage
   sessionStorage.setItem('app_user', JSON.stringify(userData));
@@ -348,11 +355,52 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
   }
 };
 
+  useEffect(() => {
+    if (!user || !isApprovalRole(user.role)) {
+      setApprovalNotice(null);
+      return;
+    }
+
+    let batal = false;
+    const kunci = `approval_notice_seen_${user.id}`;
+    if (sessionStorage.getItem(kunci) === '1') return;
+
+    const muatNotifikasiApproval = async () => {
+      try {
+        const res = await fetchApi(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'get_approval_list',
+            userId: user.id,
+            divisi: user.divisi,
+            role: user.role,
+            lokasi: user.lokasi || 'All'
+          })
+        });
+        const data = await res.json();
+        if (batal || data.result !== 'success') return;
+        const total = Array.isArray(data.list) ? data.list.length : 0;
+        if (total > 0) {
+          setApprovalNotice({
+            total,
+            divisiCounts: data.divisiCounts || {},
+            nama: user.nama || 'Kepala Divisi'
+          });
+        }
+      } catch (e) {
+        // Notifikasi bukan jalur kritis; kalau gagal, dashboard tetap jalan.
+      }
+    };
+
+    muatNotifikasiApproval();
+    return () => { batal = true; };
+  }, [user]);
+
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
 return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
        punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
        hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
-    {view!=='login'&&view!=='dashboard'&&view!=='form'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='history'?'Riwayat':'Lainnya'}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+    {view!=='login'&&view!=='dashboard'&&view!=='form'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='history'?'Riwayat':'Lainnya'}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
@@ -432,11 +480,12 @@ const IkonCuaca = ({ kode, malam }) => {
 };
 
     // DASHBOARD SCREEN (CLICKABLE STATS)
-function Dashboard({ user, setUser, setView, handleLogout, masterData }) { const [time, setTime] = useState(new Date()); const [cuaca, setCuaca] = useState(null); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
+function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice }) { const [time, setTime] = useState(new Date()); const [cuaca, setCuaca] = useState(null); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
 // Gagal-ambil vs benar-benar-nol dulu tampil identik (semua angka 0 dan
 // periode '-'), jadi request yang gagal terbaca seperti "user belum punya
 // data". Dua state ini memisahkannya.
-const [statsError, setStatsError] = useState('');
+  const [statsError, setStatsError] = useState('');
+
 const [statsRetry, setStatsRetry] = useState(0);
 
 // STATISTIK YANG SUDAH IKUT DI RESPONS LOGIN (Agu 2026).
@@ -571,7 +620,7 @@ const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter
 const userRole = (user.role || '').toLowerCase();
 
     // PENENTUAN HAK AKSES (FLAGS)
-const canApprove = ['admin', 'hrd', 'manager'].includes(userRole);
+const canApprove = isApprovalRole(userRole);
 const canAccessPanel = userRole === 'admin' && userRole !== 'hrd';
 const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
 const isShiftWorker = userRole === 'karyawan_shift';
@@ -851,8 +900,13 @@ const Skeleton = ({ className }) => (
             </button>
 
             {canApprove && (
-                <button onClick={() => setView('approval')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+                <button onClick={() => setView('approval')} className="group relative flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
                     <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><UsersRound className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
+                    {approvalNotice && (
+                      <span className="absolute right-2 top-2.5 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
+                        {approvalNotice.total}
+                      </span>
+                    )}
                     <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Approval</span>
                 </button>
             )}
@@ -865,6 +919,52 @@ const Skeleton = ({ className }) => (
             )}
         </div>
       </div>
+
+      {approvalNotice && (
+        <div className="mb-5 overflow-hidden rounded-[22px] border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 shadow-[0_10px_30px_-24px_rgba(79,70,229,0.45)]">
+          <div className="flex items-start gap-3 px-4 py-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
+              <UsersRound className="h-5 w-5" strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-slate-900">Ada pengajuan menunggu approval</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                Halo {approvalNotice.nama}, terdapat <span className="font-semibold text-slate-800">{approvalNotice.total}</span> pengajuan yang bisa Anda setujui langsung di aplikasi.
+              </p>
+              {approvalNotice.divisiCounts && Object.keys(approvalNotice.divisiCounts).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {Object.entries(approvalNotice.divisiCounts).slice(0, 4).map(([divisi, total]) => (
+                    <span key={divisi} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-600 ring-1 ring-indigo-100">
+                      {divisi}: {total}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    sessionStorage.setItem(`approval_notice_seen_${user.id}`, '1');
+                    setApprovalNotice(null);
+                    setView('approval');
+                  }}
+                  className="rounded-xl bg-indigo-600 px-3.5 py-2 text-[11px] font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.98]"
+                >
+                  Buka approval
+                </button>
+                <button
+                  onClick={() => {
+                    sessionStorage.setItem(`approval_notice_seen_${user.id}`, '1');
+                    setApprovalNotice(null);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 active:scale-[0.98]"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- STATISTIK (CLICKABLE) --- */}
       <div className="mb-5">
@@ -1884,7 +1984,7 @@ function DashboardScreen({ user, setView, handleLogout }) {
   const menuItems = [
     { id: 'absen', label: 'Absen', icon: Camera, color: 'bg-blue-600', desc: 'Masuk/Pulang' },
     { id: 'history', label: 'Riwayat', icon: History, color: 'bg-emerald-600', desc: 'Cek Aktivitas' },
-    { id: 'approval', label: 'Approval', icon: CheckSquare, color: 'bg-indigo-600', desc: 'Acc Bawahan', hidden: !['admin', 'hrd', 'manager'].includes(user.role?.toLowerCase()) },
+    { id: 'approval', label: 'Approval', icon: CheckSquare, color: 'bg-indigo-600', desc: 'Acc Bawahan', hidden: approvalMenuHidden(user.role) },
     { id: 'users', label: 'Karyawan', icon: Users, color: 'bg-violet-600', desc: 'Data Pegawai', hidden: user.role !== 'admin' && user.role !== 'hrd' },
     { id: 'master', label: 'Master', icon: Database, color: 'bg-slate-600', desc: 'Setting Data', hidden: user.role !== 'admin' },
     { id: 'remarks', label: 'Laporan', icon: MessageSquare, color: 'bg-orange-600', desc: 'Koreksi/Isu' },
