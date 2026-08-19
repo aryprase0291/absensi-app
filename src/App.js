@@ -240,9 +240,9 @@ function AppAbsensiInner() {
   const [newVersion, setNewVersion] = useState('');
 
     //----LOGIKA CEK UPDATE----
-    // Login membawa versi server di respons yang sama. Request check_version
-    // hanya dipakai ketika sesi lama dipulihkan, sehingga aplikasi tetap bisa
-    // mendeteksi deployment baru tanpa menambah request pada login normal.
+    // Login membawa versi server di respons yang sama. check_version juga
+    // dijalankan saat link/shortcut mobile dibuka agar bundle lama terdeteksi
+    // sebelum user melanjutkan memakai aplikasi.
 const cekVersi = useCallback((versiServer) => {
   if (!versiServer || versiServer === CLIENT_VERSION) return;
   const angka = (v) => String(v).split('.').map((n) => Number(n) || 0);
@@ -259,11 +259,6 @@ const cekVersi = useCallback((versiServer) => {
   // Backend lama tetap kompatibel dengan bundle baru. Yang wajib di-update
   // hanya ketika server sudah memiliki kontrak/API yang lebih baru.
   if (!serverLebihBaru) return;
-  const sudahCoba = new URLSearchParams(window.location.search).get('v');
-  if (sudahCoba === versiServer) {
-    console.warn(`Versi tetap tidak cocok setelah reload (client v${CLIENT_VERSION}, server v${versiServer}). Tidak memblokir.`);
-    return;
-  }
   setNewVersion(versiServer);
   setUpdateAvailable(true);
 }, [CLIENT_VERSION]);
@@ -276,14 +271,14 @@ useEffect(() => {
     setUser(JSON.parse(u)); 
     if (m) setMasterData(JSON.parse(m)); 
     setView('dashboard'); 
-    // Sesi yang dipulihkan tidak melewati LoginScreen. Cek versi di sini agar
-    // user tetap menerima update backend/frontend terbaru saat membuka ulang
-    // tab atau aplikasi mobile.
-    fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })
-      .then((response) => response.json())
-      .then((data) => { if (data.result === 'success') cekVersi(data.version); })
-      .catch(() => { /* kegagalan cek versi tidak boleh menghalangi aplikasi */ });
   } 
+  // Selalu cek versi saat link aplikasi dibuka, termasuk saat belum ada sesi
+  // tersimpan. Ini penting untuk user mobile yang membuka shortcut/link lama.
+  // Jika server lebih baru, overlay update tidak bisa ditutup atau dilewati.
+  fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })
+    .then((response) => response.json())
+    .then((data) => { if (data.result === 'success') cekVersi(data.version); })
+    .catch(() => { /* jaringan gagal: jangan mengunci aplikasi tanpa bukti versi */ });
 }, [cekVersi]);
 
     //----FUNGSI EKSEKUSI UPDATE (MEMBERSIHKAN CACHE)----
