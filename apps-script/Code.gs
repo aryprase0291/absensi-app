@@ -13,7 +13,10 @@ const SHEET_MASTER_CUTI_NAME = "MASTER-CUTI";
 const SHEET_GEOFENCE = "Geofence";
 const SHEET_APPROVAL_TEAMS = "ApprovalTeams";
 const GEOFENCE_HEADERS = ["UserID", "Nama", "Wajib", "Nama Area", "Latitude", "Longitude", "RadiusMeter", "Aktif"];
-const APPROVAL_TEAM_HEADERS = ["KepalaID", "KepalaNama", "AnggotaID", "AnggotaNama", "Departemen", "UpdatedAt", "UpdatedBy"];
+// "Jabatan" ditambah BELAKANGAN sebagai kolom TERAKHIR (bukan disisip di
+// tengah) supaya sheet ApprovalTeams yang sudah berisi data lama tetap
+// terbaca benar — semua index kolom sebelumnya (0-6) tidak berubah.
+const APPROVAL_TEAM_HEADERS = ["KepalaID", "KepalaNama", "AnggotaID", "AnggotaNama", "Departemen", "UpdatedAt", "UpdatedBy", "Jabatan"];
 const APPROVAL_ROLE_VALUES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
 
 
@@ -164,6 +167,7 @@ function doPost(e) {
     if (action === 'get_geofence_config') return handleGetGeofenceConfig(data);
     if (action === 'save_geofence_config') return handleSaveGeofenceConfig(data);
     if (action === 'reset_password_user') return handleResetPasswordUser(data); // Reset password
+    if (action === 'set_approval_role') return handleSetApprovalRole(data); // Jadikan user sbg kepala divisi (approval)
     if (action === 'get_analysis_data') return handleGetAnalysisData(data);
     if (action === 'import_db_absen') return handleImportDbAbsen(data); // lihat ImportDbAbsen.gs
     if (action === 'delete_absensi') return handleDeleteAbsensi(data);
@@ -191,6 +195,7 @@ function doPost(e) {
     if (action === 'request_approval_email') return handleRequestApprovalEmail(data);
     if (action === 'process_approval') return handleProcessApprovalManual(data);
     if (action === 'get_approval_list') return handleGetApprovalList(data);
+    if (action === 'get_team_history') return handleGetTeamHistory(data);
     if (action == 'update_status_absen') return handleUpdateStatusAbsen(data);
 
     // --- FITUR REMARK (LAPORAN) ---
@@ -1999,8 +2004,19 @@ function _isApprovalRoleValue(role) {
 function _pastikanSheetApprovalTeams() {
   let sheet = SS.getSheetByName(SHEET_APPROVAL_TEAMS);
   if (!sheet) sheet = SS.insertSheet(SHEET_APPROVAL_TEAMS);
-  if (sheet.getLastRow() < 1 || sheet.getRange(1, 1, 1, APPROVAL_TEAM_HEADERS.length).getValues()[0].join('').trim() === '') {
+  const isKosong = sheet.getLastRow() < 1;
+  if (isKosong) {
     sheet.getRange(1, 1, 1, APPROVAL_TEAM_HEADERS.length).setValues([APPROVAL_TEAM_HEADERS]);
+    return sheet;
+  }
+  const headerSekarang = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0];
+  if (headerSekarang.join('').trim() === '') {
+    sheet.getRange(1, 1, 1, APPROVAL_TEAM_HEADERS.length).setValues([APPROVAL_TEAM_HEADERS]);
+  } else if (sheet.getLastColumn() < APPROVAL_TEAM_HEADERS.length) {
+    // Migrasi lunak: sheet lama (mis. sebelum kolom "Jabatan" ada) cuma
+    // ditambal kolom yang belum punya judul — data yang sudah ada tidak disentuh.
+    const lastCol = sheet.getLastColumn();
+    sheet.getRange(1, lastCol + 1, 1, APPROVAL_TEAM_HEADERS.length - lastCol).setValues([APPROVAL_TEAM_HEADERS.slice(lastCol)]);
   }
   return sheet;
 }
@@ -2018,7 +2034,8 @@ function _ambilApprovalTeamAssignments() {
       anggotaNama: row[3] || '',
       departemen: row[4] || '-',
       updatedAt: row[5] || '',
-      updatedBy: row[6] || ''
+      updatedBy: row[6] || '',
+      jabatan: row[7] || ''
     }));
 }
 
@@ -2069,6 +2086,9 @@ function handleSaveApprovalTeamConfig(data) {
 
   const kepalaId = String(data.kepalaId || '').trim();
   const departemen = String(data.departemen || '').trim();
+  // Jabatan murni label tampilan (mis. "Kepala Depo Kumai") — TIDAK dipakai
+  // untuk pengecekan hak akses di manapun, cuma disimpan & ditampilkan.
+  const jabatan = String(data.jabatan || '').trim();
   const memberIds = Array.isArray(data.memberIds)
     ? [...new Set(data.memberIds.map(id => String(id || '').trim()).filter(Boolean))]
     : [];
@@ -2103,7 +2123,7 @@ function handleSaveApprovalTeamConfig(data) {
     const now = new Date();
     const values = cleanMemberIds.map(memberId => {
       const member = userMap[memberId];
-      return [kepalaId, kepala.nama, memberId, member.nama, departemen, now, data._auth ? data._auth.u : 'admin'];
+      return [kepalaId, kepala.nama, memberId, member.nama, departemen, now, data._auth ? data._auth.u : 'admin', jabatan];
     });
     sheet.getRange(sheet.getLastRow() + 1, 1, values.length, APPROVAL_TEAM_HEADERS.length).setValues(values);
   }
@@ -2221,6 +2241,114 @@ function handleGetApprovalList(data) {
   list.reverse();
   
   return responseJSON({ result: 'success', list: list, divisiCounts: divisiCounts });
+}
+
+// Riwayat SEMUA pengajuan tim (bukan cuma yang Pending) untuk approver —
+// pakai eligibility yang sama persis dengan handleGetApprovalList (mapping
+// ApprovalTeams kalau ada, fallback ke kesamaan divisi), tapi tidak dibatasi
+// status:'Pending' saja. Sengaja BUKAN memakai data.canViewAll (itu dikunci
+// admin/hrd saja di Auth.gs) — approver hanya boleh melihat tim mereka sendiri.
+const TEAM_HISTORY_MAX_ROWS = 500;
+
+function handleGetTeamHistory(data) {
+  const role = data.role ? String(data.role).toLowerCase() : '';
+  const adminLokasi = data.lokasi;
+  const isApprovalRole = _isApprovalRoleValue(role);
+  if (!isApprovalRole) { return responseJSON({ result: 'success', list: [], truncated: false }); }
+
+  const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
+  const rowsAbsen = sheetAbsensi.getDataRange().getValues();
+  const sheetUsers = SS.getSheetByName(SHEET_USERS);
+  const rowsUsers = sheetUsers.getDataRange().getValues();
+  const userMap = {};
+  const teamMemberMap = (role === 'admin' || role === 'hrd') ? {} : _approvalMemberMapForKepala(data.userId);
+  const hasTeamMapping = Object.keys(teamMemberMap).length > 0;
+
+  for (let u = 1; u < rowsUsers.length; u++) {
+    const uId = String(rowsUsers[u][0]);
+    userMap[uId] = { nama: rowsUsers[u][3], divisi: rowsUsers[u][4], lokasi: rowsUsers[u][13] || '' };
+  }
+
+  // Default ke periode absen aktif (sama seperti tab Riwayat pribadi) supaya
+  // daftar tidak menumpuk seluruh histori sejak awal — kalau admin/approval
+  // suatu saat butuh rentang lain, tinggal kirim filterStart/filterEnd.
+  const periodeAktif = getPeriodeAbsenAktif_();
+  const periodeFilter = {
+    mulai: /^\d{4}-\d{2}-\d{2}$/.test(String(data.filterStart || '')) ? String(data.filterStart) : periodeAktif.mulai,
+    selesai: /^\d{4}-\d{2}-\d{2}$/.test(String(data.filterEnd || '')) ? String(data.filterEnd) : periodeAktif.selesai
+  };
+  if (periodeFilter.mulai > periodeFilter.selesai) {
+    const sementara = periodeFilter.mulai;
+    periodeFilter.mulai = periodeFilter.selesai;
+    periodeFilter.selesai = sementara;
+  }
+
+  const list = [];
+  let truncated = false;
+  for (let i = rowsAbsen.length - 1; i >= 1; i--) {
+    const row = rowsAbsen[i];
+    const tipe = row[4];
+    if (tipe === 'Hadir' || tipe === 'Pulang') continue;
+
+    const userIdPemohon = String(row[2]);
+    const dataPemohon = userMap[userIdPemohon];
+    if (!dataPemohon || !dataPemohon.lokasi) continue;
+
+    let isEligible = false;
+    const isLokasiMatch = (adminLokasi === 'All') || (adminLokasi === dataPemohon.lokasi);
+    if (isLokasiMatch) {
+      if (role === 'admin' || role === 'hrd') isEligible = true;
+      else if (hasTeamMapping) isEligible = !!teamMemberMap[userIdPemohon];
+      else isEligible = (dataPemohon.divisi === data.divisi);
+    }
+    if (userIdPemohon === String(data.userId)) isEligible = false;
+    if (!isEligible) continue;
+
+    const tanggalMulai = formatDateYMD_Strict(row[8] && row[8] !== '-' ? row[8] : row[1]);
+    const tanggalSelesai = formatDateYMD_Strict(row[9] && row[9] !== '-' ? row[9] : row[1]);
+    if (!tanggalMulai || !tanggalSelesai || tanggalSelesai < periodeFilter.mulai || tanggalMulai > periodeFilter.selesai) continue;
+
+    if (list.length >= TEAM_HISTORY_MAX_ROWS) { truncated = true; break; }
+
+    const approvalAssignment = teamMemberMap[userIdPemohon];
+    const displayDivisi = approvalAssignment ? approvalAssignment.departemen : (dataPemohon.divisi || '-');
+
+    list.push({
+      uuid: row[0],
+      nama: dataPemohon.nama,
+      divisi: displayDivisi,
+      lokasi: dataPemohon.lokasi || '-',
+      tipe: tipe,
+      waktu: row[1],
+      tglMulai: row[8],
+      tglSelesai: row[9],
+      jamMulai: row[10],
+      jamSelesai: row[11],
+      catatan: row[6],
+      foto: row[7] || '',
+      lampiran: row[15] || '',
+      status: row[12] || 'Pending',
+      approver: row[13] || '-',
+      approvalTime: row[14] || '-',
+      alasan: row[16] || '-'
+    });
+  }
+
+  // Urutkan berdasarkan nama (A-Z) sesuai permintaan, lalu tanggal mulai
+  // paling baru dulu untuk pengajuan-pengajuan milik nama yang sama.
+  list.sort((a, b) => {
+    const namaA = String(a.nama || '').toLowerCase();
+    const namaB = String(b.nama || '').toLowerCase();
+    if (namaA < namaB) return -1;
+    if (namaA > namaB) return 1;
+    const tglA = formatDateYMD_Strict(a.tglMulai && a.tglMulai !== '-' ? a.tglMulai : a.waktu) || '';
+    const tglB = formatDateYMD_Strict(b.tglMulai && b.tglMulai !== '-' ? b.tglMulai : b.waktu) || '';
+    if (tglA > tglB) return -1;
+    if (tglA < tglB) return 1;
+    return 0;
+  });
+
+  return responseJSON({ result: 'success', list: list, truncated: truncated, period: periodeFilter });
 }
 
 function _bolehApproveRowManual(row, data, rowsUsers) {
@@ -3043,6 +3171,44 @@ function handleResetPasswordUser(data) {
       // Set Password (Kolom C / Index 2) menjadi "123"
       sheet.getRange(i + 1, 3).setValue("123"); 
       return responseJSON({ result: 'success', message: `Password untuk ${rows[i][3]} berhasil direset menjadi "123"` });
+    }
+  }
+
+  return responseJSON({ result: 'error', message: 'User tidak ditemukan.' });
+}
+
+// Role yang boleh dipakai admin untuk menjadikan seorang user sebagai kepala
+// divisi/approval lewat layar Tim Approval. Sengaja tidak termasuk admin/hrd —
+// dua role itu sudah otomatis melihat semua pengajuan dan diatur di tempat lain.
+const APPROVAL_HEAD_ROLE_VALUES = ['manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
+
+function handleSetApprovalRole(data) {
+  const role = data.roleRequester ? String(data.roleRequester).toLowerCase() : '';
+  if (role !== 'admin') {
+    return responseJSON({ result: 'error', message: 'Hanya Admin yang boleh mengubah role approval.' });
+  }
+
+  const targetUuid = String(data.targetUuid || '').trim();
+  // PENTING: pakai `data.newRole`, BUKAN `data.role` — authorizeRequest() di
+  // Auth.gs sengaja menimpa `data.role`/`data.roleRequester` dengan role
+  // pemohon yang terverifikasi dari token (supaya klien tidak bisa memalsukan
+  // role saat request). Kalau field ini dipakai untuk "role baru yang mau
+  // di-assign", nilainya akan selalu ketiban role admin yang sedang login.
+  const newRole = String(data.newRole || '').trim().toLowerCase();
+  if (!targetUuid) return responseJSON({ result: 'error', message: 'Pilih user terlebih dahulu.' });
+  if (APPROVAL_HEAD_ROLE_VALUES.indexOf(newRole) === -1) {
+    return responseJSON({ result: 'error', message: 'Role tidak valid untuk kepala divisi.' });
+  }
+
+  const sheet = SS.getSheetByName(SHEET_USERS);
+  const rows = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < rows.length; i++) {
+    // Cek jika UUID cocok (Kolom A / Index 0)
+    if (String(rows[i][0]) === targetUuid) {
+      // Set Role (Kolom F / Index 5)
+      sheet.getRange(i + 1, 6).setValue(newRole);
+      return responseJSON({ result: 'success', message: `${rows[i][3]} sekarang berperan sebagai ${newRole}.` });
     }
   }
 

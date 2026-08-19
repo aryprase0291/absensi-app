@@ -38,13 +38,17 @@ import ImportNotifier from './components/ImportNotifier';
 const ACTION_AMAN_DIULANG = [
   'ping', 'check_version', 'login', 'get_latest_announcement',
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
-  'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config',
+  'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config', 'get_team_history',
   'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period'
 ];
 
 const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
 const isApprovalRole = (role) => APPROVAL_ROLES.includes(String(role || '').toLowerCase());
 const approvalMenuHidden = (role) => !isApprovalRole(role);
+// Subset APPROVAL_ROLES yang boleh dijadikan admin sebagai "kepala divisi baru"
+// lewat layar Tim Approval (admin & hrd tidak termasuk — sudah diatur di tempat lain).
+const APPROVAL_HEAD_ROLES = ['manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
+const ROLE_LABEL_FALLBACK = { manager: 'Manager', kepala: 'Kepala', kepala_divisi: 'Kepala Divisi', supervisor: 'Supervisor', spv: 'SPV', pimpinan: 'Pimpinan' };
 
 const MAKS_PERCOBAAN = 3;
 
@@ -400,7 +404,7 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
 return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
        punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
        hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
-    {view!=='login'&&view!=='dashboard'&&view!=='form'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='history'?'Riwayat':'Lainnya'}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+    {view!=='login'&&view!=='dashboard'&&view!=='form'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='history'?'Riwayat':'Lainnya'}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
@@ -3792,6 +3796,18 @@ function ApprovalScreen({ user, setView }) {
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState('All');
 
+  // Tab kedua: riwayat SEMUA pengajuan tim (bukan cuma yang Pending), supaya
+  // approver bisa lihat tipe form apa saja yang sudah diajukan timnya lengkap
+  // dengan keterangan/alasan, tanggal, dan lampiran.
+  const [activeApprovalTab, setActiveApprovalTab] = useState('pending');
+  const [historyList, setHistoryList] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyStatusFilter, setHistoryStatusFilter] = useState('All');
+  const [historyTruncated, setHistoryTruncated] = useState(false);
+  const [historyPeriod, setHistoryPeriod] = useState(null);
+  const [expandedHistoryUuid, setExpandedHistoryUuid] = useState(null);
+
   // --- LOGIC FETCH (Sama seperti sebelumnya) ---
   const fetchApprovalList = useCallback(async () => {
     setLoading(true);
@@ -3812,6 +3828,33 @@ function ApprovalScreen({ user, setView }) {
   }, [user.id, user.divisi, user.role, user.lokasi]);
 
   useEffect(() => { fetchApprovalList(); }, [fetchApprovalList]);
+
+  const fetchTeamHistory = useCallback(async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'get_team_history',
+          userId: user.id,
+          divisi: user.divisi,
+          role: user.role,
+          lokasi: user.lokasi || 'All'
+        })
+      });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setHistoryList(data.list || []);
+        setHistoryTruncated(!!data.truncated);
+        setHistoryPeriod(data.period || null);
+        setHistoryLoaded(true);
+      } else alert(data.message || 'Gagal memuat riwayat tim');
+    } catch (e) { alert('Gagal memuat riwayat tim'); } finally { setLoadingHistory(false); }
+  }, [user.id, user.divisi, user.role, user.lokasi]);
+
+  useEffect(() => {
+    if (activeApprovalTab === 'riwayat' && !historyLoaded) fetchTeamHistory();
+  }, [activeApprovalTab, historyLoaded, fetchTeamHistory]);
 
   // --- LOGIC APPROVE/REJECT ---
 const handleDecision = async (uuid, decision, namaUser) => {
@@ -3854,9 +3897,11 @@ const handleDecision = async (uuid, decision, namaUser) => {
             }) 
         }).then(r => r.json());
         
-        if (res.result === 'success') { 
+        if (res.result === 'success') {
             alert(res.message);
-            // Tidak perlu fetch ulang jika sukses, karena data sudah dihapus dari layar (Optimistic UI)
+            // Tidak perlu fetch ulang jika sukses, karena data sudah dihapus dari layar (Optimistic UI).
+            // Tandai riwayat tim sebagai basi supaya di-refetch saat tab Riwayat dibuka lagi.
+            setHistoryLoaded(false);
         } else {
             // Jika Gagal, kembalikan data (Revert)
             alert(res.message);
@@ -3876,8 +3921,14 @@ const handleDecision = async (uuid, decision, namaUser) => {
     } catch (e) { return dateString; } 
   };
 
-  const uniqueTypes = ['All', ...new Set(list.map(item => item.tipe))];
-  const filteredList = list.filter(item => filterType === 'All' || item.tipe === filterType);
+  const currentList = activeApprovalTab === 'riwayat' ? historyList : list;
+  const uniqueTypes = ['All', ...new Set(currentList.map(item => item.tipe))];
+  const statusFilteredHistory = activeApprovalTab === 'riwayat'
+    ? historyList.filter(item => historyStatusFilter === 'All' || item.status === historyStatusFilter)
+    : historyList;
+  const filteredList = activeApprovalTab === 'riwayat'
+    ? statusFilteredHistory.filter(item => filterType === 'All' || item.tipe === filterType)
+    : list.filter(item => filterType === 'All' || item.tipe === filterType);
 
   // --- COLORS HELPER ---
   const getTypeColor = (tipe) => {
@@ -3890,58 +3941,192 @@ const handleDecision = async (uuid, decision, namaUser) => {
       }
   };
 
+  const getStatusColor = (status) => {
+      switch (status) {
+          case 'Approved': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+          case 'Verified': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+          case 'Rejected': return 'bg-rose-100 text-rose-700 border-rose-200';
+          case 'Pending': return 'bg-amber-100 text-amber-700 border-amber-200';
+          default: return 'bg-gray-100 text-gray-700 border-gray-200';
+      }
+  };
+
   return (
       <div className="p-4 h-full overflow-y-auto pb-24 bg-gray-50/50">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-4">
           <div>
               <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Approval</h2>
-              <p className="text-[10px] text-slate-500 font-medium">Menunggu persetujuan HRD</p>
+              <p className="text-[10px] text-slate-500 font-medium">{activeApprovalTab === 'pending' ? 'Menunggu persetujuan HRD' : 'Riwayat semua pengajuan tim'}</p>
           </div>
           <BackButton onClick={() => setView('dashboard')} />
         </div>
-  
+
+        {/* --- TAB PENDING / RIWAYAT TIM --- */}
+        <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl mb-4">
+            <button
+                onClick={() => setActiveApprovalTab('pending')}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${activeApprovalTab === 'pending' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+            >
+                Pending
+            </button>
+            <button
+                onClick={() => setActiveApprovalTab('riwayat')}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${activeApprovalTab === 'riwayat' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+            >
+                Riwayat Tim
+            </button>
+        </div>
+
         {/* --- FILTER SECTION --- */}
-        <div className="flex justify-between items-center mb-5 sticky top-0 bg-gray-50/95 py-2 z-10 backdrop-blur-sm">
+        <div className="flex flex-wrap justify-between items-center gap-2 mb-5 sticky top-0 bg-gray-50/95 py-2 z-10 backdrop-blur-sm">
             <div className="flex items-center gap-2">
                  <span className="bg-slate-800 text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm shadow-slate-300">
-                    {filteredList.length} Pending
+                    {filteredList.length} {activeApprovalTab === 'pending' ? 'Pending' : 'Pengajuan'}
                  </span>
             </div>
-           
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
-                <Filter className="w-3.5 h-3.5 text-slate-400" />
-                <select 
-                    value={filterType} 
-                    onChange={(e) => setFilterType(e.target.value)} 
-                    className="text-xs bg-transparent border-none outline-none font-bold text-slate-600 cursor-pointer"
-                >
-                    <option value="All">Semua Tipe</option>
-                    {uniqueTypes.filter(t => t !== 'All').map((type, idx) => (
-                       <option key={idx} value={type}>{type}</option>
-                    ))}
-                </select>
+
+            <div className="flex items-center gap-2">
+                {activeApprovalTab === 'riwayat' && (
+                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
+                        <select
+                            value={historyStatusFilter}
+                            onChange={(e) => setHistoryStatusFilter(e.target.value)}
+                            className="text-xs bg-transparent border-none outline-none font-bold text-slate-600 cursor-pointer"
+                        >
+                            <option value="All">Semua Status</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Rejected">Rejected</option>
+                            <option value="Verified">Verified</option>
+                        </select>
+                    </div>
+                )}
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-200">
+                    <Filter className="w-3.5 h-3.5 text-slate-400" />
+                    <select
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value)}
+                        className="text-xs bg-transparent border-none outline-none font-bold text-slate-600 cursor-pointer"
+                    >
+                        <option value="All">Semua Tipe</option>
+                        {uniqueTypes.filter(t => t !== 'All').map((type, idx) => (
+                           <option key={idx} value={type}>{type}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
         </div>
-  
-        {loading ? (
+
+        {activeApprovalTab === 'riwayat' && historyPeriod && (
+            <p className="text-[10px] text-slate-400 font-medium mb-2 px-1">
+                Periode aktif: {formatDateIndo(historyPeriod.mulai)} – {formatDateIndo(historyPeriod.selesai)}
+            </p>
+        )}
+
+        {activeApprovalTab === 'riwayat' && historyTruncated && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                Menampilkan {historyList.length} pengajuan terbaru saja — riwayat lebih lama dari tim ini tidak ikut ditampilkan.
+            </div>
+        )}
+
+        {(activeApprovalTab === 'pending' ? loading : loadingHistory) ? (
             <div className="flex flex-col items-center justify-center py-20">
                 <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mb-2"/>
-                <span className="text-xs font-bold text-slate-400">Memuat Pengajuan...</span>
+                <span className="text-xs font-bold text-slate-400">Memuat {activeApprovalTab === 'pending' ? 'Pengajuan' : 'Riwayat'}...</span>
             </div>
+        ) : filteredList.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
+                 <CheckCircle className="w-12 h-12 text-gray-200 mx-auto mb-2" />
+                 <p className="text-slate-400 font-bold text-sm">{activeApprovalTab === 'pending' ? 'Semua beres!' : 'Belum ada riwayat'}</p>
+                 <p className="text-[10px] text-slate-300">{activeApprovalTab === 'pending' ? 'Tidak ada pengajuan yang perlu diproses.' : 'Tidak ada pengajuan tim pada periode aktif ini.'}</p>
+            </div>
+        ) : activeApprovalTab === 'riwayat' ? (
+          /* --- TAMPILAN TABEL (RINGKAS, MIRIP EXCEL) UNTUK RIWAYAT TIM --- */
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Nama</th>
+                    <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Departemen</th>
+                    <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Tipe</th>
+                    <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Periode</th>
+                    <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Status</th>
+                    <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap">Approver</th>
+                    <th className="px-2 py-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredList.map((item, idx) => {
+                    const isOpen = expandedHistoryUuid === item.uuid;
+                    const adaLampiran = (item.foto && item.foto.length > 10 && item.foto !== 'Error Upload') || (item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-');
+                    return (
+                      <React.Fragment key={item.uuid || idx}>
+                        <tr
+                          onClick={() => setExpandedHistoryUuid(isOpen ? null : item.uuid)}
+                          className={`cursor-pointer hover:bg-slate-50 transition-colors ${isOpen ? 'bg-indigo-50/60' : ''}`}
+                        >
+                          <td className="px-3 py-2 text-xs font-bold text-slate-800 whitespace-nowrap">{item.nama}</td>
+                          <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">{item.divisi}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getTypeColor(item.tipe)}`}>{item.tipe}</span>
+                          </td>
+                          <td className="px-3 py-2 text-[11px] text-slate-600 whitespace-nowrap">
+                            {item.tglMulai && item.tglMulai !== '-' ? `${formatDateIndo(item.tglMulai)}${item.tglSelesai && item.tglSelesai !== item.tglMulai ? ` – ${formatDateIndo(item.tglSelesai)}` : ''}` : formatDateIndo(item.waktu)}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getStatusColor(item.status)}`}>{item.status}</span>
+                          </td>
+                          <td className="px-3 py-2 text-[11px] text-slate-500 whitespace-nowrap">{item.status !== 'Pending' ? (item.approver || '-') : '-'}</td>
+                          <td className="px-2 py-2 text-center">
+                            <ChevronDown className={`w-3.5 h-3.5 inline transition-transform ${isOpen ? 'rotate-180 text-indigo-500' : 'text-slate-300'}`} />
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr className="bg-slate-50/70">
+                            <td colSpan={7} className="px-4 py-3">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Keterangan / Alasan</p>
+                              <p className="text-xs text-slate-600 italic mb-2 leading-relaxed">"{item.catatan || '-'}"</p>
+
+                              {item.status !== 'Pending' && (
+                                <p className="text-[11px] text-slate-500 mb-2">
+                                  {item.status === 'Rejected' ? 'Ditolak' : 'Disetujui'} oleh <span className="font-bold text-slate-700">{item.approver || '-'}</span>{item.approvalTime && item.approvalTime !== '-' ? ` · ${formatDateIndo(item.approvalTime)}` : ''}
+                                </p>
+                              )}
+                              {item.status === 'Rejected' && item.alasan && item.alasan !== '-' && (
+                                <p className="text-xs text-rose-600 italic mb-2">"{item.alasan}"</p>
+                              )}
+
+                              {adaLampiran && (
+                                <div className="flex gap-2 mt-1">
+                                  {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
+                                    <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-[10px] font-bold border border-blue-200 hover:bg-blue-100 transition shadow-sm no-underline">
+                                        <Camera className="w-3 h-3"/> Foto Bukti
+                                    </a>
+                                  )}
+                                  {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && (
+                                    <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg text-[10px] font-bold border border-amber-200 hover:bg-amber-100 transition shadow-sm no-underline">
+                                        <FileIcon className="w-3 h-3"/> Dokumen
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : (
           <div className="space-y-4">
-            {filteredList.length === 0 && (
-                <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
-                     <CheckCircle className="w-12 h-12 text-gray-200 mx-auto mb-2" />
-                     <p className="text-slate-400 font-bold text-sm">Semua beres!</p>
-                     <p className="text-[10px] text-slate-300">Tidak ada pengajuan yang perlu diproses.</p>
-                </div>
-            )}
-            
-            {/* --- CARD DESIGN BARU --- */}
+            {/* --- CARD DESIGN BARU (TAB PENDING) --- */}
             {filteredList.map((item, idx) => (
               <div key={idx} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300 group">
-                
+
                 {/* HEADER STRIP */}
                 <div className="h-1.5 w-full bg-gradient-to-r from-blue-500 to-indigo-600"></div>
 
@@ -3961,9 +4146,11 @@ const handleDecision = async (uuid, decision, namaUser) => {
                                 </div>
                             </div>
                         </div>
-                        <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full border shadow-sm ${getTypeColor(item.tipe)}`}>
-                              {item.tipe.toUpperCase()}
-                        </span>
+                        <div className="flex flex-col items-end gap-1.5">
+                            <span className={`text-[10px] font-extrabold px-3 py-1 rounded-full border shadow-sm ${getTypeColor(item.tipe)}`}>
+                                  {item.tipe.toUpperCase()}
+                            </span>
+                        </div>
                     </div>
 
                     {/* MIDDLE: INFO GRID */}
@@ -3987,7 +4174,7 @@ const handleDecision = async (uuid, decision, namaUser) => {
                              </div>
                         </div>
                     </div>
-                    
+
                     {/* ATTACHMENTS (Jika Ada) */}
                     <div className="flex gap-2 mb-4">
                         {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && (
@@ -4002,16 +4189,16 @@ const handleDecision = async (uuid, decision, namaUser) => {
                         )}
                     </div>
 
-                    {/* ACTION BUTTONS (FIXED BOTTOM STYLE) */}
+                    {/* ACTION BUTTONS */}
                     <div className="grid grid-cols-2 gap-3">
-                        <button 
-                            onClick={() => handleDecision(item.uuid, 'reject', item.nama)} 
+                        <button
+                            onClick={() => handleDecision(item.uuid, 'reject', item.nama)}
                             className="w-full py-2.5 rounded-xl border border-rose-200 text-rose-600 font-bold text-xs hover:bg-rose-50 active:scale-[0.98] transition flex items-center justify-center gap-2 group/btn"
                         >
                            <X className="w-4 h-4 group-hover/btn:scale-110 transition-transform"/> Tolak
                         </button>
-                        <button 
-                            onClick={() => handleDecision(item.uuid, 'approve', item.nama)} 
+                        <button
+                            onClick={() => handleDecision(item.uuid, 'approve', item.nama)}
                             className="w-full py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 shadow-md shadow-indigo-200 active:scale-[0.98] transition flex items-center justify-center gap-2 group/btn"
                         >
                            <CheckCircle className="w-4 h-4 group-hover/btn:scale-110 transition-transform"/> Setujui
@@ -4819,7 +5006,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 }
 
 // --- 6. ADMIN PANEL (FIX: MENAMBAHKAN MENU ANALISA DATA) ---
-function AdminPanel({ user, setView, masterData }) {
+function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [activeTab, setActiveTab] = useState('user'); 
   const [loading, setLoading] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
@@ -4837,6 +5024,22 @@ function AdminPanel({ user, setView, masterData }) {
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [loadingPeriod, setLoadingPeriod] = useState(false);
+
+  // State Tim Approval (mapping kepala divisi -> anggota tim)
+  const [approvalTeamUsers, setApprovalTeamUsers] = useState([]);
+  const [approvalTeamAssignments, setApprovalTeamAssignments] = useState([]);
+  const [loadingApprovalTeam, setLoadingApprovalTeam] = useState(false);
+  const [atKepalaId, setAtKepalaId] = useState('');
+  const [atDepartemen, setAtDepartemen] = useState('');
+  const [atMemberIds, setAtMemberIds] = useState([]);
+  const [atSearch, setAtSearch] = useState('');
+  const [atKepalaSearch, setAtKepalaSearch] = useState('');
+  const [atNewRole, setAtNewRole] = useState('kepala_divisi');
+  const [atJabatan, setAtJabatan] = useState('');
+  const [savingApprovalRole, setSavingApprovalRole] = useState(false);
+  const [showNewDepartemenInput, setShowNewDepartemenInput] = useState(false);
+  const [newDepartemenName, setNewDepartemenName] = useState('');
+  const [addingDepartemen, setAddingDepartemen] = useState(false);
 
   // State Lainnya
   const [newsInput, setNewsInput] = useState('');
@@ -4868,6 +5071,7 @@ function AdminPanel({ user, setView, masterData }) {
     if (activeTab === 'master_user') fetchAdminUserList();
     if (activeTab === 'geofence') fetchGeofenceConfig();
     if (activeTab === 'period') fetchAbsencePeriod();
+    if (activeTab === 'approval_team') fetchApprovalTeamConfig();
   }, [activeTab]);
 
   const fetchAbsencePeriod = async () => {
@@ -4881,6 +5085,140 @@ function AdminPanel({ user, setView, masterData }) {
       } else alert(data.message || 'Gagal memuat periode absensi.');
     } catch (e) { alert('Gagal koneksi saat memuat periode absensi.'); }
     finally { setLoadingPeriod(false); }
+  };
+
+  // Logic Tim Approval — mapping kepala divisi ke anggota tim yang berhak
+  // approve pengajuannya. Kalau kepala belum punya mapping di sini, backend
+  // tetap fallback ke pencocokan divisi lama (lihat handleGetApprovalList).
+  const fetchApprovalTeamConfig = async () => {
+    setLoadingApprovalTeam(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_approval_team_config', roleRequester: user.role }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setApprovalTeamUsers(data.users || []);
+        setApprovalTeamAssignments(data.assignments || []);
+      } else alert(data.message || 'Gagal memuat tim approval.');
+    } catch (e) { alert('Gagal koneksi saat memuat tim approval.'); }
+    finally { setLoadingApprovalTeam(false); }
+  };
+
+  const handlePilihKepalaTeam = (id) => {
+    setAtKepalaId(id);
+    setAtDepartemen('');
+    setAtMemberIds([]);
+    setAtSearch('');
+    setAtJabatan('');
+    setShowNewDepartemenInput(false);
+    setNewDepartemenName('');
+  };
+
+  const handleEditGrupApproval = (departemen, anggotaRows) => {
+    setAtDepartemen(departemen);
+    setAtMemberIds(anggotaRows.map(a => a.anggotaId));
+    setAtJabatan((anggotaRows[0] && anggotaRows[0].jabatan) || '');
+  };
+
+  const handleToggleAnggotaTeam = (id) => {
+    setAtMemberIds(prev => prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]);
+  };
+
+  const handleSaveApprovalTeam = async () => {
+    if (!atKepalaId) return alert('Pilih kepala divisi terlebih dahulu.');
+    if (!atDepartemen) return alert('Pilih departemen terlebih dahulu.');
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+        action: 'save_approval_team_config', roleRequester: user.role,
+        kepalaId: atKepalaId, departemen: atDepartemen, memberIds: atMemberIds, jabatan: atJabatan
+      }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        alert(data.message || 'Tim approval berhasil disimpan.');
+        setApprovalTeamAssignments(data.assignments || []);
+      } else alert(data.message || 'Gagal menyimpan tim approval.');
+    } catch (e) { alert('Gagal koneksi saat menyimpan tim approval.'); }
+    finally { setLoading(false); }
+  };
+
+  const handleHapusGrupApproval = async (departemen) => {
+    if (!window.confirm(`Hapus grup approval "${departemen}" untuk kepala ini?`)) return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+        action: 'save_approval_team_config', roleRequester: user.role,
+        kepalaId: atKepalaId, departemen: departemen, memberIds: []
+      }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setApprovalTeamAssignments(data.assignments || []);
+        if (atDepartemen === departemen) { setAtDepartemen(''); setAtMemberIds([]); }
+      } else alert(data.message || 'Gagal menghapus grup approval.');
+    } catch (e) { alert('Gagal koneksi saat menghapus grup approval.'); }
+    finally { setLoading(false); }
+  };
+
+  // Jadikan seorang user (yang rolenya belum "approval") sebagai kepala
+  // divisi, LANGSUNG sekalian simpan tim (departemen + anggota yang sudah
+  // dicentang + jabatan tampilan) dalam satu aksi — supaya admin tidak perlu
+  // dua langkah terpisah (ubah role, lalu buka form lagi untuk isi tim).
+  const handleJadikanKepalaDivisi = async () => {
+    if (!atKepalaId) return;
+    if (!atDepartemen) return alert('Pilih departemen yang akan dipimpin terlebih dahulu.');
+    setSavingApprovalRole(true);
+    try {
+      const resRole = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+        action: 'set_approval_role', roleRequester: user.role,
+        targetUuid: atKepalaId, newRole: String(atNewRole || '').trim().toLowerCase()
+      }) });
+      const dataRole = await resRole.json();
+      if (dataRole.result !== 'success') {
+        alert(dataRole.message || 'Gagal menjadikan user sebagai kepala divisi.');
+        return;
+      }
+
+      if (atMemberIds.length > 0) {
+        const resTeam = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+          action: 'save_approval_team_config', roleRequester: user.role,
+          kepalaId: atKepalaId, departemen: atDepartemen, memberIds: atMemberIds, jabatan: atJabatan
+        }) });
+        const dataTeam = await resTeam.json();
+        if (dataTeam.result !== 'success') {
+          alert('Role berhasil diubah, tapi tim gagal disimpan: ' + (dataTeam.message || 'error tidak diketahui'));
+        } else {
+          alert(`${dataTeam.message || 'Berhasil.'}`);
+        }
+      } else {
+        alert('Role berhasil diubah. Centang anggota tim di bawah lalu Simpan untuk melengkapi timnya.');
+      }
+      await fetchApprovalTeamConfig();
+    } catch (e) { alert('Gagal koneksi saat mengubah role.'); }
+    finally { setSavingApprovalRole(false); }
+  };
+
+  // Tambah departemen baru ke Master Data (kategori "Divisi") langsung dari
+  // kartu Tim Approval, tanpa admin harus pindah ke tab Master Data.
+  const handleTambahDepartemenBaru = async () => {
+    const nama = newDepartemenName.trim();
+    if (!nama) return;
+    setAddingDepartemen(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+        action: 'tambah_master', roleRequester: user.role, kategori: 'Divisi', value: nama, label: nama
+      }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        const sudahAda = (masterData.divisions || []).some(d => String(d.value).toLowerCase() === nama.toLowerCase());
+        const updatedDivisions = sudahAda ? masterData.divisions : [...(masterData.divisions || []), { kategori: 'Divisi', value: nama, label: nama }];
+        const updatedMasterData = { ...masterData, divisions: updatedDivisions };
+        if (typeof setMasterData === 'function') setMasterData(updatedMasterData);
+        try { sessionStorage.setItem('app_master_data', JSON.stringify(updatedMasterData)); } catch (e) { /* abaikan */ }
+        setAtDepartemen(nama);
+        setNewDepartemenName('');
+        setShowNewDepartemenInput(false);
+      } else alert(data.message || 'Gagal menambah departemen.');
+    } catch (e) { alert('Gagal koneksi saat menambah departemen.'); }
+    finally { setAddingDepartemen(false); }
   };
 
   const handleSaveAbsencePeriod = async (e) => {
@@ -4984,9 +5322,34 @@ function AdminPanel({ user, setView, masterData }) {
     } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
   };
 
-  const filteredUsers = adminUserList.filter(u => 
-    u.nama.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredUsers = adminUserList.filter(u =>
+    u.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
     String(u.username).toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Turunan data Tim Approval — kepala divisi boleh dipilih dari SEMUA user
+  // (bukan cuma yang rolenya sudah approval), karena admin bisa langsung
+  // menjadikan siapapun kepala divisi dari layar ini.
+  const approvalTeamKepalaOptions = approvalTeamUsers.filter(u =>
+    (u.nama || '').toLowerCase().includes(atKepalaSearch.toLowerCase())
+  );
+  const kepalaTeamTerpilih = approvalTeamUsers.find(u => String(u.uuid) === String(atKepalaId)) || null;
+  const kepalaSudahApproval = !!kepalaTeamTerpilih && isApprovalRole(kepalaTeamTerpilih.role);
+  // Sengaja TIDAK memakai masterData.roles di sini — value di Master Data itu
+  // bebas diisi admin (mis. label saja tanpa slug baku), jadi tidak terjamin
+  // cocok dengan value yang divalidasi backend. Daftar di bawah ini persis
+  // sama dengan APPROVAL_HEAD_ROLE_VALUES di Code.gs.
+  const approvalHeadRoleChoices = APPROVAL_HEAD_ROLES.map(v => ({ value: v, label: ROLE_LABEL_FALLBACK[v] || v }));
+  const grupApprovalUntukKepala = approvalTeamAssignments
+    .filter(a => String(a.kepalaId) === String(atKepalaId))
+    .reduce((acc, a) => {
+      if (!acc[a.departemen]) acc[a.departemen] = [];
+      acc[a.departemen].push(a);
+      return acc;
+    }, {});
+  const atAnggotaOptions = approvalTeamUsers.filter(u =>
+    String(u.uuid) !== String(atKepalaId) &&
+    (u.nama || '').toLowerCase().includes(atSearch.toLowerCase())
   );
 
   const switchTab = (tabName) => { setActiveTab(tabName); setIsMenuOpen(false); };
@@ -5004,6 +5367,7 @@ function AdminPanel({ user, setView, masterData }) {
           case 'news': return 'Broadcast Info HRD';
           case 'geofence': return 'Area Geofence Absen Online';
           case 'period': return 'Periode Absensi';
+          case 'approval_team': return 'Tim Approval';
           default: return 'Admin Panel';
       }
   };
@@ -5083,6 +5447,12 @@ function AdminPanel({ user, setView, masterData }) {
                                 <CalendarRange className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'period' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
                                 <span className="flex-1 leading-tight">Periode absensi</span>
                                 {activeTab === 'period' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+
+                            <button onClick={() => switchTab('approval_team')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'approval_team' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <UsersRound className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'approval_team' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Tim approval</span>
+                                {activeTab === 'approval_team' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
                             </button>
                         </>
                         )}
@@ -5348,6 +5718,204 @@ function AdminPanel({ user, setView, masterData }) {
               </>
             )}
           </form>
+        </div>
+      )}
+
+      {/* KONTEN TAB: TIM APPROVAL */}
+      {activeTab === 'approval_team' && user.role === 'admin' && (
+        <div className="animate-in fade-in duration-300 space-y-3">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-800">
+            Atur anggota tim yang boleh di-approve oleh tiap kepala divisi. Kalau kepala divisi belum
+            punya grup di sini, approval untuk bawahannya tetap jalan seperti biasa berdasarkan
+            kesamaan divisi — data lama tidak akan tiba-tiba putus.
+          </div>
+
+          {loadingApprovalTeam ? (
+            <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin" /></div>
+          ) : (
+            <>
+              <div className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3">
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Kepala divisi</label>
+                  <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">Pilih siapapun — kalau rolenya belum "approval", akan ada opsi untuk langsung menjadikannya kepala divisi di bawah.</p>
+                  <div className="relative mb-2">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} />
+                    <input type="text" placeholder="Cari nama user" value={atKepalaSearch} onChange={e => setAtKepalaSearch(e.target.value)} className={`${inputCls} pl-9`} />
+                  </div>
+                  <select className={inputCls} value={atKepalaId} onChange={e => handlePilihKepalaTeam(e.target.value)}>
+                    <option value="">Pilih kepala divisi…</option>
+                    {approvalTeamKepalaOptions.map(u => (
+                      <option key={u.uuid} value={u.uuid}>{u.nama} · {u.divisi || '-'} · {isApprovalRole(u.role) ? (u.role || '-') : 'belum approval'}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {kepalaTeamTerpilih && !kepalaSudahApproval && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-3">
+                    <p className="text-[12px] leading-relaxed text-amber-800">
+                      <span className="font-semibold">{kepalaTeamTerpilih.nama}</span> belum berperan sebagai approval
+                      (role saat ini: {kepalaTeamTerpilih.role || '-'}). Lengkapi departemen, jabatan, dan anggota tim di
+                      bawah — dia hanya akan bisa approve anggota tim yang dipilihkan untuknya di departemen ini, bukan
+                      pengajuan dari departemen lain.
+                    </p>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-medium text-amber-700">Departemen yang dipimpin</label>
+                        <button type="button" onClick={() => { setShowNewDepartemenInput(v => !v); setNewDepartemenName(''); }} className="text-[11px] font-medium text-amber-700 underline decoration-dotted">
+                          {showNewDepartemenInput ? 'Batal' : '+ Departemen baru'}
+                        </button>
+                      </div>
+                      {showNewDepartemenInput ? (
+                        <div className="flex gap-2">
+                          <input type="text" className={`${inputCls} bg-white`} placeholder="Nama departemen baru" value={newDepartemenName} onChange={e => setNewDepartemenName(e.target.value)} />
+                          <button type="button" onClick={handleTambahDepartemenBaru} disabled={addingDepartemen || !newDepartemenName.trim()} className="shrink-0 px-3 py-2.5 rounded-lg bg-amber-600 text-white text-[12px] font-medium hover:bg-amber-700 disabled:opacity-50 flex items-center gap-1.5">
+                            {addingDepartemen && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Tambah
+                          </button>
+                        </div>
+                      ) : (
+                        <select className={`${inputCls} bg-white`} value={atDepartemen} onChange={e => setAtDepartemen(e.target.value)}>
+                          <option value="">Pilih departemen…</option>
+                          {masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-medium text-amber-700 mb-1">Role approval (teknis)</label>
+                        <select className={`${inputCls} bg-white`} value={atNewRole} onChange={e => setAtNewRole(e.target.value)}>
+                          {approvalHeadRoleChoices.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-amber-700 mb-1">Jabatan (opsional, cuma tampilan)</label>
+                        <input type="text" className={`${inputCls} bg-white`} placeholder="mis. Kepala Depo Kumai" value={atJabatan} onChange={e => setAtJabatan(e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-amber-200 bg-white overflow-hidden">
+                      <div className="p-2.5 border-b border-amber-100">
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} />
+                          <input type="text" placeholder="Cari nama anggota tim" value={atSearch} onChange={e => setAtSearch(e.target.value)} className={`${inputCls} pl-9`} />
+                        </div>
+                      </div>
+                      <div className="flex items-baseline justify-between px-2.5 pt-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Anggota tim</p>
+                        <span className="text-[11px] text-slate-400 tabular-nums">{atMemberIds.length} dipilih</span>
+                      </div>
+                      <div className="max-h-56 overflow-y-auto px-2.5 py-1.5 space-y-0.5">
+                        {atAnggotaOptions.length === 0 && (
+                          <p className="py-6 text-center text-[12px] text-slate-400">Tidak ada user yang cocok.</p>
+                        )}
+                        {atAnggotaOptions.map(u => (
+                          <label key={u.uuid} className="flex items-center gap-2.5 py-1.5 text-[13px] text-slate-700 cursor-pointer">
+                            <input type="checkbox" checked={atMemberIds.includes(String(u.uuid))} onChange={() => handleToggleAnggotaTeam(String(u.uuid))} className="w-4 h-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
+                            <span className="flex-1 truncate">{u.nama}</span>
+                            <span className="text-[11px] text-slate-400 shrink-0">{u.divisi}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button type="button" onClick={handleJadikanKepalaDivisi} disabled={savingApprovalRole || !atDepartemen} className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-amber-600 text-white text-[13px] font-medium hover:bg-amber-700 disabled:opacity-50">
+                      {savingApprovalRole && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Jadikan kepala divisi{atMemberIds.length > 0 ? ` & simpan ${atMemberIds.length} anggota` : ''}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {atKepalaId && kepalaSudahApproval && (
+                <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+                  <div className="p-4 border-b border-slate-100">
+                    <p className="text-[13px] font-semibold text-slate-800">Grup approval untuk kepala ini</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Satu kepala bisa punya lebih dari satu grup/departemen.</p>
+                  </div>
+                  {Object.keys(grupApprovalUntukKepala).length === 0 && (
+                    <p className="px-4 py-6 text-center text-[12px] text-slate-400">Belum ada grup untuk kepala ini. Buat lewat form di bawah.</p>
+                  )}
+                  <div className="divide-y divide-slate-100">
+                    {Object.entries(grupApprovalUntukKepala).map(([departemen, anggotaRows]) => (
+                      <div key={departemen} className="flex items-center gap-3 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-medium text-slate-900 truncate">{departemen}</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            {anggotaRows.length} anggota{(anggotaRows[0] && anggotaRows[0].jabatan) ? ` · ${anggotaRows[0].jabatan}` : ''}
+                          </p>
+                        </div>
+                        <button type="button" onClick={() => handleEditGrupApproval(departemen, anggotaRows)} className="shrink-0 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-slate-600 border border-slate-200 hover:bg-slate-50">Edit</button>
+                        <button type="button" onClick={() => handleHapusGrupApproval(departemen)} disabled={loading} className="shrink-0 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-rose-600 border border-rose-200 hover:bg-rose-50 disabled:opacity-50">Hapus</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {atKepalaId && kepalaSudahApproval && (
+                <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+                  <div className="p-4 space-y-3 border-b border-slate-100">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[11px] font-medium text-slate-500">Departemen</label>
+                        <button type="button" onClick={() => { setShowNewDepartemenInput(v => !v); setNewDepartemenName(''); }} className="text-[11px] font-medium text-slate-500 underline decoration-dotted">
+                          {showNewDepartemenInput ? 'Batal' : '+ Departemen baru'}
+                        </button>
+                      </div>
+                      {showNewDepartemenInput ? (
+                        <div className="flex gap-2">
+                          <input type="text" className={inputCls} placeholder="Nama departemen baru" value={newDepartemenName} onChange={e => setNewDepartemenName(e.target.value)} />
+                          <button type="button" onClick={handleTambahDepartemenBaru} disabled={addingDepartemen || !newDepartemenName.trim()} className="shrink-0 px-3 py-2.5 rounded-lg bg-slate-900 text-white text-[12px] font-medium hover:bg-slate-800 disabled:opacity-50 flex items-center gap-1.5">
+                            {addingDepartemen && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                            Tambah
+                          </button>
+                        </div>
+                      ) : (
+                        <select className={inputCls} value={atDepartemen} onChange={e => setAtDepartemen(e.target.value)}>
+                          <option value="">Pilih departemen…</option>
+                          {masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Jabatan (opsional, cuma tampilan)</label>
+                      <input type="text" className={inputCls} placeholder="mis. Kepala Depo Kumai" value={atJabatan} onChange={e => setAtJabatan(e.target.value)} />
+                    </div>
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} />
+                      <input type="text" placeholder="Cari nama anggota" value={atSearch} onChange={e => setAtSearch(e.target.value)} className={`${inputCls} pl-9`} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-baseline justify-between px-4 pt-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Anggota tim</p>
+                    <span className="text-[11px] text-slate-400 tabular-nums">{atMemberIds.length} dipilih</span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto px-4 py-2 space-y-0.5">
+                    {atAnggotaOptions.length === 0 && (
+                      <p className="py-6 text-center text-[12px] text-slate-400">Tidak ada user yang cocok.</p>
+                    )}
+                    {atAnggotaOptions.map(u => (
+                      <label key={u.uuid} className="flex items-center gap-2.5 py-1.5 text-[13px] text-slate-700 cursor-pointer">
+                        <input type="checkbox" checked={atMemberIds.includes(String(u.uuid))} onChange={() => handleToggleAnggotaTeam(String(u.uuid))} className="w-4 h-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
+                        <span className="flex-1 truncate">{u.nama}</span>
+                        <span className="text-[11px] text-slate-400 shrink-0">{u.divisi}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="p-4 pt-3">
+                    <button type="button" onClick={handleSaveApprovalTeam} disabled={loading || !atDepartemen} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">
+                      {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {loading ? 'Menyimpan…' : 'Simpan grup approval'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
