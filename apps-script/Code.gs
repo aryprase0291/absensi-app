@@ -700,6 +700,69 @@ function handleSendRemark(data) {
 // sisanya dengan muatSemua:true.
 const REMARKS_BATAS_DEFAULT = 200;
 
+function angkaKuota_(value) {
+  const num = Number(value);
+  return isNaN(num) ? 0 : num;
+}
+
+function hitungSisaKuotaLaporan_() {
+  const hasil = {};
+  const sheetUsers = SS.getSheetByName(SHEET_USERS);
+  if (!sheetUsers) return hasil;
+
+  const rowsUsers = bacaSheet(sheetUsers, 9);
+  const petaCuti = typeof getPetaCutiCached === 'function' ? getPetaCutiCached() : {};
+
+  for (let i = 1; i < rowsUsers.length; i++) {
+    const userId = String(rowsUsers[i][0] || '').trim();
+    if (!userId) continue;
+
+    const noPayroll = String(rowsUsers[i][7] || '').trim();
+    const dataCuti = noPayroll ? petaCuti[noPayroll] : null;
+    const sisaCuti = dataCuti ? angkaKuota_(dataCuti.tersedia) : angkaKuota_(rowsUsers[i][8]);
+
+    hasil[userId] = {
+      ijinTerpakai: 0,
+      sisaIjin: 4,
+      sisaCuti: Math.max(0, sisaCuti)
+    };
+  }
+
+  const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
+  if (!sheetAbsensi) return hasil;
+
+  const rowsAbsensi = bacaSheet(sheetAbsensi, 17);
+  const periodeAktif = getPeriodeAbsenAktif_();
+  for (let i = 1; i < rowsAbsensi.length; i++) {
+    const row = rowsAbsensi[i];
+    const userId = String(row[2] || '').trim();
+    if (!userId) continue;
+    if (!hasil[userId]) hasil[userId] = { ijinTerpakai: 0, sisaIjin: 4, sisaCuti: 0 };
+
+    const tipe = String(row[4] || '').trim();
+    const status = String(row[12] || '').trim();
+    if (tipe !== 'Ijin' || status === 'Rejected') continue;
+
+    let mulai = formatDateYMD_Strict(row[8] && row[8] !== '-' ? row[8] : row[1]);
+    let selesai = formatDateYMD_Strict(row[9] && row[9] !== '-' ? row[9] : mulai);
+    if (mulai && selesai && mulai > selesai) {
+      const tmp = mulai;
+      mulai = selesai;
+      selesai = tmp;
+    }
+
+    if (intervalBertabrakan_(mulai, selesai, periodeAktif.mulai, periodeAktif.selesai)) {
+      hasil[userId].ijinTerpakai++;
+    }
+  }
+
+  Object.keys(hasil).forEach(function (userId) {
+    hasil[userId].sisaIjin = Math.max(0, 4 - hasil[userId].ijinTerpakai);
+  });
+
+  return hasil;
+}
+
 function handleGetRemarks(data) {
   const sheet = SS.getSheetByName(SHEET_REMARKS);
   if (!sheet) {
@@ -714,13 +777,15 @@ function handleGetRemarks(data) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // Kolom terjauh yang dibaca: index 11 (Tanggal Proses) -> 12 kolom.
-  const rows = bacaSheet(sheet, 12);
+  // Kolom terjauh yang dibaca: index 15 (Status Potong) -> 16 kolom.
+  // Sheet lama tetap aman: bacaSheet akan membaca kolom yang tersedia saja.
+  const rows = bacaSheet(sheet, 16);
   const list = [];
   const userRole = data.role ? String(data.role).toLowerCase() : '';
   const userId = String(data.userId);
   const muatSemua = data.muatSemua === true;
   const batas = muatSemua ? Infinity : REMARKS_BATAS_DEFAULT;
+  const sisaKuotaMap = hitungSisaKuotaLaporan_();
 
   let total = 0; // jumlah baris hak-akses user ini, sebelum dipotong batas
 
@@ -752,6 +817,7 @@ function handleGetRemarks(data) {
 
       list.push({
         uuid: row[0],
+        userId: rowUserId,
         waktu: row[1] instanceof Date ? Utilities.formatDate(row[1], Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss") : row[1],
         nama: row[3],
         divisi: row[4],
@@ -761,7 +827,14 @@ function handleGetRemarks(data) {
         lampiran: row[8],
         status: row[9] || 'Open',
         respon: row[10] || '',
-        waktuRespon: row[11] ? (row[11] instanceof Date ? Utilities.formatDate(row[11], Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss") : row[11]) : '-' 
+        waktuRespon: row[11] ? (row[11] instanceof Date ? Utilities.formatDate(row[11], Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss") : row[11]) : '-',
+        potongKuota: row[12] || 'none',
+        potongJumlah: row[13] || '',
+        potongAbsensiUuid: row[14] || '',
+        potongStatus: row[15] || '',
+        sisaIjin: sisaKuotaMap[rowUserId] ? sisaKuotaMap[rowUserId].sisaIjin : 0,
+        ijinTerpakai: sisaKuotaMap[rowUserId] ? sisaKuotaMap[rowUserId].ijinTerpakai : 4,
+        sisaCuti: sisaKuotaMap[rowUserId] ? sisaKuotaMap[rowUserId].sisaCuti : 0
       });
     }
   }
@@ -776,33 +849,295 @@ function handleGetRemarks(data) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+const REMARKS_COL_POTONG_KUOTA = 13;
+const REMARKS_COL_POTONG_JUMLAH = 14;
+const REMARKS_COL_POTONG_UUID = 15;
+const REMARKS_COL_POTONG_STATUS = 16;
+
+function pastikanKolomPotongRemark_(sheet) {
+  const targetKolom = REMARKS_COL_POTONG_STATUS;
+  if (sheet.getMaxColumns() < targetKolom) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), targetKolom - sheet.getMaxColumns());
+  }
+
+  const headerMap = [
+    [REMARKS_COL_POTONG_KUOTA, 'Potong Kuota'],
+    [REMARKS_COL_POTONG_JUMLAH, 'Jumlah Potong'],
+    [REMARKS_COL_POTONG_UUID, 'UUID Absensi Potong'],
+    [REMARKS_COL_POTONG_STATUS, 'Status Potong']
+  ];
+  headerMap.forEach(function (item) {
+    const cell = sheet.getRange(1, item[0]);
+    if (!cell.getValue()) cell.setValue(item[1]);
+  });
+}
+
+function normalisasiPotongKuota_(value) {
+  const v = String(value || 'none').trim().toLowerCase();
+  if (v === 'ijin' || v === 'izin') return 'Ijin';
+  if (v === 'cuti') return 'Cuti';
+  return 'none';
+}
+
+function formatTanggalYmdUntukPotong_(value) {
+  if (!value || value === '-') return '';
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+
+  const str = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
+  const dmy = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${String(dmy[2]).padStart(2, '0')}-${String(dmy[1]).padStart(2, '0')}`;
+  }
+
+  const parsed = new Date(str);
+  if (isNaN(parsed.getTime())) return '';
+  return Utilities.formatDate(parsed, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+function parseTanggalPotongRemark_(rawTglKoreksi) {
+  if (rawTglKoreksi instanceof Date) {
+    const ymd = formatTanggalYmdUntukPotong_(rawTglKoreksi);
+    return ymd ? [{ mulai: ymd, selesai: ymd }] : [];
+  }
+
+  const str = String(rawTglKoreksi || '').trim();
+  if (!str || str === '-') return [];
+
+  if (str.indexOf(' s/d ') !== -1) {
+    const parts = str.split(' s/d ');
+    const mulai = formatTanggalYmdUntukPotong_(parts[0]);
+    const selesai = formatTanggalYmdUntukPotong_(parts[1]);
+    if (!mulai || !selesai) return [];
+    return mulai <= selesai ? [{ mulai: mulai, selesai: selesai }] : [{ mulai: selesai, selesai: mulai }];
+  }
+
+  if (str.indexOf(',') !== -1) {
+    return str.split(',')
+      .map(function (item) { return formatTanggalYmdUntukPotong_(item.trim()); })
+      .filter(Boolean)
+      .map(function (ymd) { return { mulai: ymd, selesai: ymd }; });
+  }
+
+  const ymd = formatTanggalYmdUntukPotong_(str);
+  return ymd ? [{ mulai: ymd, selesai: ymd }] : [];
+}
+
+function hitungDurasiIntervalPotong_(mulai, selesai) {
+  const start = new Date(mulai);
+  const end = new Date(selesai || mulai);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 1;
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  const diff = Math.abs(end - start);
+  return Math.ceil(diff / (1000 * 60 * 60 * 24)) + 1;
+}
+
+function intervalBertabrakan_(aMulai, aSelesai, bMulai, bSelesai) {
+  if (!aMulai || !aSelesai || !bMulai || !bSelesai) return false;
+  return !(aSelesai < bMulai || aMulai > bSelesai);
+}
+
+function validasiPotonganAbsensi_(rowsAbsen, userId, tipePotong, intervals) {
+  const periodeAktif = getPeriodeAbsenAktif_();
+  let ijinTerpakai = 0;
+
+  for (let i = 1; i < rowsAbsen.length; i++) {
+    const row = rowsAbsen[i];
+    const rUserId = String(row[2]);
+    const rTipe = String(row[4] || '').trim();
+    const rStatus = String(row[12] || '').trim();
+    if (rUserId !== String(userId) || rStatus === 'Rejected') continue;
+
+    let rMulai = formatDateYMD_Strict(row[8] && row[8] !== '-' ? row[8] : row[1]);
+    let rSelesai = formatDateYMD_Strict(row[9] && row[9] !== '-' ? row[9] : rMulai);
+    if (rMulai && rSelesai && rMulai > rSelesai) {
+      const tmp = rMulai;
+      rMulai = rSelesai;
+      rSelesai = tmp;
+    }
+
+    if (rTipe === 'Ijin' && rMulai && rSelesai &&
+        intervalBertabrakan_(rMulai, rSelesai, periodeAktif.mulai, periodeAktif.selesai)) {
+      ijinTerpakai++;
+    }
+
+    if (rTipe === tipePotong) {
+      for (let j = 0; j < intervals.length; j++) {
+        if (intervalBertabrakan_(rMulai, rSelesai, intervals[j].mulai, intervals[j].selesai)) {
+          return {
+            ok: false,
+            message: `GAGAL: ${tipePotong} pada tanggal ${intervals[j].mulai} sudah pernah tercatat.`
+          };
+        }
+      }
+    }
+  }
+
+  const tambahanIjin = tipePotong === 'Ijin' ? intervals.length : 0;
+  if (tambahanIjin && ijinTerpakai + tambahanIjin > 4) {
+    return {
+      ok: false,
+      message: `GAGAL: Kuota Ijin tidak cukup. Terpakai ${ijinTerpakai} dari 4, permintaan ini butuh ${tambahanIjin}x.`
+    };
+  }
+
+  return { ok: true };
+}
+
+function buatPotonganKuotaDariRemark_(remarkRow, tipePotong, approverName, responPesan) {
+  const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
+  if (!sheetAbsensi) throw new Error('Sheet Absensi tidak ditemukan.');
+  if (sheetAbsensi.getMaxColumns() < 17) {
+    sheetAbsensi.insertColumnsAfter(sheetAbsensi.getMaxColumns(), 17 - sheetAbsensi.getMaxColumns());
+  }
+  if (!sheetAbsensi.getRange(1, 17).getValue()) {
+    sheetAbsensi.getRange(1, 17).setValue('Catatan Admin');
+  }
+
+  const remarkUuid = String(remarkRow[0]);
+  const userId = String(remarkRow[2]);
+  const nama = remarkRow[3] || '-';
+  const intervals = parseTanggalPotongRemark_(remarkRow[5]);
+  if (intervals.length === 0) {
+    throw new Error('Tanggal koreksi tidak valid, jadi kuota tidak bisa dipotong.');
+  }
+
+  const marker = `POTONG_REMARK:${remarkUuid}`;
+  const rowsAbsen = sheetAbsensi.getDataRange().getValues();
+  const uuidSudahAda = [];
+  for (let i = 1; i < rowsAbsen.length; i++) {
+    if (String(rowsAbsen[i][16] || '').indexOf(marker) !== -1) {
+      uuidSudahAda.push(rowsAbsen[i][0]);
+    }
+  }
+  if (uuidSudahAda.length > 0) {
+    return {
+      jumlah: tipePotong === 'Cuti'
+        ? intervals.reduce(function (total, item) { return total + hitungDurasiIntervalPotong_(item.mulai, item.selesai); }, 0)
+        : intervals.length,
+      uuidList: uuidSudahAda,
+      status: 'Sudah pernah dipotong'
+    };
+  }
+
+  const validasi = validasiPotonganAbsensi_(rowsAbsen, userId, tipePotong, intervals);
+  if (!validasi.ok) throw new Error(validasi.message);
+
+  const now = new Date();
+  const uuidList = [];
+  let jumlah = intervals.reduce(function (total, interval) {
+    return total + (tipePotong === 'Cuti' ? hitungDurasiIntervalPotong_(interval.mulai, interval.selesai) : 1);
+  }, 0);
+
+  if (tipePotong === 'Cuti') {
+    const sisaKuotaMap = hitungSisaKuotaLaporan_();
+    const sisaCuti = sisaKuotaMap[userId] ? angkaKuota_(sisaKuotaMap[userId].sisaCuti) : 0;
+    if (sisaCuti < jumlah) {
+      throw new Error(`GAGAL: Sisa Cuti tidak cukup. Tersedia ${sisaCuti} hari, permintaan ini butuh ${jumlah} hari.`);
+    }
+  }
+
+  intervals.forEach(function (interval) {
+    const uuidAbsen = Utilities.getUuid();
+    uuidList.push(uuidAbsen);
+
+    const catatan = `Potongan dari Lapor HRD (${remarkRow[6] || '-'}): ${responPesan || remarkRow[7] || '-'}`;
+    sheetAbsensi.appendRow([
+      uuidAbsen,
+      now,
+      userId,
+      nama,
+      tipePotong,
+      '-',
+      catatan,
+      '-',
+      interval.mulai,
+      interval.selesai,
+      '-',
+      '-',
+      'Approved',
+      approverName || 'HRD',
+      now,
+      '-',
+      marker
+    ]);
+
+    if (typeof syncToExternalPayroll === 'function') {
+      try {
+        syncToExternalPayroll(userId, interval.mulai, interval.selesai, tipePotong);
+      } catch (e) {
+        console.error('Gagal sync external dari potongan remark: ' + e.toString());
+      }
+    }
+  });
+
+  if (tipePotong === 'Cuti') {
+    if (typeof syncTotalCuti === 'function') {
+      try { syncTotalCuti(); } catch (e) { console.error('Gagal syncTotalCuti: ' + e.toString()); }
+    }
+    if (typeof CACHE_BERSIHKAN === 'function') {
+      try { CACHE_BERSIHKAN(); } catch (e2) { console.error('Gagal bersihkan cache cuti: ' + e2.toString()); }
+    }
+  }
+
+  return {
+    jumlah: jumlah,
+    uuidList: uuidList,
+    status: `${tipePotong} dipotong ${jumlah} ${tipePotong === 'Ijin' ? 'x' : 'hari'}`
+  };
+}
+
 // --- FUNGSI UPDATE STATUS (DONE) & RESPON ---
 function handleUpdateRemarkStatus(data) {
   const sheet = SS.getSheetByName(SHEET_REMARKS);
+  if (!sheet) return responseJSON({ result: 'error', message: 'Sheet Remarks tidak ditemukan.' });
+  pastikanKolomPotongRemark_(sheet);
   const rows = sheet.getDataRange().getValues();
+  const tipePotong = normalisasiPotongKuota_(data.potongKuota);
   
   // Loop cari UUID yang cocok
   for (let i = 1; i < rows.length; i++) {
     // UUID ada di kolom index 0
     if (String(rows[i][0]) === String(data.uuid)) {
+        if (String(rows[i][9]) === 'Done') {
+          return responseJSON({ result: 'error', message: 'Laporan ini sudah berstatus Done.' });
+        }
         
         const now = new Date();
         const waktuRespon = Utilities.formatDate(now, Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
+        const responPesan = data.response ? data.response : "Sudah diproses.";
+        let hasilPotong = null;
+        if (tipePotong !== 'none') {
+          try {
+            hasilPotong = buatPotonganKuotaDariRemark_(rows[i], tipePotong, data.approverName || 'HRD', responPesan);
+          } catch (e) {
+            return responseJSON({ result: 'error', message: e.message || e.toString() });
+          }
+        }
 
         // Update Kolom J (Index 10) -> Status
         sheet.getRange(i + 1, 10).setValue('Done');
         
         // Update Kolom K (Index 11) -> Respon Pesan
-        const responPesan = data.response ? data.response : "Sudah diproses.";
         sheet.getRange(i + 1, 11).setValue(responPesan); 
         
         // Update Kolom L (Index 12) -> Waktu Respon
         sheet.getRange(i + 1, 12).setValue(waktuRespon);
+        sheet.getRange(i + 1, REMARKS_COL_POTONG_KUOTA).setValue(tipePotong);
+        sheet.getRange(i + 1, REMARKS_COL_POTONG_JUMLAH).setValue(hasilPotong ? hasilPotong.jumlah : '');
+        sheet.getRange(i + 1, REMARKS_COL_POTONG_UUID).setValue(hasilPotong ? hasilPotong.uuidList.join(', ') : '');
+        sheet.getRange(i + 1, REMARKS_COL_POTONG_STATUS).setValue(hasilPotong ? hasilPotong.status : 'Tidak memotong kuota');
 
         // Return Sukses JSON
         return ContentService.createTextOutput(JSON.stringify({ 
             result: 'success', 
-            message: 'Respon terkirim dan status Done.' 
+            message: hasilPotong
+              ? `Respon terkirim, status Done, dan ${hasilPotong.status}.`
+              : 'Respon terkirim dan status Done tanpa pemotongan kuota.'
         })).setMimeType(ContentService.MimeType.JSON);
     }
   }

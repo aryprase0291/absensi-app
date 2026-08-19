@@ -2013,6 +2013,10 @@ function RemarkScreen({ user, setView }) {
     const [loading, setLoading] = useState(false);
     const [remarks, setRemarks] = useState([]);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [remarkDoneItem, setRemarkDoneItem] = useState(null);
+    const [remarkDoneResponse, setRemarkDoneResponse] = useState('Sudah diproses.');
+    const [remarkPotongKuota, setRemarkPotongKuota] = useState('none');
+    const [remarkDoneLoading, setRemarkDoneLoading] = useState(false);
 
     // STATUS PENGAMBILAN DATA
     // Sebelum ini, gagal-ambil dan benar-benar-kosong tampil PERSIS SAMA
@@ -2193,20 +2197,74 @@ function RemarkScreen({ user, setView }) {
         } catch (err) { alert('Gagal koneksi.'); } finally { setLoading(false); }
     };
 
-    const handleMarkDone = async (uuid) => {
-        const responseText = window.prompt("Masukkan tanggapan/respon untuk user (Wajib diisi):", "Sudah diproses.");
-        if (responseText === null || responseText.trim() === "") return; 
+    const angkaKuota = (value) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+    };
+
+    const kuotaTidakTersedia = (item) => angkaKuota(item?.sisaIjin) <= 0 && angkaKuota(item?.sisaCuti) <= 0;
+
+    const openMarkDoneDialog = (item) => {
+        setRemarkDoneItem(item);
+        setRemarkDoneResponse(kuotaTidakTersedia(item) ? 'Ditolak karena jatah Ijin dan Cuti tidak tersedia.' : 'Sudah diproses.');
+        setRemarkPotongKuota('none');
+    };
+
+    const closeMarkDoneDialog = () => {
+        if (remarkDoneLoading) return;
+        setRemarkDoneItem(null);
+        setRemarkDoneResponse('Sudah diproses.');
+        setRemarkPotongKuota('none');
+    };
+
+    const formatPotongKuota = (item) => {
+        const tipe = item?.potongKuota && item.potongKuota !== 'none' ? item.potongKuota : '';
+        if (!tipe) return '-';
+        const jumlah = Number(item.potongJumlah) || 1;
+        const satuan = tipe === 'Ijin' ? 'x' : 'hari';
+        return `${tipe} ${jumlah} ${satuan}`;
+    };
+
+    const opsiPotongTidakTersedia = (value, item = remarkDoneItem) => {
+        if (value === 'Ijin') return angkaKuota(item?.sisaIjin) <= 0;
+        if (value === 'Cuti') return angkaKuota(item?.sisaCuti) <= 0;
+        return false;
+    };
+
+    const handleMarkDone = async (e) => {
+        e.preventDefault();
+        if (!remarkDoneItem) return;
+        if (opsiPotongTidakTersedia(remarkPotongKuota)) {
+            alert(`Jatah ${remarkPotongKuota} sudah 0. Pilih "Tidak memotong" dan simpan respon penolakan HRD.`);
+            return;
+        }
+        const responseText = remarkDoneResponse.trim();
+        if (responseText === "") {
+            alert("Tanggapan/respon wajib diisi.");
+            return;
+        }
 
         try {
+            setRemarkDoneLoading(true);
             const res = await fetchApi(SCRIPT_URL, {
                 method: 'POST',
-                body: JSON.stringify({ action: 'update_remark_status', uuid, response: responseText })
+                body: JSON.stringify({
+                    action: 'update_remark_status',
+                    uuid: remarkDoneItem.uuid,
+                    response: responseText,
+                    potongKuota: remarkPotongKuota,
+                    approverName: user.nama
+                })
             }).then(r => r.json());
             if (res.result === 'success') {
-                alert("Status diperbarui & Respon terkirim!");
+                alert(res.message || "Status diperbarui & Respon terkirim!");
+                setRemarkDoneItem(null);
+                setRemarkDoneResponse('Sudah diproses.');
+                setRemarkPotongKuota('none');
                 setRefreshTrigger(prev => prev + 1);
             } else alert(res.message);
         } catch (e) { alert("Gagal update"); }
+        finally { setRemarkDoneLoading(false); }
     };
 
     // --- FILTER LOGIC ---
@@ -2267,7 +2325,7 @@ function RemarkScreen({ user, setView }) {
 
     // --- EXPORT FUNCTION ---
     const generateExcel = () => {
-        let tableHead = ["No", "Waktu Lapor", "Tgl Koreksi", "Nama", "Divisi", "Jenis", "Keterangan", "Status"];
+        let tableHead = ["No", "Waktu Lapor", "Tgl Koreksi", "Nama", "Divisi", "Jenis", "Keterangan", "Status", "Potong Kuota"];
         
         if (showResponseColumns) {
             tableHead.push("Respon HRD", "Waktu Respon");
@@ -2278,7 +2336,7 @@ function RemarkScreen({ user, setView }) {
                 index + 1, 
                 formatDateDisplay(item.waktu),       // [UPDATE] Format DD-MM-YYYY
                 formatDateDisplay(item.tglKoreksi),  // [UPDATE] Format DD-MM-YYYY
-                item.nama, item.divisi, item.kategori, item.pesan, item.status
+                item.nama, item.divisi, item.kategori, item.pesan, item.status, formatPotongKuota(item)
             ];
             if (showResponseColumns) {
                 row.push(item.respon, formatDateDisplay(item.waktuRespon)); // [UPDATE] Format DD-MM-YYYY
@@ -2299,7 +2357,7 @@ function RemarkScreen({ user, setView }) {
         doc.setFontSize(8);
         doc.text(`Total Data: ${sortedRemarksTable.length}`, 14, 20);
 
-        let tableColumn = ["No", "Waktu", "Tgl Koreksi", "Nama", "Divisi", "Jenis", "Keterangan", "Status"];
+        let tableColumn = ["No", "Waktu", "Tgl Koreksi", "Nama", "Divisi", "Jenis", "Keterangan", "Status", "Potong"];
         
         if (showResponseColumns) {
             tableColumn.push("Respon");
@@ -2310,7 +2368,7 @@ function RemarkScreen({ user, setView }) {
                 index + 1, 
                 formatDateDisplay(item.waktu),       // [UPDATE] Format DD-MM-YYYY
                 formatDateDisplay(item.tglKoreksi),  // [UPDATE] Format DD-MM-YYYY
-                item.nama, item.divisi, item.kategori, item.pesan, item.status
+                item.nama, item.divisi, item.kategori, item.pesan, item.status, formatPotongKuota(item)
             ];
             if (showResponseColumns) {
                 row.push(item.respon);
@@ -2437,8 +2495,110 @@ function RemarkScreen({ user, setView }) {
         return null;
     };
 
+    const opsiPotongKuota = [
+        { value: 'none', label: 'Tidak memotong', desc: 'Laporan hanya ditutup dan diberi tanggapan.' },
+        { value: 'Ijin', label: 'Potong jatah Ijin', desc: 'Mencatat Ijin Approved agar terhitung dalam batas 4x per periode.' },
+        { value: 'Cuti', label: 'Potong jatah Cuti', desc: 'Mencatat Cuti Approved agar ikut sinkron ke MASTER-CUTI.' }
+    ];
+
     return (
         <div className={containerClass}>
+            {remarkDoneItem && (
+                <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/45 p-4 sm:items-center">
+                    <form onSubmit={handleMarkDone} className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+                        <div className="border-b border-slate-100 px-5 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Selesaikan laporan</p>
+                                    <h3 className="mt-1 truncate text-[17px] font-semibold text-slate-900">{remarkDoneItem.nama}</h3>
+                                    <p className="mt-0.5 text-[12px] text-slate-500">{formatDateDisplay(remarkDoneItem.tglKoreksi)} - {remarkDoneItem.kategori}</p>
+                                </div>
+                                <button type="button" onClick={closeMarkDoneDialog} disabled={remarkDoneLoading} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50" aria-label="Tutup dialog">
+                                    <X className="h-4 w-4" strokeWidth={2}/>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 px-5 py-4">
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className={`rounded-xl border px-3 py-2.5 ${angkaKuota(remarkDoneItem.sisaIjin) <= 0 ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'}`}>
+                                    <p className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${angkaKuota(remarkDoneItem.sisaIjin) <= 0 ? 'text-rose-500' : 'text-amber-600'}`}>Sisa Ijin</p>
+                                    <p className={`mt-1 text-[18px] font-bold leading-none ${angkaKuota(remarkDoneItem.sisaIjin) <= 0 ? 'text-rose-700' : 'text-amber-700'}`}>{angkaKuota(remarkDoneItem.sisaIjin)}x</p>
+                                    <p className="mt-1 text-[10px] text-slate-500">{angkaKuota(remarkDoneItem.ijinTerpakai)} dari 4 terpakai</p>
+                                </div>
+                                <div className={`rounded-xl border px-3 py-2.5 ${angkaKuota(remarkDoneItem.sisaCuti) <= 0 ? 'border-rose-200 bg-rose-50' : 'border-teal-200 bg-teal-50'}`}>
+                                    <p className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${angkaKuota(remarkDoneItem.sisaCuti) <= 0 ? 'text-rose-500' : 'text-teal-600'}`}>Sisa Cuti</p>
+                                    <p className={`mt-1 text-[18px] font-bold leading-none ${angkaKuota(remarkDoneItem.sisaCuti) <= 0 ? 'text-rose-700' : 'text-teal-700'}`}>{angkaKuota(remarkDoneItem.sisaCuti)} hari</p>
+                                    <p className="mt-1 text-[10px] text-slate-500">Tersedia di MASTER-CUTI</p>
+                                </div>
+                            </div>
+
+                            {kuotaTidakTersedia(remarkDoneItem) && (
+                                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5">
+                                    <p className="text-[12px] font-semibold text-rose-700">Tidak ada jatah tersedia.</p>
+                                    <p className="mt-0.5 text-[11px] leading-relaxed text-rose-600">Opsi pemotongan dikunci. Simpan sebagai respon penolakan HRD.</p>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="mb-2 block text-[12px] font-semibold text-slate-700">Tanggapan HRD</label>
+                                <textarea
+                                    required
+                                    rows="3"
+                                    value={remarkDoneResponse}
+                                    onChange={(e) => setRemarkDoneResponse(e.target.value)}
+                                    className="w-full resize-y rounded-xl border border-slate-200 px-3.5 py-3 text-[14px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-2 block text-[12px] font-semibold text-slate-700">Pemotongan kuota</label>
+                                <div className="grid gap-2">
+                                    {opsiPotongKuota.map((opsi) => {
+                                        const terkunci = opsiPotongTidakTersedia(opsi.value);
+                                        const labelTampil = opsi.value === 'none' && kuotaTidakTersedia(remarkDoneItem) ? 'Tolak karena jatah habis' : opsi.label;
+                                        const deskripsiTampil = opsi.value === 'none' && kuotaTidakTersedia(remarkDoneItem)
+                                            ? 'Simpan sebagai penolakan HRD karena tidak ada jatah Ijin atau Cuti.'
+                                            : terkunci
+                                                ? `Jatah ${opsi.value} sudah 0, jadi laporan harus ditolak tanpa pemotongan.`
+                                                : opsi.desc;
+                                        const sisaText = opsi.value === 'Ijin'
+                                            ? `Sisa ${angkaKuota(remarkDoneItem.sisaIjin)}x`
+                                            : opsi.value === 'Cuti'
+                                                ? `Sisa ${angkaKuota(remarkDoneItem.sisaCuti)} hari`
+                                                : '';
+                                        return (
+                                            <label key={opsi.value} className={`flex items-start gap-3 rounded-xl border px-3.5 py-3 transition ${terkunci ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-70' : 'cursor-pointer'} ${remarkPotongKuota === opsi.value ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10' : !terkunci ? 'border-slate-200 bg-white hover:border-slate-300' : ''}`}>
+                                                <input
+                                                    type="radio"
+                                                    name="remarkPotongKuota"
+                                                    value={opsi.value}
+                                                    checked={remarkPotongKuota === opsi.value}
+                                                    disabled={terkunci}
+                                                    onChange={(e) => setRemarkPotongKuota(e.target.value)}
+                                                    className="mt-1 h-4 w-4 border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed"
+                                                />
+                                                <span className="min-w-0">
+                                                    <span className={`block text-[13px] font-semibold ${terkunci ? 'text-slate-500' : 'text-slate-800'}`}>{labelTampil}{sisaText ? ` - ${sisaText}` : ''}</span>
+                                                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{deskripsiTampil}</span>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+                            <button type="button" onClick={closeMarkDoneDialog} disabled={remarkDoneLoading} className="rounded-xl px-4 py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-white disabled:opacity-50">Batal</button>
+                            <button type="submit" disabled={remarkDoneLoading} className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-slate-400">
+                                {remarkDoneLoading ? <><Loader2 className="h-4 w-4 animate-spin" /> Memproses</> : <><Check className="h-4 w-4" /> Simpan</>}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
             {/* HEADER AREA */}
             <div className={`flex items-center justify-between ${isTableMode ? 'mb-4 px-4 py-3 bg-white border-b shadow-sm' : 'mx-auto mb-5 w-full max-w-2xl'}`}>
                 <div>
@@ -2614,6 +2774,7 @@ function RemarkScreen({ user, setView }) {
                                     <ReportFilterHeader label="Keterangan" field="pesan" width="w-48" />
                                     <th className="p-2 border border-gray-300 text-center w-16 align-top font-bold bg-gray-100">Lampiran</th>
                                     <ReportFilterHeader label="Status" field="status" width="w-20" />
+                                    <th className="p-2 border border-gray-300 text-center w-24 align-top font-bold bg-gray-100">Potong</th>
 
                                     {/* [DYNAMIC] Header Respon: Hanya muncul jika ada Status DONE */}
                                     {showResponseColumns && (
@@ -2626,7 +2787,7 @@ function RemarkScreen({ user, setView }) {
                             </thead>
                             <tbody className="text-gray-800 text-xs bg-white font-normal divide-y divide-gray-200">
                                 {sortedRemarksTable.length === 0 ? (
-                                    <tr><td colSpan={showResponseColumns ? "12" : "10"} className="p-8 text-center text-gray-400 italic font-normal bg-gray-50">
+                                    <tr><td colSpan={showResponseColumns ? "13" : "11"} className="p-8 text-center text-gray-400 italic font-normal bg-gray-50">
                                         {remarksLoading ? 'Memuat data laporan...'
                                             : remarksError ? 'Data gagal dimuat — lihat pesan di atas.'
                                             : remarks.length > 0 ? 'Tidak ada baris yang cocok dengan filter.'
@@ -2639,7 +2800,7 @@ function RemarkScreen({ user, setView }) {
                                             
                                             <td className="p-2 border border-gray-200 text-center">
                                                 {item.status === 'Open' ? (
-                                                    <button onClick={() => handleMarkDone(item.uuid)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm flex items-center justify-center gap-1 w-full transition active:scale-95">
+                                                    <button onClick={() => openMarkDoneDialog(item)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm flex items-center justify-center gap-1 w-full transition active:scale-95">
                                                         <Check className="w-3 h-3"/> Done
                                                     </button>
                                                 ) : <span className="text-green-600 font-bold">✔</span>}
@@ -2663,6 +2824,7 @@ function RemarkScreen({ user, setView }) {
                                                     {item.status}
                                                 </span>
                                             </td>
+                                            <td className="p-2 border border-gray-200 text-center text-[10px] font-semibold text-slate-600">{formatPotongKuota(item)}</td>
 
                                             {/* [DYNAMIC] Kolom Respon: Hanya muncul jika ada Status DONE */}
                                             {showResponseColumns && (
@@ -2714,6 +2876,9 @@ function RemarkScreen({ user, setView }) {
                                     </div>
                                 )}
                                 <p className="font-bold text-purple-700 mb-1">{item.kategori}</p>
+                                {formatPotongKuota(item) !== '-' && (
+                                    <p className="mb-1 inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-200">Potong: {formatPotongKuota(item)}</p>
+                                )}
                                 <p className="italic">"{item.pesan}"</p>
                             </div>
 
@@ -2744,7 +2909,7 @@ function RemarkScreen({ user, setView }) {
                                 ) : <span className="text-[10px] text-gray-400">Tidak ada lampiran</span>}
 
                                 {isHRDOrAdmin && item.status === 'Open' && (
-                                    <button onClick={() => handleMarkDone(item.uuid)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-700">
+                                    <button onClick={() => openMarkDoneDialog(item)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-700">
                                         <Check className="w-3 h-3"/> Mark Done & Reply
                                     </button>
                                 )}
