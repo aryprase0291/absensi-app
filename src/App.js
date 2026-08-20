@@ -1600,16 +1600,15 @@ function AnalysisScreen({ user, setView }) {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [activeFilter]);
 
-    const handleAnalyze = async () => {
-        if (!startDate || !endDate) {
-            alert("Mohon pilih Tanggal Mulai dan Sampai.");
-            return;
-        }
+    // Dipisah dari handleAnalyze supaya bisa dipanggil dengan tanggal yang
+    // BELUM tentu sudah masuk ke state (dipakai oleh auto-load periode aktif
+    // di bawah, yang tidak bisa menunggu setStartDate selesai re-render dulu).
+    const jalankanAnalisa = async (tglMulai, tglSelesai) => {
         setLoading(true);
         setHasSearched(true);
-        
+
         // Reset Filter & Sort saat search baru (opsional, bisa dihapus jika ingin preserve filter)
-        // setColumnFilters({ ... }); 
+        // setColumnFilters({ ... });
         // setSortConfig({ key: null, direction: 'asc' });
 
         try {
@@ -1617,8 +1616,8 @@ function AnalysisScreen({ user, setView }) {
                 method: 'POST',
                 body: JSON.stringify({
                     action: 'get_analysis_data',
-                    startDate,
-                    endDate,
+                    startDate: tglMulai,
+                    endDate: tglSelesai,
                     roleRequester: user.role
                 })
             });
@@ -1634,6 +1633,47 @@ function AnalysisScreen({ user, setView }) {
             setLoading(false);
         }
     };
+
+    // Handler tombol "Analisa Data" / ikon refresh — dipanggil langsung
+    // sebagai event handler (onClick={handleAnalyze}), jadi TIDAK menerima
+    // parameter (kalau menerima, argumen pertamanya jadi SyntheticEvent,
+    // bukan tanggal). Selalu pakai tanggal dari state.
+    const handleAnalyze = () => {
+        if (!startDate || !endDate) {
+            alert("Mohon pilih Tanggal Mulai dan Sampai.");
+            return;
+        }
+        jalankanAnalisa(startDate, endDate);
+    };
+
+    // --- AUTO-LOAD SAAT LAYAR DIBUKA ---
+    // 1) "Periode Mulai" default-nya sekarang mengikuti tanggal awal periode
+    //    absen aktif (bukan lagi "7 hari terakhir") — konsisten dengan
+    //    Riwayat Tim/Riwayat pribadi yang sudah lebih dulu pakai konsep ini.
+    // 2) Data langsung dianalisa otomatis begitu layar dibuka, tanpa perlu
+    //    klik tombol "Analisa Data" dulu.
+    // Kalau pengambilan periode aktif gagal, tetap jalan pakai default lama
+    // (7 hari terakhir) supaya layar ini tidak berhenti total.
+    useEffect(() => {
+        let batal = false;
+        (async () => {
+            let mulai = startDate;
+            try {
+                const res = await fetchApi(SCRIPT_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'get_absence_period' })
+                });
+                const data = await res.json();
+                if (data.result === 'success' && data.period && data.period.mulai) {
+                    mulai = data.period.mulai;
+                    if (!batal) setStartDate(mulai);
+                }
+            } catch (e) { /* biarkan default 7 hari terakhir */ }
+            if (!batal) jalankanAnalisa(mulai, endDate);
+        })();
+        return () => { batal = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleProcessApproval = async (uuid, decision, namaKaryawan) => {
         const actionText = decision === 'approve' ? 'Menyetujui' : 'Menolak';
