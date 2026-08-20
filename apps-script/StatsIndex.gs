@@ -62,9 +62,46 @@ function getIndeksDbAbsen(periodeDiketahui) {
   const cache = CacheService.getScriptCache();
   const hit = cache.get(kunci);
   if (hit) {
-    try { return JSON.parse(hit); } catch (e) { /* cache rusak, susun ulang */ }
+    try {
+      const parsed = JSON.parse(hit);
+      // Lihat _simpanIndeksTerpecah_ di bawah: kalau indeksnya lebih besar
+      // dari 100 KB (batas CacheService per kunci), yang disimpan di sini
+      // bukan indeksnya langsung, tapi MANIFEST yang menunjuk ke beberapa
+      // kunci "potongan". Rakit ulang; kalau ada potongan yang hilang
+      // (kadaluarsa tidak bersamaan, dsb), jatuh ke penyisiran ulang.
+      if (parsed && parsed.__chunked) {
+        const gabungan = _gabungkanChunkIndeks_(cache, kunci, parsed.n);
+        if (gabungan) return gabungan;
+      } else {
+        return parsed;
+      }
+    } catch (e) { /* cache rusak, susun ulang */ }
   }
   return _susunIndeksDbAbsen(cache, periode, kunci);
+}
+
+/**
+ * Rakit ulang indeks dari kunci-kunci potongan yang disimpan
+ * _simpanIndeksTerpecah_. @return {Object|null} null kalau ada potongan
+ * yang hilang/rusak — pemanggil harus menyisir ulang dari sheet.
+ * @private
+ */
+function _gabungkanChunkIndeks_(cache, kunciUtama, jumlahChunk) {
+  const kunciChunk = [];
+  for (let i = 0; i < jumlahChunk; i++) kunciChunk.push(kunciUtama + '::c' + i);
+
+  const hasil = cache.getAll(kunciChunk);
+  const gabungan = {};
+  for (let i = 0; i < kunciChunk.length; i++) {
+    const raw = hasil[kunciChunk[i]];
+    if (!raw) return null; // potongan hilang -> caller susun ulang dari sheet
+    try {
+      Object.assign(gabungan, JSON.parse(raw));
+    } catch (e) {
+      return null;
+    }
+  }
+  return gabungan;
 }
 
 /**
@@ -141,15 +178,21 @@ function _susunIndeksDbAbsen(cache, periodeDiketahui, kunciDiketahui) {
 
   // Simpan. Kegagalan put() TIDAK boleh menggagalkan request — user tetap
   // dapat angka yang benar, hanya saja request berikutnya menyisir lagi.
+  //
+  // TERUKUR 19 Agu 2026: sejak V3 menambah alpa_by_date/hadir_by_date per
+  // NIK, indeksnya melewati batas 100 KB per kunci CacheService (212 NIK ->
+  // 109.536 byte). put() yang kebesaran gagal DIAM-DIAM, jadi cache TIDAK
+  // PERNAH aktif — get_stats (dan hitungStats saat login) balik menyisir
+  // 6.700+ baris dbabsen di SETIAP request, persis kondisi sebelum indeks
+  // ini dibuat. Ini penyebab utama login/dashboard terasa lambat.
+  //
+  // Perbaikannya BUKAN mengurangi data (supaya angka yang tampil tidak
+  // berubah), tapi memecah satu indeks besar jadi beberapa kunci cache
+  // yang masing-masing di bawah batas — lihat _simpanIndeksTerpecah_.
   try {
     const payload = JSON.stringify(idx);
     if (payload.length > IDX_BATAS_BYTE) {
-      // put() yang kebesaran gagal DIAM-DIAM. Dicatat supaya kalau
-      // suatu hari jumlah NIK meledak, penyebabnya kelihatan di log
-      // dan bukan muncul sebagai "kok lambat lagi ya".
-      console.warn('Indeks dbabsen %s byte, melewati batas CacheService %s byte. ' +
-                   'Cache dilewati — get_stats kembali menyisir sheet tiap request.',
-                   payload.length, IDX_BATAS_BYTE);
+      _simpanIndeksTerpecah_(cache, kunci, idx);
     } else {
       cache.put(kunci, payload, IDX_TTL_DETIK);
     }
@@ -158,6 +201,69 @@ function _susunIndeksDbAbsen(cache, periodeDiketahui, kunciDiketahui) {
   }
 
   return idx;
+}
+
+/**
+ * Simpan indeks yang kebesaran (>100 KB) sebagai beberapa kunci cache
+ * terpisah (masing-masing di bawah batas), plus satu kunci "manifest" yang
+ * menyebutkan jumlah potongan. getIndeksDbAbsen() merakitnya kembali lewat
+ * _gabungkanChunkIndeks_.
+ *
+ * Dipecah PER NIK (bukan dipotong di tengah), supaya data satu orang tidak
+ * pernah terbelah dua kunci — menyederhanakan penggabungan dan mencegah
+ * data setengah-tersimpan.
+ * @private
+ */
+function _simpanIndeksTerpecah_(cache, kunciUtama, idx) {
+  // Target di bawah IDX_BATAS_BYTE dengan margin, supaya variasi ukuran
+  // antar-NIK dan overhead penggabungan tidak membuat satu chunk kebablasan
+  // melewati batas 100 KB yang sesungguhnya.
+  const TARGET_CHUNK_BYTE = 80 * 1024;
+
+  const niks = Object.keys(idx);
+  const chunks = [];
+  let chunkSekarang = {};
+  let ukuranSekarang = 2; // "{}"
+
+  niks.forEach((nik) => {
+    const entriJson = JSON.stringify(idx[nik]);
+    const perkiraanTambahan = entriJson.length + nik.length + 4; // `"NIK":` + koma
+    if (ukuranSekarang + perkiraanTambahan > TARGET_CHUNK_BYTE && Object.keys(chunkSekarang).length > 0) {
+      chunks.push(chunkSekarang);
+      chunkSekarang = {};
+      ukuranSekarang = 2;
+    }
+    chunkSekarang[nik] = idx[nik];
+    ukuranSekarang += perkiraanTambahan;
+  });
+  if (Object.keys(chunkSekarang).length > 0) chunks.push(chunkSekarang);
+
+  const kunciChunk = chunks.map((_, i) => kunciUtama + '::c' + i);
+  const payloadChunk = chunks.map((c) => JSON.stringify(c));
+
+  // Kalau ADA satu saja potongan yang masih melewati batas (mustahil dalam
+  // praktiknya kecuali satu NIK sendirian punya riwayat raksasa), batalkan
+  // semuanya — jangan simpan manifest yang menunjuk ke potongan yang gagal.
+  for (let i = 0; i < payloadChunk.length; i++) {
+    if (payloadChunk[i].length > IDX_BATAS_BYTE) {
+      console.warn('Indeks dbabsen: potongan #%s (%s NIK) masih %s byte, melewati batas %s. ' +
+                   'Cache dilewati untuk periode ini — get_stats menyisir sheet tiap request.',
+                   i, Object.keys(chunks[i]).length, payloadChunk[i].length, IDX_BATAS_BYTE);
+      return;
+    }
+  }
+
+  const nilaiUntukDisimpan = {};
+  for (let i = 0; i < kunciChunk.length; i++) nilaiUntukDisimpan[kunciChunk[i]] = payloadChunk[i];
+  cache.putAll(nilaiUntukDisimpan, IDX_TTL_DETIK);
+
+  // Manifest disimpan TERAKHIR, setelah semua potongan berhasil ditulis —
+  // supaya tidak ada jendela waktu di mana manifest sudah ada tapi
+  // potongannya belum, yang bisa membuat pembaca lain gagal merakit.
+  cache.put(kunciUtama, JSON.stringify({ __chunked: true, n: chunks.length }), IDX_TTL_DETIK);
+
+  console.log('Indeks dbabsen %s byte dipecah jadi %s potongan (target %s byte/potongan).',
+              JSON.stringify(idx).length, chunks.length, TARGET_CHUNK_BYTE);
 }
 
 /**
