@@ -194,6 +194,7 @@ const ACTION_ROLES = {
   'reset_password_user': ['admin'],
   'save_geofence_config': ['admin'],
   'save_absence_period': ['admin'],
+  'save_absence_periods': ['admin'],   // daftar periode (Agu 2026)
   'tambah_user': ['admin'],
   'tambah_master': ['admin'],
   'delete_absensi': ['admin'],

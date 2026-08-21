@@ -50,7 +50,7 @@
 // =======================================================
 
 // V5: sumber kebenaran pindah ke Script Properties.
-const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V5';
+const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V6';
 const KUNCI_REV_IDX_DBABSEN = 'DBABSEN_IDX_REVISION_V1';
 
 // Awalan properti penyimpan indeks. Dipakai juga untuk membersihkan
@@ -348,11 +348,23 @@ function _susunIndeksDbAbsen(periodeDiketahui, kunciDiketahui) {
       e = idx[nik] = {
         hadir: 0, telat_freq: 0, telat_menit: 0, sakit: 0, alpa: 0,
         no_scan_in: 0, no_scan_out: 0, min_ts: null, max_ts: null,
-        alpa_by_date: {}, hadir_by_date: {}
+        alpa_by_date: {}, hadir_by_date: {},
+
+        // Tanggal yang BENAR-BENAR punya catatan mesin di periode ini,
+        // apa pun simbolnya. Dipakai dashboard sebagai penyebut
+        // "hari tercatat".
+        //
+        // Dulu penyebutnya dihitung frontend dengan menjumlahkan
+        // kategori (hadir + ijin + cuti + sakit + alpa). Itu keliru:
+        // satu hari bisa masuk dua kategori, dan cuti/ijin yang
+        // diajukan lewat form tidak selalu punya baris di mesin —
+        // hasilnya penyebut bisa melebihi jumlah hari dalam periode.
+        hari_by_date: {}
       };
     }
     if (e.min_ts === null || ts < e.min_ts) e.min_ts = ts;
     if (e.max_ts === null || ts > e.max_ts) e.max_ts = ts;
+    e.hari_by_date[tanggalBaris] = 1;
 
     // --- Simbol ---
     const symbol = String(rows[j][14]);

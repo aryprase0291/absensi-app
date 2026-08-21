@@ -157,6 +157,7 @@ function doPost(e) {
 
     if (action === 'get_absence_period') return handleGetAbsencePeriod(data);
     if (action === 'save_absence_period') return handleSaveAbsencePeriod(data);
+    if (action === 'save_absence_periods') return handleSaveAbsencePeriods(data);
     
     // --- FITUR ANNOUNCEMENT ---
     if (action === 'get_latest_announcement') return handleGetLatestAnnouncement(data);
@@ -261,7 +262,6 @@ function handleAbsen(data) {
 
   if (TYPES_CHECK_DUPLICATE.includes(data.tipe)) {
       const rowsAbsen = sheet.getDataRange().getValues();
-      const periodeAktif = getPeriodeAbsenAktif_();
       
       // Tentukan Tanggal Input yang akan dicek (Format: yyyy-MM-dd)
       let inputDateStr = "";
@@ -271,6 +271,11 @@ function handleAbsen(data) {
           // Jika tidak ada tglMulai, gunakan hari ini
           inputDateStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
       }
+
+      // KUOTA IJIN 4x PER PERIODE (Agu 2026). Periode penilainya ditentukan
+      // oleh TANGGAL PENGAJUAN, bukan tanggal hari ini — supaya ijin untuk
+      // bulan depan dinilai terhadap kuota bulan depan.
+      const periodeAktif = periodeKuotaUntukTanggal_(inputDateStr);
 
       let countIjinExisting = 0; // Counter khusus Ijin
 
@@ -952,7 +957,11 @@ function intervalBertabrakan_(aMulai, aSelesai, bMulai, bSelesai) {
 }
 
 function validasiPotonganAbsensi_(rowsAbsen, userId, tipePotong, intervals) {
-  const periodeAktif = getPeriodeAbsenAktif_();
+  // Kuota 4x dinilai terhadap periode yang memuat TANGGAL PENGAJUAN,
+  // bukan periode yang kebetulan berjalan hari ini.
+  const periodeAktif = periodeKuotaUntukTanggal_(
+    (intervals && intervals[0] && intervals[0].mulai) || _periodeHariIni_()
+  );
   let ijinTerpakai = 0;
 
   for (let i = 1; i < rowsAbsen.length; i++) {
@@ -1766,9 +1775,14 @@ function handleGetUserListSimple(data) {
 // HANDLE GET STATS (UPDATED: Cuti dari Master-Cuti)
 // ==========================================
 function handleGetStats(data) {
+    // periodeId dikirim pemilih periode di dashboard. Kalau kosong, tidak
+    // dikenal, atau sudah dinonaktifkan admin, resolvePeriodeStats_ jatuh ke
+    // periode default — dashboard tetap tampil, bukan error.
+    const periode = resolvePeriodeStats_(data);
     return responseJSON({
         result: 'success',
-        stats: hitungStats(String(data.userId), data.role)
+        stats: hitungStats(String(data.userId), data.role, null, null, periode),
+        periode: periode
     });
 }
 
@@ -1785,13 +1799,18 @@ function handleGetStats(data) {
  * @param {Object=} petaCutiDiketahui  peta cuti kalau pemanggil sudah punya.
  * @return {Object} objek stats
  */
-function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
+// Tipe baris sheet Absensi yang dianggap "pengajuan form" — yaitu yang
+// melewati alur persetujuan. 'Hadir' dan 'Pulang' adalah tap absensi biasa,
+// bukan pengajuan, jadi tidak ikut dihitung.
+const TIPE_PENGAJUAN = ['Ijin', 'Sakit', 'Cuti', 'Cuti EO', 'Dinas Luar', 'Dinas', 'Alpa', 'Tukar Shift', 'Off'];
+
+function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDipilih) {
     // Kolom yang benar-benar dipakai di bawah (lihat bacaSheet di bagian atas):
     //   Absensi : index 2 (User ID), 4 (Tipe), 12 (Status)        -> 13 kolom
     // Dulu dibaca penuh (46 kolom) tiap dashboard dibuka.
     const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
     const rowsAbsensi = bacaSheet(sheetAbsensi, 13);
-    const periodeAktif = getPeriodeAbsenAktif_();
+    const periodeAktif = periodeDipilih || getPeriodeAbsenAktif_();
 
     // Data mesin TIDAK lagi disisir per request. Diambil dari indeks
     // agregat per NIK yang disusun sekali lalu di-cache (StatsIndex.gs).
@@ -1817,6 +1836,15 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
         total_no_scan_out: 0,
         ijin_count: 0,
         remarks_open: 0,
+
+        // Jumlah hari yang BENAR-BENAR punya catatan di dalam periode ini.
+        // Dipakai dashboard sebagai penyebut persentase kehadiran.
+        // Dulu frontend menghitungnya dengan menjumlahkan kategori
+        // (hadir + ijin + cuti + sakit + alpa) — keliru, karena satu hari
+        // bisa masuk dua kategori dan pengajuan form tidak selalu punya
+        // baris di mesin, sehingga penyebutnya bisa melebihi jumlah hari
+        // dalam periode itu sendiri.
+        hari_tercatat: 0,
         periode_db: _labelPeriodeAbsen_(periodeAktif),
         periode_absen_mulai: periodeAktif.mulai,
         periode_absen_selesai: periodeAktif.selesai,
@@ -1827,7 +1855,12 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
         // tambahan ini tidak menambah satu sel pun yang dibaca dan tidak
         // menambah request apa pun dari sisi aplikasi.
         jam_masuk_hari_ini: '',
-        jam_pulang_hari_ini: ''
+        jam_pulang_hari_ini: '',
+
+        // RINGKASAN PENGAJUAN FORM (Agu 2026).
+        // Diisi dari loop sheet Absensi yang SUDAH ada di bawah, jadi tidak
+        // menambah satu pun pembacaan sheet maupun request.
+        pengajuan: { total: 0, approved: 0, rejected: 0, pending: 0, perTipe: {}, daftar: [] }
     };
 
     // Patokan "hari ini" mengikuti zona waktu skrip, bukan zona waktu
@@ -1892,6 +1925,35 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
                             }
                         }
                     }
+                }
+            }
+
+            // --- Ringkasan pengajuan form ---
+            // Beda dengan hitungan di bawahnya: di sini yang Rejected IKUT
+            // dihitung, karena justru itu inti ringkasannya.
+            if (masukPeriode && TIPE_PENGAJUAN.indexOf(tipe) !== -1) {
+                const kunciStatus = status === 'Approved' ? 'approved'
+                                  : status === 'Rejected' ? 'rejected' : 'pending';
+                stats.pengajuan.total++;
+                stats.pengajuan[kunciStatus]++;
+                if (!stats.pengajuan.perTipe[tipe]) {
+                    stats.pengajuan.perTipe[tipe] = { total: 0, approved: 0, rejected: 0, pending: 0 };
+                }
+                stats.pengajuan.perTipe[tipe].total++;
+                stats.pengajuan.perTipe[tipe][kunciStatus]++;
+
+                // Dibatasi 100 baris: ini menumpang di respons login/get_stats,
+                // dan satu orang tidak realistis punya lebih dari itu dalam satu
+                // periode. Tanpa batas, satu data aneh bisa membengkakkan respons.
+                if (stats.pengajuan.daftar.length < 100) {
+                    stats.pengajuan.daftar.push({
+                        tanggal: tanggalBaris,
+                        tanggalSelesai: tanggalSelesaiBaris,
+                        tipe: tipe,
+                        status: status || 'Pending',
+                        catatan: String(rowsAbsensi[i][6] || '').trim(),
+                        approver: ''
+                    });
                 }
             }
 
@@ -1995,6 +2057,16 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui) {
             // tercatat melalui absen online. Tetap hitung sebagai hadir.
             stats.total_hadir = Object.keys(onlineHadirByDate).length;
         }
+
+        // HARI TERCATAT = tanggal yang punya catatan mesin di periode ini,
+        // ditambah tanggal yang HANYA punya absen online. Tanggal yang
+        // punya keduanya dihitung sekali.
+        const hariMesin = (e && e.hari_by_date) ? e.hari_by_date : {};
+        let hariTercatat = Object.keys(hariMesin).length;
+        Object.keys(onlineHadirByDate).forEach(function (tgl) {
+            if (!hariMesin[tgl]) hariTercatat++;
+        });
+        stats.hari_tercatat = hariTercatat;
     }
 
     // 4. Periode dashboard selalu mengikuti periode absensi aktif yang

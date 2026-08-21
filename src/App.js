@@ -492,6 +492,35 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalN
 
 const [statsRetry, setStatsRetry] = useState(0);
 
+// PEMILIH PERIODE (Agu 2026). Hanya periode AKTIF yang boleh dipilih di
+// dashboard — periode nonaktif tetap ada, tapi tempatnya di tab Riwayat.
+// `periodeIdPilih` kosong berarti "pakai periode default dari server".
+const [periodeOpsi, setPeriodeOpsi] = useState([]);
+const [periodeIdPilih, setPeriodeIdPilih] = useState('');
+
+// Saat default periode datang dari server, `periodeIdPilih` berubah dan efek
+// statistik ikut berjalan lagi. Padahal angka dari respons login SUDAH memakai
+// periode default itu — menembak ulang berarti mengembalikan satu request yang
+// sudah susah payah dihapus (lihat PERBAIKAN-LOGIN.md). Penanda ini melewati
+// tepat satu kali pengambilan: yang dipicu server, bukan yang dipicu user.
+const lewatiRefetchPeriodeAwal = useRef(false);
+useEffect(() => {
+  let batal = false;
+  (async () => {
+    try {
+      const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_absence_period' }) })).json();
+      if (batal || d.result !== 'success') return;
+      const aktif = Array.isArray(d.periodsAktif) ? d.periodsAktif : (d.period ? [d.period] : []);
+      setPeriodeOpsi(aktif);
+      // Server yang menentukan default (periode yang memuat hari ini), bukan
+      // frontend — supaya aturannya cuma ada di satu tempat.
+      const idDefault = (d.periodeDefault && d.periodeDefault.id) || (aktif.length ? aktif[0].id : '');
+      if (idDefault) { lewatiRefetchPeriodeAwal.current = true; setPeriodeIdPilih(idDefault); }
+    } catch (e) { /* pemilih periode tidak muncul; dashboard tetap jalan */ }
+  })();
+  return () => { batal = true; };
+}, []);
+
 // STATISTIK YANG SUDAH IKUT DI RESPONS LOGIN (Agu 2026).
 // Dibaca sekali saat komponen pertama dibuat, lalu dihapus dari
 // sessionStorage supaya reload halaman tidak memakai angka basi.
@@ -583,11 +612,15 @@ useEffect(() => {
     return;
   }
 
+  // Perubahan periode yang berasal dari default server tidak perlu ditembak
+  // ulang — angkanya sudah benar sejak respons login.
+  if (lewatiRefetchPeriodeAwal.current) { lewatiRefetchPeriodeAwal.current = false; return; }
+
   const f = async () => {
     setLoadingStats(true);
     setStatsError('');
     try {
-      const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id }) })).json();
+      const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_stats', userId: user.id, periodeId: periodeIdPilih }) })).json();
       if (d.result === 'success') {
         terapkanStats(d.stats);
       } else {
@@ -608,7 +641,10 @@ useEffect(() => {
   // useState dan tidak pernah berubah, jadi menambahkannya tidak mengubah
   // kapan efek ini berjalan.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [user, statsRetry]);
+  // periodeIdPilih ikut: mengganti periode WAJIB mengambil ulang angkanya.
+  // Pengambilan pertama tetap dilewati oleh lewatiFetchStatsAwal (angka sudah
+  // ikut di respons login), jadi ini tidak menambah request saat buka aplikasi.
+}, [user, statsRetry, periodeIdPilih]);
 
     // FUNGSI KLIK STATISTIK (NAVIGASI FILTER)
 const handleStatClick = (c) => { localStorage.setItem('dbAbsenFilter', c); setView('db_absen'); };
@@ -736,13 +772,29 @@ const Skeleton = ({ className }) => (
   const sTelatX = Number(stats.total_telat_freq) || 0;
   const sTelatM = Number(stats.total_telat_menit) || 0;
   // Basis persentase: seluruh hari yang punya catatan, bukan kalender penuh.
-  const sTercatat = sHadir
+  // HARI TERCATAT — sejak Agu 2026 dihitung server (stats.hari_tercatat),
+  // yaitu jumlah tanggal yang benar-benar punya catatan DI DALAM periode
+  // terpilih. Penjumlahan kategori di bawah hanya cadangan untuk backend
+  // versi lama: cara itu bisa melebihi jumlah hari dalam periodenya sendiri,
+  // karena satu hari bisa masuk dua kategori dan pengajuan form tidak selalu
+  // punya baris di mesin.
+  const sTercatat = Number(stats.hari_tercatat) > 0
+    ? Number(stats.hari_tercatat)
+    : sHadir
         + (Number(stats.total_ijin) || 0)
         + (Number(stats.total_cuti) || 0)
         + (Number(stats.total_cuti_bersama) || 0)
         + (Number(stats.total_sakit) || 0)
         + (Number(stats.total_alpa) || 0);
   const sPctHadir = sTercatat > 0 ? Math.round((sHadir / sTercatat) * 100) : 0;
+
+  // RINGKASAN PENGAJUAN FORM (Agu 2026), dikirim backend di dalam `stats`.
+  // Nilai cadangan penting: backend versi lama tidak mengirim field ini sama
+  // sekali, dan tanpa cadangan seluruh dashboard ikut gagal render.
+  const sPengajuan = stats.pengajuan || { total: 0, approved: 0, rejected: 0, pending: 0, perTipe: {}, daftar: [] };
+  const sPengajuanTipe = Object.keys(sPengajuan.perTipe || {}).sort();
+  const sPengajuanDaftar = Array.isArray(sPengajuan.daftar) ? sPengajuan.daftar : [];
+
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 pb-24 pt-4 font-sans flex flex-col">
@@ -973,15 +1025,41 @@ const Skeleton = ({ className }) => (
       {/* --- STATISTIK (CLICKABLE) --- */}
       <div className="mb-5">
 
-        <div className="mb-3 flex items-center justify-between px-1">
+        <div className="mb-2 flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
                 <h3 className="text-[17px] font-semibold tracking-tight text-slate-900">Ringkasan kehadiran</h3>
                 {loadingStats && <Loader2 className="w-3 h-3 text-slate-400 animate-spin"/>}
             </div>
-            <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-slate-400 shadow-sm ring-1 ring-slate-200/80">
-                {loadingStats ? "Menyinkronkan…" : (statsError ? <span className="text-red-500 font-semibold">gagal dimuat</span> : stats.periode_db)}
-            </span>
+            {periodeOpsi.length <= 1 && (
+              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-slate-400 shadow-sm ring-1 ring-slate-200/80">
+                  {loadingStats ? "Menyinkronkan…" : (statsError ? <span className="text-red-500 font-semibold">gagal dimuat</span> : stats.periode_db)}
+              </span>
+            )}
         </div>
+
+        {/* PEMILIH PERIODE — hanya muncul kalau admin memang mengaktifkan lebih
+            dari satu. Satu periode aktif berarti tidak ada yang perlu dipilih,
+            jadi labelnya cukup ditampilkan seperti sebelumnya (di header atas). */}
+        {periodeOpsi.length > 1 && (
+          <div className="mb-3 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {periodeOpsi.map((p) => {
+              const dipilih = p.id === periodeIdPilih;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setPeriodeIdPilih(p.id)}
+                  aria-pressed={dipilih}
+                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                    dipilih ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-500 ring-1 ring-slate-200/80 hover:bg-slate-50'
+                  }`}
+                >
+                  {p.label || `${p.mulai} – ${p.selesai}`}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Gagal ambil statistik — angka nol di bawah BUKAN data asli. */}
         {!loadingStats && statsError && (
@@ -1072,6 +1150,108 @@ const Skeleton = ({ className }) => (
                 <StatCell label="Tidak absen-in"  value={stats.total_no_scan_in}   tone="alert" onClick={() => handleStatClick('Si')} />
                 <StatCell label="Tidak absen-out" value={stats.total_no_scan_out}  tone="alert" onClick={() => handleStatClick('So')} />
             </div>
+        </div>
+      </div>
+
+      {/* --- RINGKASAN PENGAJUAN FORM --- */}
+      <div className="mb-5">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h3 className="text-[17px] font-semibold tracking-tight text-slate-900">Ringkasan pengajuan</h3>
+          <span className="text-[10px] text-slate-400">periode yang sama</span>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {/* Baris angka utama. Status memakai ikon + label, bukan warna saja —
+              disetujui dan ditolak tidak boleh hanya dibedakan hijau/merah. */}
+          <div className="grid grid-cols-4 divide-x divide-slate-200 border-b border-slate-200 bg-slate-50">
+            {[
+              { l: 'Total',     v: sPengajuan.total,    c: 'text-slate-900' },
+              { l: 'Disetujui', v: sPengajuan.approved, c: 'text-emerald-700' },
+              { l: 'Ditolak',   v: sPengajuan.rejected, c: 'text-rose-700' },
+              { l: 'Menunggu',  v: sPengajuan.pending,  c: 'text-amber-700' },
+            ].map((k) => (
+              <div key={k.l} className="px-2 py-2 text-center">
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">{k.l}</p>
+                {loadingStats
+                  ? <span className="mx-auto mt-1 block h-4 w-6 animate-pulse rounded bg-slate-200" />
+                  : <p className={`mt-0.5 text-[17px] font-semibold tabular-nums leading-none ${k.v === 0 ? 'text-slate-300' : k.c}`}>{k.v}</p>}
+              </div>
+            ))}
+          </div>
+
+          {sPengajuanTipe.length > 0 && (
+            <table className="w-full table-fixed border-collapse">
+              <colgroup><col /><col className="w-[42px]" /><col className="w-[42px]" /><col className="w-[42px]" /><col className="w-[52px]" /></colgroup>
+              <thead>
+                <tr className="bg-white">
+                  <th className="border-b border-slate-200 px-3 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Jenis</th>
+                  <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">Jml</th>
+                  <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">OK</th>
+                  <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">Tolak</th>
+                  <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">Tunggu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sPengajuanTipe.map((t) => {
+                  const r = sPengajuan.perTipe[t] || {};
+                  const sel = 'border-b border-l border-slate-100 px-1 py-1.5 text-right text-[12px] tabular-nums';
+                  return (
+                    <tr key={t}>
+                      <td className="border-b border-slate-100 px-3 py-1.5 text-[12px] text-slate-700 truncate">{t}</td>
+                      <td className={`${sel} font-semibold text-slate-900`}>{r.total || 0}</td>
+                      <td className={`${sel} ${r.approved ? 'text-emerald-700' : 'text-slate-300'}`}>{r.approved || 0}</td>
+                      <td className={`${sel} ${r.rejected ? 'text-rose-700' : 'text-slate-300'}`}>{r.rejected || 0}</td>
+                      <td className={`${sel} ${r.pending ? 'text-amber-700' : 'text-slate-300'}`}>{r.pending || 0}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {/* Rincian per pengajuan berikut keterangannya. Alasan penolakan
+              justru yang paling sering dicari, jadi catatannya ditampilkan
+              utuh, bukan dipotong. */}
+          {sPengajuanDaftar.length > 0 && (
+            <>
+              <div className="border-t border-slate-200 bg-slate-50 px-3 py-1.5">
+                <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-slate-400">Rincian</span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {sPengajuanDaftar.map((d, i) => {
+                  const st = String(d.status || 'Pending');
+                  const gaya = st === 'Approved'
+                    ? { t: 'Disetujui', c: 'text-emerald-700 bg-emerald-50', I: Check }
+                    : st === 'Rejected'
+                      ? { t: 'Ditolak', c: 'text-rose-700 bg-rose-50', I: X }
+                      : { t: 'Menunggu', c: 'text-amber-700 bg-amber-50', I: Clock };
+                  const Ikon = gaya.I;
+                  return (
+                    <div key={`${d.tanggal}-${i}`} className="px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-medium text-slate-800">{d.tipe}</p>
+                          <p className="mt-0.5 text-[10px] tabular-nums text-slate-400">
+                            {d.tanggal}{d.tanggalSelesai && d.tanggalSelesai !== d.tanggal ? ` s/d ${d.tanggalSelesai}` : ''}
+                          </p>
+                        </div>
+                        <span className={`inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${gaya.c}`}>
+                          <Ikon className="h-3 w-3" strokeWidth={2.5} /> {gaya.t}
+                        </span>
+                      </div>
+                      {d.catatan && d.catatan !== '-' && (
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{d.catatan}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {!loadingStats && sPengajuan.total === 0 && (
+            <p className="px-3 py-6 text-center text-[11px] text-slate-400">Tidak ada pengajuan pada periode ini.</p>
+          )}
         </div>
       </div>
 
@@ -6422,27 +6602,54 @@ function ChangePasswordScreen({ user, setView }) {
 //   abu    = libur
 // ============================================================
 const GAYA_KALENDER = {
-  H:    { dot: 'bg-emerald-500', tint: 'bg-emerald-50',  teks: 'text-emerald-700' },
+  // PALET TERVALIDASI (Agu 2026).
+  //
+  // Palet sebelumnya memakai 13 warna dan GAGAL diuji: violet(Sakit) vs
+  // biru(Ijin) hanya berjarak dE 1.3 untuk mata deuteranopia — praktis
+  // sama, dan sky(Dinas Luar) vs cyan(Extra Ordinary) berjarak dE 6.4
+  // bahkan untuk penglihatan normal. Menambah warna sampai 21 (satu per
+  // keterangan) justru memperburuk: tidak ada 21 warna yang bisa dibedakan
+  // manusia secara andal di layar HP.
+  //
+  // Yang dipakai sekarang: 8 KELUARGA warna yang lolos seluruh pemeriksaan
+  // (jarak antar-warna, penglihatan warna terbatas, kontras terhadap latar),
+  // DITAMBAH kode simbolnya sebagai teks. Perbedaan antar keterangan dijamin
+  // oleh kode + label, bukan oleh warna saja — jadi tetap terbaca saat
+  // dicetak hitam-putih dan oleh mata yang sulit membedakan warna.
+  //
+  // Keluarga: Hadir | Telat | Tidak-scan | Alpa | Ijin | Sakit | Cuti | Dinas
+  H:    { dot: 'bg-emerald-600', tint: 'bg-emerald-50',  teks: 'text-emerald-700' },
+
   T:    { dot: 'bg-amber-500',   tint: 'bg-amber-50',    teks: 'text-amber-700'   },
   TPC:  { dot: 'bg-amber-500',   tint: 'bg-amber-50',    teks: 'text-amber-700'   },
-  PC:   { dot: 'bg-amber-400',   tint: 'bg-amber-50',    teks: 'text-amber-700'   },
-  TSi:  { dot: 'bg-orange-500',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
-  TSo:  { dot: 'bg-orange-500',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
-  SiPC: { dot: 'bg-orange-500',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
-  Si:   { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
-  So:   { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
-  SiSo: { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
-  NF:   { dot: 'bg-rose-500',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
-  A:    { dot: 'bg-red-600',     tint: 'bg-red-50',      teks: 'text-red-700'     },
-  AC:   { dot: 'bg-red-600',     tint: 'bg-red-50',      teks: 'text-red-700'     },
-  I:    { dot: 'bg-blue-500',    tint: 'bg-blue-50',     teks: 'text-blue-700'    },
-  S:    { dot: 'bg-violet-500',  tint: 'bg-violet-50',   teks: 'text-violet-700'  },
-  C:    { dot: 'bg-teal-500',    tint: 'bg-teal-50',     teks: 'text-teal-700'    },
-  CB:   { dot: 'bg-teal-500',    tint: 'bg-teal-50',     teks: 'text-teal-700'    },
-  EO:   { dot: 'bg-cyan-500',    tint: 'bg-cyan-50',     teks: 'text-cyan-700'    },
-  DL:   { dot: 'bg-sky-500',     tint: 'bg-sky-50',      teks: 'text-sky-700'     },
+  PC:   { dot: 'bg-amber-500',   tint: 'bg-amber-50',    teks: 'text-amber-700'   },
+
+  TSi:  { dot: 'bg-orange-600',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  TSo:  { dot: 'bg-orange-600',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  SiPC: { dot: 'bg-orange-600',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  Si:   { dot: 'bg-orange-600',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  So:   { dot: 'bg-orange-600',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  SiSo: { dot: 'bg-orange-600',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+  NF:   { dot: 'bg-orange-600',  tint: 'bg-orange-50',   teks: 'text-orange-700'  },
+
+  A:    { dot: 'bg-rose-700',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
+  AC:   { dot: 'bg-rose-700',    tint: 'bg-rose-50',     teks: 'text-rose-700'    },
+
+  I:    { dot: 'bg-blue-600',    tint: 'bg-blue-50',     teks: 'text-blue-700'    },
+  S:    { dot: 'bg-fuchsia-700', tint: 'bg-fuchsia-50',  teks: 'text-fuchsia-700' },
+
+  C:    { dot: 'bg-cyan-600',    tint: 'bg-cyan-50',     teks: 'text-cyan-700'    },
+  CB:   { dot: 'bg-cyan-600',    tint: 'bg-cyan-50',     teks: 'text-cyan-700'    },
+
+  DL:   { dot: 'bg-lime-700',    tint: 'bg-lime-50',     teks: 'text-lime-700'    },
+  EO:   { dot: 'bg-lime-700',    tint: 'bg-lime-50',     teks: 'text-lime-700'    },
+
+  ONL:  { dot: 'bg-blue-600',    tint: 'bg-blue-50',     teks: 'text-blue-700'    },
+
+  // Off/libur sengaja netral: bukan salah satu kategori, melainkan
+  // ketiadaan jadwal. Memberinya warna sendiri membuatnya tampak setara
+  // dengan status yang perlu diperhatikan.
   O:    { dot: 'bg-slate-300',   tint: 'bg-slate-50',    teks: 'text-slate-400'   },
-  ONL:  { dot: 'bg-indigo-500',  tint: 'bg-indigo-50',   teks: 'text-indigo-700'  },
 };
 const GAYA_KAL_LAIN = { dot: 'bg-slate-400', tint: 'bg-slate-100', teks: 'text-slate-600' };
 const gayaKalender = (sym) => GAYA_KALENDER[sym] || GAYA_KAL_LAIN;
@@ -7113,9 +7320,14 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-4 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-400 mb-2">Keterangan</p>
               <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {/* Kode simbol ditampilkan sebagai teks di samping titik.
+                    Inilah yang membuat 21 keterangan tetap bisa dibedakan
+                    walau hanya ada 8 keluarga warna — identitas tidak pernah
+                    bergantung pada warna saja. */}
                 {simbolBulanIni.map((s) => (
                   <span key={s} className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
                     <span className={`w-2 h-2 rounded-full ${gayaKalender(s).dot}`} />
+                    <span className={`font-mono text-[10px] font-semibold ${gayaKalender(s).teks}`}>{s}</span>
                     {KETERANGAN_MAP[s] || s}
                   </span>
                 ))}
