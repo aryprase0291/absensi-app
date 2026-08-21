@@ -87,13 +87,10 @@ function getIndeksDbAbsen(periodeDiketahui) {
  * @private
  */
 function _gabungkanChunkIndeks_(cache, kunciUtama, jumlahChunk) {
-  const kunciChunk = [];
-  for (let i = 0; i < jumlahChunk; i++) kunciChunk.push(kunciUtama + '::c' + i);
-
-  const hasil = cache.getAll(kunciChunk);
   const gabungan = {};
-  for (let i = 0; i < kunciChunk.length; i++) {
-    const raw = hasil[kunciChunk[i]];
+  for (let i = 0; i < jumlahChunk; i++) {
+    const kunciC = kunciUtama + '::c' + i;
+    const raw = cache.get(kunciC);
     if (!raw) return null; // potongan hilang -> caller susun ulang dari sheet
     try {
       Object.assign(gabungan, JSON.parse(raw));
@@ -253,9 +250,12 @@ function _simpanIndeksTerpecah_(cache, kunciUtama, idx) {
     }
   }
 
-  const nilaiUntukDisimpan = {};
-  for (let i = 0; i < kunciChunk.length; i++) nilaiUntukDisimpan[kunciChunk[i]] = payloadChunk[i];
-  cache.putAll(nilaiUntukDisimpan, IDX_TTL_DETIK);
+  // Simpan per potongan kunci secara individual dengan cache.put().
+  // PENTING: Jangan gunakan cache.putAll() karena di Apps Script putAll()
+  // membatasi total kumulatif seluruh entri map maksimal 100 KB.
+  for (let i = 0; i < kunciChunk.length; i++) {
+    cache.put(kunciChunk[i], payloadChunk[i], IDX_TTL_DETIK);
+  }
 
   // Manifest disimpan TERAKHIR, setelah semua potongan berhasil ditulis —
   // supaya tidak ada jendela waktu di mana manifest sudah ada tapi
