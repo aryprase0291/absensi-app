@@ -5061,9 +5061,18 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [geofenceRequired, setGeofenceRequired] = useState(false);
   const [geofenceAreas, setGeofenceAreas] = useState([]);
   const [loadingGeofence, setLoadingGeofence] = useState(false);
-  const [periodStart, setPeriodStart] = useState('');
-  const [periodEnd, setPeriodEnd] = useState('');
+  // PERIODE ABSENSI — sejak Agu 2026 berupa DAFTAR, bukan satu periode.
+  // Tiap entri: { id, mulai, selesai, aktif }. Boleh lebih dari satu yang
+  // aktif, asalkan tidak tumpang tindih — divalidasi backend karena kuota
+  // ijin 4x per periode menuntut tiap tanggal jatuh ke tepat satu periode
+  // aktif (lihat AbsencePeriod.gs).
+  const [periodeList, setPeriodeList] = useState([]);
+  // Baris kosong di paling atas daftar. Begitu KEDUA tanggalnya terisi dan
+  // masuk akal, isinya pindah jadi periode baru dan baris ini kosong lagi —
+  // jadi menambah periode tidak perlu menekan tombol apa pun dulu.
+  const [periodeDraft, setPeriodeDraft] = useState({ mulai: '', selesai: '', aktif: true });
   const [loadingPeriod, setLoadingPeriod] = useState(false);
+  const [savingPeriod, setSavingPeriod] = useState(false);
 
   // State Tim Approval (mapping kepala divisi -> anggota tim)
   const [approvalTeamUsers, setApprovalTeamUsers] = useState([]);
@@ -5119,9 +5128,17 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     try {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_absence_period' }) });
       const data = await res.json();
-      if (data.result === 'success' && data.period) {
-        setPeriodStart(data.period.mulai || '');
-        setPeriodEnd(data.period.selesai || '');
+      if (data.result === 'success') {
+        // Backend baru mengirim `periods` (daftar lengkap). Kalau yang
+        // menjawab masih backend lama, `periods` tidak ada — jatuh ke
+        // `period` tunggal supaya layar ini tetap berguna, bukan kosong.
+        if (Array.isArray(data.periods)) {
+          setPeriodeList(data.periods.map(normalisasiPeriode));
+        } else if (data.period) {
+          setPeriodeList([normalisasiPeriode({ ...data.period, aktif: true })]);
+        } else {
+          setPeriodeList([]);
+        }
       } else alert(data.message || 'Gagal memuat periode absensi.');
     } catch (e) { alert('Gagal koneksi saat memuat periode absensi.'); }
     finally { setLoadingPeriod(false); }
@@ -5261,18 +5278,113 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     finally { setAddingDepartemen(false); }
   };
 
+  // Menyusun satu baris periode ke bentuk yang dipakai layar ini.
+  // `key` dipakai React untuk membedakan baris; sengaja TIDAK memakai id
+  // dari backend, karena id backend berubah begitu tanggalnya diedit dan
+  // React akan membuang state input yang sedang diketik.
+  const normalisasiPeriode = (p) => ({
+    key: p.key || `${p.mulai || ''}_${p.selesai || ''}_${Math.random().toString(36).slice(2, 8)}`,
+    mulai: p.mulai || '',
+    selesai: p.selesai || '',
+    aktif: p.aktif !== false
+  });
+
+  const ubahPeriode = (key, patch) =>
+    setPeriodeList(list => list.map(p => (p.key === key ? { ...p, ...patch } : p)));
+
+  const hapusPeriode = (key) =>
+    setPeriodeList(list => list.filter(p => p.key !== key));
+
+  // Menggeser satu tanggal maju sejumlah bulan, dengan pengaman akhir bulan
+  // (31 Jan + 1 bulan -> 28/29 Feb, bukan meluber ke Maret).
+  const geserBulan = (ymd, n) => {
+    const [y, mo, d] = ymd.split('-').map(Number);
+    const hariTerakhir = new Date(Date.UTC(y, mo - 1 + n + 1, 0)).getUTCDate();
+    return new Date(Date.UTC(y, mo - 1 + n, Math.min(d, hariTerakhir))).toISOString().slice(0, 10);
+  };
+
+  // Mengisi baris draft dengan periode BERIKUTNYA, digeser satu BULAN dari
+  // periode terbaru yang sudah ada.
+  //
+  // Sengaja tidak memakai "panjang periode dalam hari": untuk siklus 21-20
+  // panjangnya berbeda tiap bulan (30, 31, 28), sehingga cara itu meleset
+  // makin jauh setiap kali ditambah — 21 Jan-20 Feb akan menghasilkan
+  // 21 Feb-23 Mar, bukan 21 Feb-20 Mar. Aritmetika bulan selalu tepat.
+  const isiOtomatisDraft = () => {
+    const urut = [...periodeList].filter(p => p.mulai && p.selesai).sort((a, b) => (a.mulai < b.mulai ? 1 : -1));
+    if (!urut.length) return;
+    ubahDraft({ mulai: geserBulan(urut[0].mulai, 1), selesai: geserBulan(urut[0].selesai, 1) });
+  };
+
+  // Setiap perubahan pada baris draft diperiksa: kalau sudah lengkap dan
+  // tanggalnya masuk akal, baris itu langsung menjadi periode baru di
+  // daftar dan draft dikosongkan kembali.
+  //
+  // Pemeriksaan `mulai <= selesai` penting di sini: tanpa itu, mengetik
+  // tanggal selesai lebih dulu akan langsung membuat periode terbalik yang
+  // tidak sempat diperbaiki karena barisnya sudah telanjur pindah.
+  //
+  // CATATAN: penambahan ke daftar TIDAK boleh dilakukan di dalam updater
+  // setPeriodeDraft(draft => ...). React memanggil updater dua kali di
+  // StrictMode (mode pengembangan), sehingga satu pengisian akan membuat
+  // DUA periode kembar. Updater wajib murni — efeknya ditaruh di luar.
+  const ubahDraft = (patch) => {
+    const baru = { ...periodeDraft, ...patch };
+    if (baru.mulai && baru.selesai && baru.mulai <= baru.selesai) {
+      setPeriodeList(list => [normalisasiPeriode(baru), ...list]);
+      setPeriodeDraft({ mulai: '', selesai: '', aktif: true });
+    } else {
+      setPeriodeDraft(baru);
+    }
+  };
+
+  // Deteksi tumpang tindih antar periode AKTIF, ditampilkan langsung di
+  // layar. Backend juga menolaknya, tapi memberi tahu di sini lebih baik
+  // daripada membiarkan admin menekan Simpan lalu ditolak.
+  const periodeBertabrakan = (() => {
+    const aktif = periodeList
+      .filter(p => p.aktif && p.mulai && p.selesai && p.mulai <= p.selesai)
+      .sort((a, b) => (a.mulai < b.mulai ? -1 : 1));
+    const bentrok = new Set();
+    for (let i = 1; i < aktif.length; i++) {
+      if (aktif[i].mulai <= aktif[i - 1].selesai) {
+        bentrok.add(aktif[i].key);
+        bentrok.add(aktif[i - 1].key);
+      }
+    }
+    return bentrok;
+  })();
+
   const handleSaveAbsencePeriod = async (e) => {
     e.preventDefault();
-    if (!periodStart || !periodEnd) return alert('Lengkapi tanggal mulai dan tanggal selesai.');
-    if (periodStart > periodEnd) return alert('Tanggal mulai tidak boleh setelah tanggal selesai.');
-    setLoadingPeriod(true);
+
+    for (const p of periodeList) {
+      if (!p.mulai || !p.selesai) return alert('Masih ada periode yang tanggalnya belum lengkap.');
+      if (p.mulai > p.selesai) return alert(`Periode ${p.mulai}: tanggal mulai tidak boleh setelah tanggal selesai.`);
+    }
+    if (periodeBertabrakan.size) {
+      return alert('Ada periode aktif yang tanggalnya tumpang tindih. Nonaktifkan salah satunya atau perbaiki tanggalnya.');
+    }
+    if (!periodeList.some(p => p.aktif)) {
+      if (!window.confirm('Tidak ada periode yang aktif. Dashboard karyawan akan memakai siklus standar tanggal 21–20. Lanjutkan?')) return;
+    }
+
+    setSavingPeriod(true);
     try {
-      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'save_absence_period', mulai: periodStart, selesai: periodEnd }) });
+      const res = await fetchApi(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'save_absence_periods',
+          periods: periodeList.map(p => ({ mulai: p.mulai, selesai: p.selesai, aktif: p.aktif }))
+        })
+      });
       const data = await res.json();
-      if (data.result === 'success') alert(data.message || 'Periode absensi berhasil disimpan.');
-      else alert(data.message || 'Gagal menyimpan periode absensi.');
+      if (data.result === 'success') {
+        if (Array.isArray(data.periods)) setPeriodeList(data.periods.map(normalisasiPeriode));
+        alert(data.message || 'Daftar periode berhasil disimpan.');
+      } else alert(data.message || 'Gagal menyimpan periode absensi.');
     } catch (e) { alert('Gagal koneksi saat menyimpan periode absensi.'); }
-    finally { setLoadingPeriod(false); }
+    finally { setSavingPeriod(false); }
   };
 
   const applyGeofenceUser = (userId, configs = geofenceConfigs) => {
@@ -5728,31 +5840,133 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                 <CalendarRange className="h-4 w-4 text-blue-600" strokeWidth={1.8} />
                 <p className="text-[14px] font-semibold text-slate-900">Periode absensi aktif</p>
               </div>
-              <p className="text-[11px] leading-relaxed text-slate-500">Periode ini menjadi default dashboard dan histori. Kuota pengajuan Ijin maksimal 4 kali akan dihitung ulang dari awal setiap periode.</p>
+              <p className="text-[11px] leading-relaxed text-slate-500">Periode yang <strong>aktif</strong> muncul sebagai pilihan di dashboard karyawan. Kuota pengajuan Ijin maksimal 4 kali dihitung ulang di setiap periode.</p>
             </div>
             {loadingPeriod ? (
               <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-3 p-4">
-                  <div>
-                    <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal mulai</label>
-                    <input required type="date" className={`${inputCls} tabular-nums`} value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal selesai</label>
-                    <input required type="date" className={`${inputCls} tabular-nums`} value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-                  </div>
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                  <p className="text-[11px] text-slate-500">
+                    <span className="font-semibold text-slate-700">{periodeList.filter(p => p.aktif).length}</span> aktif dari {periodeList.length} periode
+                  </p>
+                  {periodeList.length > 0 && (
+                    <button type="button" onClick={isiOtomatisDraft} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 transition-colors hover:bg-slate-50">
+                      <CalendarCheck className="h-3.5 w-3.5" strokeWidth={1.8} /> Isi periode berikutnya
+                    </button>
+                  )}
                 </div>
-                <div className="px-4 pb-4">
+
+                <div className="divide-y divide-slate-100">
+                  {/* BARIS DRAFT — selalu di paling atas.
+                      Begitu kedua tanggalnya terisi, isinya pindah jadi
+                      periode baru di bawah dan baris ini kosong lagi. */}
+                  <div className="bg-slate-50/70 p-4">
+                    <div className="flex items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPeriodeDraft(d => ({ ...d, aktif: !d.aktif }))}
+                        aria-pressed={periodeDraft.aktif}
+                        title={periodeDraft.aktif ? 'Periode baru langsung aktif' : 'Periode baru dibuat nonaktif'}
+                        className="mb-2 shrink-0"
+                      >
+                        <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${periodeDraft.aktif ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                          <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${periodeDraft.aktif ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                        </span>
+                      </button>
+
+                      <div className="min-w-0 flex-1">
+                        <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal mulai</label>
+                        <input type="date" className={`${inputCls} tabular-nums`} value={periodeDraft.mulai} onChange={(e) => ubahDraft({ mulai: e.target.value })} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal selesai</label>
+                        <input type="date" className={`${inputCls} tabular-nums`} value={periodeDraft.selesai} onChange={(e) => ubahDraft({ selesai: e.target.value })} />
+                      </div>
+
+                      {/* Penyeimbang lebar tombol hapus, supaya kolom tanggal
+                          baris draft lurus dengan baris-baris di bawahnya. */}
+                      <span className="mb-2 h-7 w-7 shrink-0" aria-hidden="true" />
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-400">
+                      Isi kedua tanggal untuk menambah periode baru.
+                    </p>
+                  </div>
+
+                  {periodeList.map((p) => {
+                    const bentrok = periodeBertabrakan.has(p.key);
+                    const terbalik = p.mulai && p.selesai && p.mulai > p.selesai;
+                    return (
+                      <div key={p.key} className={`p-4 transition-colors ${bentrok || terbalik ? 'bg-red-50/60' : p.aktif ? 'bg-blue-50/30' : 'bg-white'}`}>
+                        <div className="flex items-end gap-2">
+                          {/* Saklar aktif/nonaktif — sejajar dengan kotak tanggal */}
+                          <button
+                            type="button"
+                            onClick={() => ubahPeriode(p.key, { aktif: !p.aktif })}
+                            aria-pressed={p.aktif}
+                            aria-label={p.aktif ? 'Nonaktifkan periode' : 'Aktifkan periode'}
+                            title={p.aktif ? 'Aktif — muncul di dashboard karyawan' : 'Nonaktif — hanya untuk histori'}
+                            className="mb-2 shrink-0"
+                          >
+                            <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${p.aktif ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${p.aktif ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                            </span>
+                          </button>
+
+                          <div className="min-w-0 flex-1">
+                            <input type="date" aria-label="Tanggal mulai" className={`${inputCls} tabular-nums`} value={p.mulai} onChange={(e) => ubahPeriode(p.key, { mulai: e.target.value })} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <input type="date" aria-label="Tanggal selesai" className={`${inputCls} tabular-nums`} value={p.selesai} onChange={(e) => ubahPeriode(p.key, { selesai: e.target.value })} />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => { if (window.confirm('Hapus periode ini dari daftar?')) hapusPeriode(p.key); }}
+                            className="mb-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            aria-label="Hapus periode"
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={1.8} />
+                          </button>
+                        </div>
+
+                        {terbalik && (
+                          <p className="mt-2 flex items-start gap-1.5 text-[11px] font-medium text-red-600">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                            Tanggal mulai tidak boleh setelah tanggal selesai.
+                          </p>
+                        )}
+                        {bentrok && !terbalik && (
+                          <p className="mt-2 flex items-start gap-1.5 text-[11px] font-medium text-red-600">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                            Tumpang tindih dengan periode aktif lain. Nonaktifkan salah satunya atau perbaiki tanggalnya.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {periodeList.length === 0 && (
+                    <div className="px-4 py-8 text-center text-[12px] text-slate-400">
+                      Belum ada periode tersimpan.
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-4 pb-4 pt-4">
                   <div className="rounded-xl border border-blue-100 bg-blue-50/70 p-3 text-[11px] leading-relaxed text-blue-800">
-                    Contoh periode: <strong>21 Juli 2026 – 20 Agustus 2026</strong>. Setelah disimpan, karyawan akan melihat periode ini sebagai default dan statistik hadir, Alpa, sakit, serta Ijin akan mengikuti interval tersebut.
+                    Boleh mengaktifkan <strong>lebih dari satu</strong> periode — karyawan tinggal memilihnya di dashboard.
+                    Syaratnya tanggalnya tidak boleh saling tumpang tindih, karena kuota Ijin 4× dihitung per periode
+                    dan setiap tanggal harus jatuh ke tepat satu periode.
+                    <br /><br />
+                    Periode <strong>nonaktif</strong> tidak hilang — tetap bisa dipilih semua orang di tab Riwayat untuk melihat data lama.
                   </div>
                 </div>
+
                 <div className="bg-slate-50/60 p-4">
-                  <button type="submit" disabled={loadingPeriod} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-[14px] font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-60">
-                    {loadingPeriod && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {loadingPeriod ? 'Menyimpan…' : 'Simpan periode aktif'}
+                  <button type="submit" disabled={savingPeriod || periodeBertabrakan.size > 0} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-[14px] font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-60">
+                    {savingPeriod && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {savingPeriod ? 'Menyimpan…' : 'Simpan daftar periode'}
                   </button>
                 </div>
               </>
