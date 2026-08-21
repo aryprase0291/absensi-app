@@ -484,6 +484,22 @@ const IkonCuaca = ({ kode, malam }) => {
 };
 
     // DASHBOARD SCREEN (CLICKABLE STATS)
+// Label periode dalam format DD/MM/YYYY - DD/MM/YYYY.
+//
+// Sengaja mengolah STRING 'YYYY-MM-DD' apa adanya, tanpa new Date(): mem-parse
+// tanggal polos jadi objek Date membuatnya dibaca sebagai tengah malam UTC,
+// lalu ditampilkan ulang menurut zona waktu perangkat — di WIB (UTC+7) itu
+// aman, tapi di perangkat yang zonanya di barat GMT tanggalnya mundur satu
+// hari. Memecah stringnya menghindarkan seluruh persoalan itu.
+function labelPeriodeDDMM(mulai, selesai) {
+  const susun = (ymd) => {
+    const bagian = String(ymd || '').split('-');
+    return bagian.length === 3 ? `${bagian[2]}/${bagian[1]}/${bagian[0]}` : String(ymd || '');
+  };
+  if (!mulai || !selesai) return '';
+  return `${susun(mulai)} - ${susun(selesai)}`;
+}
+
 function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice }) { const [time, setTime] = useState(new Date()); const [cuaca, setCuaca] = useState(null); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
 // Gagal-ambil vs benar-benar-nol dulu tampil identik (semua angka 0 dan
 // periode '-'), jadi request yang gagal terbaca seperti "user belum punya
@@ -793,7 +809,6 @@ const Skeleton = ({ className }) => (
   // sekali, dan tanpa cadangan seluruh dashboard ikut gagal render.
   const sPengajuan = stats.pengajuan || { total: 0, approved: 0, rejected: 0, pending: 0, perTipe: {}, daftar: [] };
   const sPengajuanTipe = Object.keys(sPengajuan.perTipe || {}).sort();
-  const sPengajuanDaftar = Array.isArray(sPengajuan.daftar) ? sPengajuan.daftar : [];
 
 
   return (
@@ -1032,7 +1047,13 @@ const Skeleton = ({ className }) => (
             </div>
             {periodeOpsi.length <= 1 && (
               <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-slate-400 shadow-sm ring-1 ring-slate-200/80">
-                  {loadingStats ? "Menyinkronkan…" : (statsError ? <span className="text-red-500 font-semibold">gagal dimuat</span> : stats.periode_db)}
+                  {loadingStats
+                    ? "Menyinkronkan…"
+                    : statsError
+                      ? <span className="text-red-500 font-semibold">gagal dimuat</span>
+                      : (periodeOpsi.length === 1
+                          ? labelPeriodeDDMM(periodeOpsi[0].mulai, periodeOpsi[0].selesai)
+                          : '') || stats.periode_db}
               </span>
             )}
         </div>
@@ -1054,7 +1075,7 @@ const Skeleton = ({ className }) => (
                     dipilih ? 'bg-slate-900 text-white shadow-sm' : 'bg-white text-slate-500 ring-1 ring-slate-200/80 hover:bg-slate-50'
                   }`}
                 >
-                  {p.label || `${p.mulai} – ${p.selesai}`}
+                  {labelPeriodeDDMM(p.mulai, p.selesai) || p.label}
                 </button>
               );
             })}
@@ -1161,27 +1182,65 @@ const Skeleton = ({ className }) => (
         </div>
 
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          {/* Baris angka utama. Status memakai ikon + label, bukan warna saja —
-              disetujui dan ditolak tidak boleh hanya dibedakan hijau/merah. */}
-          <div className="grid grid-cols-4 divide-x divide-slate-200 border-b border-slate-200 bg-slate-50">
-            {[
-              { l: 'Total',     v: sPengajuan.total,    c: 'text-slate-900' },
-              { l: 'Disetujui', v: sPengajuan.approved, c: 'text-emerald-700' },
-              { l: 'Ditolak',   v: sPengajuan.rejected, c: 'text-rose-700' },
-              { l: 'Menunggu',  v: sPengajuan.pending,  c: 'text-amber-700' },
-            ].map((k) => (
-              <div key={k.l} className="px-2 py-2 text-center">
-                <p className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">{k.l}</p>
-                {loadingStats
-                  ? <span className="mx-auto mt-1 block h-4 w-6 animate-pulse rounded bg-slate-200" />
-                  : <p className={`mt-0.5 text-[17px] font-semibold tabular-nums leading-none ${k.v === 0 ? 'text-slate-300' : k.c}`}>{k.v}</p>}
+          {/* Yang ditampilkan hanyalah yang menuntut tindakan.
+              Ditolak dan Menunggu adalah satu-satunya status yang perlu
+              dikerjakan orangnya; saat keduanya nol — kondisi yang paling
+              sering terjadi — dua kotak angka nol cuma memakan tempat dan
+              membuat mata melewatinya saat suatu hari benar-benar berisi.
+              Status dibedakan lewat ikon + label, bukan warna saja. */}
+          {!loadingStats && sPengajuan.total > 0 && (
+            (sPengajuan.pending > 0 || sPengajuan.rejected > 0) ? (
+              <div className="divide-y divide-slate-100 border-b border-slate-200">
+                {sPengajuan.pending > 0 && (
+                  <button type="button" onClick={() => setView('history')} className="flex w-full items-center gap-2 bg-amber-50/60 px-3 py-2.5 text-left transition-colors hover:bg-amber-50">
+                    <Clock className="h-4 w-4 shrink-0 text-amber-600" strokeWidth={2.2} />
+                    <span className="flex-1 text-[12px] font-medium text-amber-900">
+                      <span className="tabular-nums">{sPengajuan.pending}</span> pengajuan menunggu persetujuan
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-amber-400" />
+                  </button>
+                )}
+                {sPengajuan.rejected > 0 && (
+                  <button type="button" onClick={() => setView('history')} className="flex w-full items-center gap-2 bg-rose-50/60 px-3 py-2.5 text-left transition-colors hover:bg-rose-50">
+                    <X className="h-4 w-4 shrink-0 text-rose-600" strokeWidth={2.5} />
+                    <span className="flex-1 text-[12px] font-medium text-rose-900">
+                      <span className="tabular-nums">{sPengajuan.rejected}</span> ditolak &mdash; lihat alasannya
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-rose-400" />
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
+            ) : (
+              <div className="flex items-center gap-2 border-b border-slate-200 bg-emerald-50/50 px-3 py-2.5">
+                <Check className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
+                <span className="text-[12px] font-medium text-emerald-900">
+                  <span className="tabular-nums">{sPengajuan.total}</span> pengajuan, semuanya disetujui
+                </span>
+              </div>
+            )
+          )}
+
+          {loadingStats && (
+            <div className="border-b border-slate-200 px-3 py-3"><span className="block h-4 w-40 animate-pulse rounded bg-slate-100" /></div>
+          )}
 
           {sPengajuanTipe.length > 0 && (
             <table className="w-full table-fixed border-collapse">
-              <colgroup><col /><col className="w-[42px]" /><col className="w-[42px]" /><col className="w-[42px]" /><col className="w-[52px]" /></colgroup>
+              {/* Kolom Jenis melar mengisi sisa ruang; lima kolom angka
+                  dipatok selebar SAMA (54px). Angkanya dipilih dari isi
+                  terlebar yang mungkin muncul (header "Tunggu" dan nilai sisa
+                  dua digit "10 hari"), lalu diperiksa terhadap layar HP
+                  tersempit: 5 x 48px menyisakan ~88px untuk kolom Jenis di
+                  layar 360px. Memakai 54px terlihat lebih lega di layar besar
+                  tapi menyisakan hanya 58px di 360px — "Dinas Luar" terpotong. */}
+              <colgroup>
+                <col />
+                <col className="w-[48px]" />
+                <col className="w-[48px]" />
+                <col className="w-[48px]" />
+                <col className="w-[48px]" />
+                <col className="w-[48px]" />
+              </colgroup>
               <thead>
                 <tr className="bg-white">
                   <th className="border-b border-slate-200 px-3 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Jenis</th>
@@ -1189,12 +1248,23 @@ const Skeleton = ({ className }) => (
                   <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">OK</th>
                   <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">Tolak</th>
                   <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">Tunggu</th>
+                  <th className="border-b border-l border-slate-200 px-1 py-1.5 text-right text-[10px] font-semibold text-slate-500">Sisa</th>
                 </tr>
               </thead>
               <tbody>
                 {sPengajuanTipe.map((t) => {
                   const r = sPengajuan.perTipe[t] || {};
                   const sel = 'border-b border-l border-slate-100 px-1 py-1.5 text-right text-[12px] tabular-nums';
+
+                  // SISA KUOTA. Hanya dua jenis yang punya batas: Ijin
+                  // dibatasi 4x per periode, Cuti punya jatah hari per
+                  // orang. Jenis lain (Dinas, Sakit, dsb) tidak berjatah,
+                  // jadi diberi tanda "-" — bukan angka 0, supaya tidak
+                  // terbaca sebagai "kuota habis".
+                  let sisa = null;
+                  if (t === 'Ijin') sisa = { angka: Math.max(0, 4 - (Number(stats.ijin_count) || 0)), satuan: 'kali' };
+                  else if (t === 'Cuti') sisa = { angka: Math.max(0, parseInt(user.sisaCuti) || 0), satuan: 'hari' };
+
                   return (
                     <tr key={t}>
                       <td className="border-b border-slate-100 px-3 py-1.5 text-[12px] text-slate-700 truncate">{t}</td>
@@ -1202,51 +1272,18 @@ const Skeleton = ({ className }) => (
                       <td className={`${sel} ${r.approved ? 'text-emerald-700' : 'text-slate-300'}`}>{r.approved || 0}</td>
                       <td className={`${sel} ${r.rejected ? 'text-rose-700' : 'text-slate-300'}`}>{r.rejected || 0}</td>
                       <td className={`${sel} ${r.pending ? 'text-amber-700' : 'text-slate-300'}`}>{r.pending || 0}</td>
+                      <td className="whitespace-nowrap border-b border-l border-slate-100 px-1 py-1.5 text-right text-[11px] tabular-nums">
+                        {sisa
+                          ? <span className={sisa.angka === 0 ? 'font-semibold text-rose-700' : 'text-slate-600'}>
+                              {sisa.angka}<span className="ml-0.5 text-[9px] text-slate-400">{sisa.satuan}</span>
+                            </span>
+                          : <span className="text-slate-300">&ndash;</span>}
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          )}
-
-          {/* Rincian per pengajuan berikut keterangannya. Alasan penolakan
-              justru yang paling sering dicari, jadi catatannya ditampilkan
-              utuh, bukan dipotong. */}
-          {sPengajuanDaftar.length > 0 && (
-            <>
-              <div className="border-t border-slate-200 bg-slate-50 px-3 py-1.5">
-                <span className="text-[9.5px] font-semibold uppercase tracking-[0.09em] text-slate-400">Rincian</span>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {sPengajuanDaftar.map((d, i) => {
-                  const st = String(d.status || 'Pending');
-                  const gaya = st === 'Approved'
-                    ? { t: 'Disetujui', c: 'text-emerald-700 bg-emerald-50', I: Check }
-                    : st === 'Rejected'
-                      ? { t: 'Ditolak', c: 'text-rose-700 bg-rose-50', I: X }
-                      : { t: 'Menunggu', c: 'text-amber-700 bg-amber-50', I: Clock };
-                  const Ikon = gaya.I;
-                  return (
-                    <div key={`${d.tanggal}-${i}`} className="px-3 py-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-[12px] font-medium text-slate-800">{d.tipe}</p>
-                          <p className="mt-0.5 text-[10px] tabular-nums text-slate-400">
-                            {d.tanggal}{d.tanggalSelesai && d.tanggalSelesai !== d.tanggal ? ` s/d ${d.tanggalSelesai}` : ''}
-                          </p>
-                        </div>
-                        <span className={`inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${gaya.c}`}>
-                          <Ikon className="h-3 w-3" strokeWidth={2.5} /> {gaya.t}
-                        </span>
-                      </div>
-                      {d.catatan && d.catatan !== '-' && (
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{d.catatan}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
           )}
 
           {!loadingStats && sPengajuan.total === 0 && (

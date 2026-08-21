@@ -1802,6 +1802,36 @@ function handleGetStats(data) {
 // Tipe baris sheet Absensi yang dianggap "pengajuan form" — yaitu yang
 // melewati alur persetujuan. 'Hadir' dan 'Pulang' adalah tap absensi biasa,
 // bukan pengajuan, jadi tidak ikut dihitung.
+/**
+ * Daftar tanggal (YYYY-MM-DD) antara `mulai` dan `selesai`, dipotong pada
+ * batas periode. Dipakai untuk membentangkan pengajuan berjangka menjadi
+ * hari-hari yang benar-benar dijalani.
+ *
+ * Ada pembatas 400 putaran: satu baris dengan tanggal salah ketik (mis.
+ * tahun 2206) kalau tidak dibatasi akan membuat eksekusi Apps Script
+ * berputar sampai kena batas waktu 6 menit, dan gejalanya muncul sebagai
+ * "dashboard tidak mau terbuka" tanpa error yang menjelaskan.
+ * @private
+ */
+function _rentangTanggal_(mulai, selesai, periode) {
+  const hasil = [];
+  if (!mulai || !selesai) return hasil;
+  const dari = mulai > periode.mulai ? mulai : periode.mulai;
+  const sampai = selesai < periode.selesai ? selesai : periode.selesai;
+  if (dari > sampai) return hasil;
+
+  let t = new Date(dari + 'T00:00:00Z');
+  const akhir = new Date(sampai + 'T00:00:00Z');
+  if (isNaN(t.getTime()) || isNaN(akhir.getTime())) return hasil;
+
+  let pengaman = 0;
+  while (t.getTime() <= akhir.getTime() && pengaman++ < 400) {
+    hasil.push(t.toISOString().slice(0, 10));
+    t = new Date(t.getTime() + 86400000);
+  }
+  return hasil;
+}
+
 const TIPE_PENGAJUAN = ['Ijin', 'Sakit', 'Cuti', 'Cuti EO', 'Dinas Luar', 'Dinas', 'Alpa', 'Tukar Shift', 'Off'];
 
 function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDipilih) {
@@ -1874,6 +1904,12 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
     // dihitung lagi agar sumber presensi online dan mesin tidak bertentangan.
     const onlineHadirByDate = {};
     const alpaManualByDate = {};
+
+    // Tanggal Ijin yang diajukan lewat form dan tidak ditolak. Dipakai di
+    // bagian 3: hari Ijin dihitung HADIR hanya kalau hari itu tidak punya
+    // catatan mesin — kalau mesin sudah mencatat sesuatu, simbol mesinnya
+    // yang menentukan, sehingga satu hari tidak pernah dihitung dua kali.
+    const ijinFormByDate = {};
 
     // 1. HITUNG STATISTIK MANUAL (Sheet Absensi - Ijin, Sakit, Alpa)
     for (let i = 1; i < rowsAbsensi.length; i++) {
@@ -1961,6 +1997,10 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
                 if (tipe === 'Ijin') {
                     stats.ijin_count++;
                     stats.total_ijin++;
+                    // Dibentangkan per hari, bukan per pengajuan: ijin 3 hari
+                    // berarti 3 hari yang dijalani, bukan 1.
+                    _rentangTanggal_(tanggalBaris, tanggalSelesaiBaris, periodeAktif)
+                        .forEach(function (tgl) { ijinFormByDate[tgl] = 1; });
                 }
                 // [UPDATE] Logika Cuti manual dimatikan, karena diambil dari Master
                 // if (tipe === 'Cuti' || tipe === 'Cuti EO') stats.total_cuti++;
@@ -2061,13 +2101,30 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
         // HARI TERCATAT = tanggal yang punya catatan mesin di periode ini,
         // ditambah tanggal yang HANYA punya absen online. Tanggal yang
         // punya keduanya dihitung sekali.
-        const hariMesin = (e && e.hari_by_date) ? e.hari_by_date : {};
-        let hariTercatat = Object.keys(hariMesin).length;
-        Object.keys(onlineHadirByDate).forEach(function (tgl) {
-            if (!hariMesin[tgl]) hariTercatat++;
-        });
-        stats.hari_tercatat = hariTercatat;
     }
+
+    // HARI TERCATAT + IJIN YANG DIHITUNG HADIR.
+    //
+    // Sengaja DI LUAR blok `if (userNik ...)` di atas: karyawan yang belum
+    // punya No Payroll tetap harus mendapat angka yang benar dari absen
+    // online dan pengajuan formnya.
+    const eIdx = (userNik && userNik !== '-') ? idxDb[userNik] : null;
+    const hariMesin = (eIdx && eIdx.hari_by_date) ? eIdx.hari_by_date : {};
+    let hariTercatat = Object.keys(hariMesin).length;
+    Object.keys(onlineHadirByDate).forEach(function (tgl) {
+        if (!hariMesin[tgl]) hariTercatat++;
+    });
+
+    // Hari Ijin yang mesinnya tidak mencatat apa pun DAN tidak ada absen
+    // online: hari itu tetap dijalani, jadi dihitung hadir sekaligus
+    // menambah hari tercatat. Tanpa menambah penyebutnya juga, persentase
+    // kehadiran bisa melewati 100%.
+    let ijinTanpaCatatan = 0;
+    Object.keys(ijinFormByDate).forEach(function (tgl) {
+        if (!hariMesin[tgl] && !onlineHadirByDate[tgl]) ijinTanpaCatatan++;
+    });
+    stats.total_hadir += ijinTanpaCatatan;
+    stats.hari_tercatat = hariTercatat + ijinTanpaCatatan;
 
     // 4. Periode dashboard selalu mengikuti periode absensi aktif yang
     // ditetapkan admin, bukan rentang seluruh data mesin.

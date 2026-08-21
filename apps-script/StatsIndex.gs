@@ -50,7 +50,7 @@
 // =======================================================
 
 // V5: sumber kebenaran pindah ke Script Properties.
-const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V6';
+const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V7';
 const KUNCI_REV_IDX_DBABSEN = 'DBABSEN_IDX_REVISION_V1';
 
 // Awalan properti penyimpan indeks. Dipakai juga untuk membersihkan
@@ -65,9 +65,37 @@ const IDX_PROP_POTONGAN = 8 * 1024;
 const IDX_TTL_DETIK = 21600;
 const IDX_BATAS_CACHE = 100 * 1024;
 
-// Simbol yang dihitung sebagai HADIR. Disalin persis dari handleGetStats
-// versi lama supaya angka yang tampil di dashboard tidak berubah.
-const IDX_HADIR_SYMBOLS = ['H', 'I', 'T', 'Si', 'So', 'TSo', 'TSi', 'TPC'];
+// Simbol yang dihitung sebagai HADIR.
+//
+// DIPERLUAS 21 Agu 2026 atas keputusan admin. Aturannya: orangnya berada di
+// tempat kerja atau sedang menjalankan tugas kantor — cara pencatatannya
+// boleh tidak sempurna (telat, lupa scan, pulang cepat), tapi hari itu tetap
+// hari kerja yang dijalani.
+//
+//   H     Hadir
+//   I     Ijin (simbol dari mesin)
+//   T     Telat
+//   TPC   Telat & Pulang Cepat
+//   PC    Pulang Cepat        <- ditambahkan; sebelumnya TPC dihitung tapi PC
+//                                tidak, padahal keduanya sama-sama "datang
+//                                lalu pulang lebih awal"
+//   Si    Tidak absen IN
+//   So    Tidak absen OUT
+//   TSi   Telat & tidak absen IN
+//   TSo   Telat & tidak absen OUT
+//   SiSo  Tidak absen IN & OUT <- ditambahkan
+//   SiPC  Tidak absen IN & Pulang Cepat <- ditambahkan
+//   DL    Dinas Luar           <- ditambahkan
+//   ONL   Absen online         <- ditambahkan
+//
+// SENGAJA TIDAK termasuk: A/AC (Alpa), S (Sakit), C/CB (Cuti), O (Off),
+// NF (Tidak Absen sama sekali), dan EO (Extra Ordinary — artinya belum
+// dipastikan, jadi dibiarkan di luar sampai ada keputusan).
+//
+// Kalau daftar ini diubah lagi, WAJIB naikkan KUNCI_IDX_DBABSEN di atas —
+// kalau tidak, indeks lama tetap terpakai dengan aturan lama dan angkanya
+// tidak berubah walau kodenya sudah benar.
+const IDX_HADIR_SYMBOLS = ['H', 'I', 'T', 'TPC', 'PC', 'Si', 'So', 'TSi', 'TSo', 'SiSo', 'SiPC', 'DL', 'ONL'];
 
 
 // =======================================================
