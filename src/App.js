@@ -4,7 +4,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List,
   Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
-import { SCRIPT_URL, TIMEOUT_DURATION } from './config/constants';
+import { SCRIPT_URL, TIMEOUT_DURATION, BOARD_ABSENSI_URL } from './config/constants';
 import { FRONTEND_VERSION } from './config/updateManifest';
 import BackButton from './components/BackButton';
 import ImportDbAbsen from './screens/ImportDbAbsen';
@@ -4487,6 +4487,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   
   // REPORT MODAL STATE
   const [showWebReport, setShowWebReport] = useState(false);
+  const isFirstReportModalRender = useRef(true);
   const [reportStatusFilter, setReportStatusFilter] = useState('All');
   const [reportCategory, setReportCategory] = useState('General'); 
   const [isReportLoading, setIsReportLoading] = useState(false);
@@ -4540,6 +4541,14 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           setTimeout(() => setIsReportLoading(false), 800);
           setReportColumnFilters({});
           setReportSortConfig({ key: null, direction: 'asc' });
+      } else if (isFirstReportModalRender.current) {
+          isFirstReportModalRender.current = false;
+      } else {
+          // Modal Laporan ditutup: `history` mungkin masih berisi data untuk
+          // Periode yang dipilih di modal (bisa beda dari filterStart/filterEnd
+          // layar Riwayat). Ambil ulang sesuai filter Riwayat supaya layar di
+          // baliknya tidak ikut menampilkan rentang tanggal milik Laporan.
+          fetchHistory();
       }
   }, [showWebReport]);
 
@@ -4554,17 +4563,21 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     } catch(e) { console.error("Gagal load users"); }
   }
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (overrideStart, overrideEnd) => {
     setLoading(true);
-    try { 
-      const payload = { 
-        action: 'get_history', 
+    try {
+      const payload = {
+        action: 'get_history',
         userId: user.id,
-        canViewAll: canViewAll, 
-        requestorLokasi: isSuperAdmin ? locationFilter : (user.lokasi || 'All'), 
+        canViewAll: canViewAll,
+        requestorLokasi: isSuperAdmin ? locationFilter : (user.lokasi || 'All'),
         targetUserIds: canViewAll ? selectedUserIds : [],
-        filterStart,
-        filterEnd
+        // Laporan (Periode di modal report) mengirim tanggalnya sendiri lewat
+        // overrideStart/overrideEnd, supaya server benar-benar mengambil data
+        // periode itu -- bukan cuma menyaring "history" yang sudah kepalang
+        // dibatasi ke periode aktif default (filterStart/filterEnd Riwayat).
+        filterStart: overrideStart !== undefined ? overrideStart : filterStart,
+        filterEnd: overrideEnd !== undefined ? overrideEnd : filterEnd
       };
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
       const data = await res.json();
@@ -4591,7 +4604,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
   useEffect(() => { if(canViewAll) fetchUsers(); }, [locationFilter]);
   useEffect(() => { fetchHistory(); }, [selectedUserIds, filterStart, filterEnd]);
-  useEffect(() => { 
+  useEffect(() => {
       if (showWebReport && reportCategory === 'RunningShift') {
           fetchShiftReport();
       } else if (showWebReport) {
@@ -4600,6 +4613,20 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       }
       setReportColumnFilters({});
   }, [showWebReport, reportCategory]);
+
+  // Laporan ("General"/"Tally") memakai data yang sama (`history`) dengan
+  // layar Riwayat, tapi punya date-picker "Periode" sendiri di dalam modal.
+  // Tanpa efek ini, mengganti Periode di modal cuma menyaring ulang `history`
+  // yang sudah kepalang dibatasi server ke periode aktif (lihat fetchHistory)
+  // -- kalau tanggal yang dipilih di luar periode aktif, hasilnya selalu
+  // kosong walau datanya ada di sheet. Refetch ke server dengan tanggal yang
+  // benar-benar dipilih di sini.
+  useEffect(() => {
+      if (!showWebReport) return;
+      if (reportCategory !== 'General' && reportCategory !== 'Tally') return;
+      fetchHistory(reportStartDate, reportEndDate);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWebReport, reportCategory, reportStartDate, reportEndDate]);
 
   // --- HELPER FORMAT ---
   const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
@@ -4985,7 +5012,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                       )}
                   </div>
                   <div className="flex items-center gap-3">
-                      <button onClick={async () => { setIsReportLoading(true); try { if (reportCategory === 'RunningShift') await fetchShiftReport(); else await fetchHistory(); } catch (e) { console.error(e); } finally { setTimeout(() => setIsReportLoading(false), 500); } }} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm bg-white text-slate-600 border-slate-200 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 active:scale-95 group">
+                      <button onClick={async () => { setIsReportLoading(true); try { if (reportCategory === 'RunningShift') await fetchShiftReport(); else await fetchHistory(reportStartDate, reportEndDate); } catch (e) { console.error(e); } finally { setTimeout(() => setIsReportLoading(false), 500); } }} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm bg-white text-slate-600 border-slate-200 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 active:scale-95 group">
                           <RefreshCcw className={`w-3.5 h-3.5 transition-transform group-hover:rotate-180 ${isReportLoading ? 'animate-spin text-blue-500' : ''}`} />
                           <span className="hidden sm:inline">Refresh</span>
                       </button>
@@ -5737,6 +5764,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'geofence': return 'Area Geofence Absen Online';
           case 'period': return 'Periode Absensi';
           case 'approval_team': return 'Tim Approval';
+          case 'board': return 'Board Absensi';
           default: return 'Admin Panel';
       }
   };
@@ -5822,6 +5850,12 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                                 <UsersRound className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'approval_team' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
                                 <span className="flex-1 leading-tight">Tim approval</span>
                                 {activeTab === 'approval_team' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+
+                            <button onClick={() => switchTab('board')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'board' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <FileSpreadsheet className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'board' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Board absensi</span>
+                                {activeTab === 'board' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
                             </button>
                         </>
                         )}
@@ -6189,6 +6223,41 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
               </>
             )}
           </form>
+        </div>
+      )}
+
+      {/* KONTEN TAB: BOARD ABSENSI (link ke Google Sheet, admin saja)
+
+          Pengecekan `user.role === 'admin'` di sini menentukan TAMPILAN, bukan
+          keamanan: siapa pun yang tahu URL-nya tetap bisa membukanya langsung.
+          Yang benar-benar menjaga isinya adalah izin berbagi di Google Drive —
+          spreadsheet itu harus dibagikan hanya ke akun admin, bukan
+          "siapa saja yang memiliki link". */}
+      {activeTab === 'board' && user.role === 'admin' && (
+        <div className="animate-in fade-in duration-300">
+          <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white">
+            <div className="border-b border-slate-100 p-4">
+              <div className="mb-1 flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 text-emerald-600" strokeWidth={1.8} />
+                <p className="text-[14px] font-semibold text-slate-900">Board Absensi 2026</p>
+              </div>
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                Rekap absensi bulanan dalam format lembar kerja, mengikuti data DB_FIX.
+                Diperbarui otomatis; hanya bisa dibuka oleh akun yang diberi akses di Google Drive.
+              </p>
+            </div>
+            <div className="p-4">
+              <a
+                href={BOARD_ABSENSI_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 py-3 text-[14px] font-medium text-white transition-colors hover:bg-slate-800"
+              >
+                <FileSpreadsheet className="h-4 w-4" strokeWidth={1.9} /> Buka Board Absensi
+              </a>
+              <p className="mt-2.5 text-center text-[10px] text-slate-400">Terbuka di tab baru</p>
+            </div>
+          </div>
         </div>
       )}
 

@@ -43,3 +43,10 @@ export const ICON_MAP = {
 export const COLOR_MAP = {
   'Hadir': 'bg-green-500', 'Pulang': 'bg-red-500', 'Ijin': 'bg-yellow-500', 'Sakit': 'bg-orange-500', 'Lembur': 'bg-purple-500', 'Dinas': 'bg-indigo-500', 'Cuti': 'bg-pink-500'
 };
+
+// Board Absensi - rekap absensi bulanan format lembar kerja di Google Sheets.
+// Tautannya hanya DITAMPILKAN untuk role admin di Admin Panel. Yang
+// benar-benar menjaga isinya adalah izin berbagi Google Drive: bagikan
+// spreadsheet ini hanya ke akun admin, JANGAN "siapa saja yang punya link".
+export const BOARD_ABSENSI_URL =
+  'https://docs.google.com/spreadsheets/d/1djRP-SZSMST5x1W_fZgViQdiMp1qUyFkDLFRAe3ekEM/edit';
