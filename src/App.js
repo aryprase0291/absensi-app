@@ -11,6 +11,8 @@ import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
 import ImportNotifier from './components/ImportNotifier';
+import { getVerifiedGeolocation } from './utils/antiFakeGps';
+import { startFaceLivenessTracker } from './utils/faceLiveness';
 
 // ============================================================
 // HELPER API — token login + penanganan respons HTML dari Google
@@ -3459,15 +3461,18 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   // CAMERA & FILES
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const trackerRef = useRef(null);
   const [photo, setPhoto] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [facingMode, setFacingMode] = useState(type === 'Sakit' ? 'environment' : 'user');
   const [fileLampiran, setFileLampiran] = useState(null);
   const [fileName, setFileName] = useState('');
   const [fileMime, setFileMime] = useState('');
+  const [livenessStatus, setLivenessStatus] = useState({ status: 'idle', isLive: false, faceCount: 0, message: '', badgeColor: '' });
   
   // FORM DATA
   const [location, setLocation] = useState(null);
+  const [gpsValidation, setGpsValidation] = useState({ isValid: true, isMock: false, warning: '', accuracy: null });
   const [catatan, setCatatan] = useState('');
   const [intervalData, setIntervalData] = useState({ tglMulai: '', tglSelesai: '', jamMulai: '', jamSelesai: '' });
   
@@ -3526,23 +3531,38 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
         setPhoto(editItem.foto); 
       }
 
-      // GPS Logic
+      // GPS Logic with Anti-Fake GPS verification
       if (!isEditMode && isGpsRequired && 'geolocation' in navigator) {
         try {
-          await new Promise((resolve) => {
-             navigator.geolocation.getCurrentPosition(
-               (p) => { if(isMounted) setLocation({ lat: p.coords.latitude, lng: p.coords.longitude }); resolve(); }, 
-               () => { alert('Gagal lokasi. Pastikan GPS aktif.'); resolve(); },
-               { timeout: 8000, enableHighAccuracy: true }
-             );
-          });
-        } catch (err) { console.error(err); }
+          const { position, validation } = await getVerifiedGeolocation({ timeout: 10000 });
+          if (isMounted) {
+            setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+            setGpsValidation(validation);
+          }
+        } catch (err) {
+          if (isMounted) {
+            console.error('GPS error:', err);
+            alert(err.message || 'Gagal memperoleh koordinat GPS. Pastikan GPS aktif dan izin lokasi diberikan.');
+          }
+        }
       }
       if (isMounted) setIsInitializing(false);
     };
     initForm();
     return () => { isMounted = false; };
   }, [isEditMode, editItem, isGpsRequired, type]);
+
+  // Clean up camera & face tracker on unmount
+  useEffect(() => {
+    return () => {
+      if (trackerRef.current) {
+        trackerRef.current.stop();
+      }
+      if (videoRef.current && videoRef.current.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, []);
 
   // --- HANDLERS ---
   const handleCalendarApply = (start, end) => {
@@ -3560,18 +3580,45 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   };
 
   const startCamera = async () => { 
+      if (trackerRef.current) {
+        trackerRef.current.stop();
+        trackerRef.current = null;
+      }
       if (videoRef.current && videoRef.current.srcObject) { 
           videoRef.current.srcObject.getTracks().forEach(t => t.stop()); 
       }
       setCameraActive(false);
+      setLivenessStatus({ status: 'idle', isLive: false, faceCount: 0, message: '', badgeColor: '' });
       try { 
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
-          if (videoRef.current) { videoRef.current.srcObject = stream; setCameraActive(true); } 
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } } 
+          });
+          if (videoRef.current) { 
+            videoRef.current.srcObject = stream; 
+            setCameraActive(true); 
+            // Inisialisasi liveness tracker untuk kamera depan pada Hadir / Pulang
+            if (facingMode === 'user' && ['Hadir', 'Pulang'].includes(type)) {
+              trackerRef.current = startFaceLivenessTracker(videoRef.current, setLivenessStatus);
+            }
+          } 
       } catch (err) { alert("Gagal akses kamera."); } 
   };
   useEffect(() => { if (cameraActive) { startCamera(); } }, [facingMode]);
-  const toggleCamera = () => { setFacingMode(prev => prev === 'user' ? 'environment' : 'user'); };
+  
+  const toggleCamera = () => { 
+    if (trackerRef.current) {
+      trackerRef.current.stop();
+      trackerRef.current = null;
+    }
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user'); 
+  };
+
   const takePhoto = () => { 
+      // Verifikasi liveness sebelum capture untuk Hadir / Pulang jika memakai kamera depan
+      if (['Hadir', 'Pulang'].includes(type) && facingMode === 'user' && !livenessStatus.isLive) {
+        alert(livenessStatus.message || 'Wajah belum terverifikasi aktif. Posisikan wajah Anda pada area panduan dan lakukan gerakan mikro / kedipan wajar.');
+        return;
+      }
       const video = videoRef.current; const canvas = canvasRef.current;
       if (video && canvas) { 
           canvas.width = video.videoWidth; canvas.height = video.videoHeight; 
@@ -3584,6 +3631,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           ctx.strokeText(timestampText, canvas.width - paddingX, canvas.height - paddingY); ctx.fillText(timestampText, canvas.width - paddingX, canvas.height - paddingY);
           ctx.strokeText(gpsText, canvas.width - paddingX, canvas.height - paddingY - (fontSize * 1.2)); ctx.fillText(gpsText, canvas.width - paddingX, canvas.height - paddingY - (fontSize * 1.2));
           setPhoto(canvas.toDataURL('image/jpeg', 0.8)); 
+          if (trackerRef.current) {
+            trackerRef.current.stop();
+            trackerRef.current = null;
+          }
           if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
           setCameraActive(false);
       } 
@@ -3607,7 +3658,13 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
     }
     if (isShiftWorker && isClockIn && !isEditMode && !selectedShift) { alert('Pilih Shift!'); return; }
     if (isPhotoRequired && !isEditMode && !photo) { alert('Foto Wajib.'); return; }
-    if (isGpsRequired && !isEditMode && !location) { alert('Lokasi belum ditemukan.'); return; }
+    if (isGpsRequired && !isEditMode) {
+      if (!location) { alert('Lokasi belum ditemukan.'); return; }
+      if (gpsValidation.isMock) {
+        alert(`Lokasi ditolak: Terdeteksi Mock Location / Fake GPS (${gpsValidation.warning}). Harap matikan aplikasi Fake GPS untuk melakukan presensi.`);
+        return;
+      }
+    }
 
     setIsSubmitting(true);
     try {
@@ -3629,6 +3686,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           catatan: catatan, foto: photo, 
           fileLampiran: isUploading ? fileLampiran : null, 
           fileName: isUploading ? fileName : '', fileMime: isUploading ? fileMime : '',
+          isMockGps: gpsValidation.isMock,
+          gpsAccuracy: gpsValidation.accuracy,
           ...intervalData,
           jamMulai: finalJamMulai,
           jamSelesai: finalJamSelesai
@@ -3922,15 +3981,46 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
 
                 {cameraActive && !photo && (
                   <>
-                    {/* Bingkai bantu — memberi patokan posisi wajah, dan
-                        membuat layar kamera tidak terlihat seperti video kosong. */}
-                    <div className="absolute inset-6 rounded-2xl border-2 border-white/25 pointer-events-none"></div>
+                    {/* Viewfinder Oval Face Guide & Liveness Indicator */}
+                    {facingMode === 'user' && ['Hadir', 'Pulang'].includes(type) ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none p-4">
+                        <div className={`w-48 h-64 sm:w-56 sm:h-72 rounded-[50%] border-4 transition-all duration-300 ${
+                          livenessStatus.isLive 
+                            ? 'border-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.5)]' 
+                            : livenessStatus.status === 'verifying'
+                              ? 'border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.4)]'
+                              : 'border-white/40'
+                        }`} />
+                        {livenessStatus.message && (
+                          <div className="mt-3 px-3 py-1 rounded-full bg-black/65 backdrop-blur-sm border border-white/20">
+                            <p className="text-[11px] font-medium text-white text-center">
+                              {livenessStatus.message}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="absolute inset-6 rounded-2xl border-2 border-white/25 pointer-events-none"></div>
+                    )}
+
                     <div className="absolute inset-x-0 bottom-0 pt-10 pb-4 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center gap-8">
                       <button onClick={toggleCamera} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-sm border border-white/25 flex items-center justify-center text-white active:scale-90 transition-transform" title="Ganti kamera">
                         <SwitchCamera className="w-[18px] h-[18px]" strokeWidth={2} />
                       </button>
-                      <button onClick={takePhoto} className="w-[62px] h-[62px] rounded-full bg-white/25 backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform" title="Ambil foto">
-                        <span className="w-[50px] h-[50px] rounded-full bg-white border-[3px] border-white/60"></span>
+                      <button 
+                        onClick={takePhoto} 
+                        className={`w-[62px] h-[62px] rounded-full backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform ${
+                          (['Hadir', 'Pulang'].includes(type) && facingMode === 'user' && !livenessStatus.isLive)
+                            ? 'bg-amber-500/30'
+                            : 'bg-white/25'
+                        }`} 
+                        title="Ambil foto"
+                      >
+                        <span className={`w-[50px] h-[50px] rounded-full border-[3px] transition-colors ${
+                          (['Hadir', 'Pulang'].includes(type) && facingMode === 'user' && !livenessStatus.isLive)
+                            ? 'bg-amber-100 border-amber-400'
+                            : 'bg-white border-white/60'
+                        }`}></span>
                       </button>
                       <span className="w-10"></span>
                     </div>
@@ -3954,11 +4044,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
             <SeksiForm
               ikon={LocateFixed}
               judul="Lokasi"
-              catatan={location ? (isGeofenceRequired ? 'GPS terkunci · wajib di area kantor' : 'Titik GPS terkunci') : (isGeofenceRequired ? 'Mencari GPS dan memeriksa area kantor…' : 'Mencari sinyal GPS…')}
+              catatan={location ? (gpsValidation.isMock ? 'Peringatan: Terdeteksi Fake GPS / Mock' : isGeofenceRequired ? 'GPS terkunci · wajib di area kantor' : 'Titik GPS terkunci') : (isGeofenceRequired ? 'Mencari GPS dan memeriksa area kantor…' : 'Mencari sinyal GPS…')}
               warnaIkon={tema.chip}
               padat
               aksi={location
-                ? <span className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg shrink-0"><CheckCircle className="w-3 h-3" strokeWidth={2.4} /> Terkunci</span>
+                ? <span className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-1 rounded-lg shrink-0 ${gpsValidation.isMock ? 'text-rose-600 bg-rose-50' : 'text-emerald-600 bg-emerald-50'}`}><CheckCircle className="w-3 h-3" strokeWidth={2.4} /> {gpsValidation.isMock ? 'Mock GPS' : 'Terkunci'}</span>
                 : <Loader2 className="w-3.5 h-3.5 text-slate-300 animate-spin shrink-0" />}
             >
               <div className="rounded-xl overflow-hidden h-44 bg-slate-100 relative">
@@ -3973,9 +4063,17 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                 )}
               </div>
               {location && (
-                <p className="mt-2 text-[10px] text-slate-400 font-mono tabular-nums text-center">
-                  {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                </p>
+                <div className="mt-2 text-center">
+                  <p className="text-[10px] text-slate-400 font-mono tabular-nums">
+                    {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                    {gpsValidation.accuracy !== null && ` (Akurasi: ±${Math.round(gpsValidation.accuracy)}m)`}
+                  </p>
+                  {gpsValidation.isMock && (
+                    <p className="mt-1 text-[11px] font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+                      ⚠️ {gpsValidation.warning || 'Mock Location / Fake GPS terdeteksi. Matikan aplikasi Fake GPS.'}
+                    </p>
+                  )}
+                </div>
               )}
               {isGeofenceRequired && (
                 <p className="mt-2 text-[10.5px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2 text-center">
