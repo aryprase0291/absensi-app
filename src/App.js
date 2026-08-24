@@ -3534,10 +3534,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       // GPS Logic with Anti-Fake GPS verification
       if (!isEditMode && isGpsRequired && 'geolocation' in navigator) {
         try {
-          const { position, validation } = await getVerifiedGeolocation({ timeout: 10000 });
+          const { position, accuracy, isMockSuspicious, warning } = await getVerifiedGeolocation({ timeout: 10000 });
           if (isMounted) {
             setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-            setGpsValidation(validation);
+            setGpsValidation({ isValid: !isMockSuspicious, isMock: isMockSuspicious, warning: warning || '', accuracy });
           }
         } catch (err) {
           if (isMounted) {
