@@ -74,10 +74,11 @@ Yang sudah ditangani otomatis:
   **tidak** diutak-atik.
 - Baris tanpa NIK atau dengan tanggal tak terbaca dilewati **dan
   dilaporkan** di pratinjau, tidak dibuang diam-diam.
-- Kombinasi NIK + tanggal yang muncul lebih dari sekali — di satu file
-  maupun antar file — disaring: **yang dibaca belakangan yang dipakai**,
-  sesuai urutan file di daftar. Yang dibuang bisa dilihat di pratinjau
-  lengkap dengan file, sheet, dan nomor barisnya.
+- Kombinasi **No.Akun + tanggal** yang muncul lebih dari sekali — di satu
+  file maupun antar file — disaring: **yang dibaca belakangan yang
+  dipakai**, sesuai urutan file di daftar. Yang dibuang bisa dilihat di
+  pratinjau lengkap dengan file, sheet, dan nomor barisnya. Baris tanpa
+  No.Akun memakai NIK sebagai kunci cadangan.
 
 ---
 
@@ -88,6 +89,7 @@ masuk ke kolom ke-(N+1):
 
 ```
 file → dbabsen        dipakai Code.gs
+No.Akun    → B        -        KUNCI UPSERT (satu-satunya yang tidak berubah)
 NIK.       → C        row[2]   kunci pencocokan user
 Nama       → D        row[3]
 Tanggal    → E        row[4]   ditulis sebagai objek Date
@@ -107,8 +109,21 @@ week       → S        row[18]
 ## Dua mode
 
 **Perbarui periode ini saja (default).** Baris lama yang punya kombinasi
-NIK + tanggal sama dengan file baru ditimpa; sisanya tetap. Ini yang
-dipakai untuk import rutin per periode.
+**No.Akun + tanggal** sama dengan file baru ditimpa; sisanya tetap. Ini
+yang dipakai untuk import rutin per periode: mengimpor ulang 21 Juli –
+20 Agustus menimpa hasil import kemarin untuk rentang itu, **termasuk
+kalau isi kolom C:S sudah berubah** (NIK dikoreksi, nama diperbaiki, jam
+diedit, symbol diganti).
+
+Kuncinya sengaja No.Akun (kolom B), bukan NIK: hanya kolom B yang tetap
+untuk satu karyawan. Selama kuncinya NIK, satu NIK yang dikoreksi membuat
+baris lama tidak cocok dengan baris baru mana pun — baris itu lolos
+sebagai "dipertahankan" dan orang yang sama jadi punya dua baris untuk
+tanggal yang sama.
+
+NIK + tanggal masih ikut dicocokkan **sebagai cadangan**, khusus untuk
+baris warisan era IMPORTRANGE yang kolom B-nya kosong. Tanpa itu baris
+seperti ini tidak akan pernah bisa ditimpa import mana pun.
 
 **Ganti seluruh isi.** Semua baris lama dibuang. Perlu mengetik `GANTI`
 untuk mengaktifkan tombol. Pakai hanya kalau file — atau kumpulan file —
@@ -148,6 +163,7 @@ berisi seluruh data yang diperlukan.
 npx react-scripts test --testPathPattern=importDbAbsenParser --watchAll=false
 ```
 
-29 test mencakup normalisasi tanggal/jam, header berulang, multi-sheet,
-multi-file, penyaringan duplikat, dan baris rusak — semua kasusnya diambil
-dari file draft asli.
+32 test mencakup normalisasi tanggal/jam, header berulang, multi-sheet,
+multi-file, penyaringan duplikat (termasuk NIK yang berubah sementara
+No.Akun tetap), dan baris rusak — semua kasusnya diambil dari file draft
+asli.

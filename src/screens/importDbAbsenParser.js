@@ -31,6 +31,7 @@ export const JUMLAH_KOLOM = 18;
 const KOLOM_JAM = [5, 6, 7, 8, 9, 10, 12, 15];
 
 const IDX_TANGGAL = 3;
+const IDX_AKUN = 0;
 const IDX_NIK = 1;
 const IDX_SYMBOL = 13;
 const IDX_WAKTU_SCAN = 16;
@@ -167,8 +168,8 @@ export function normalisasiBaris(row) {
   KOLOM_JAM.forEach((i) => { out[i] = toHHMM(out[i]); });
   out[IDX_WAKTU_SCAN] = rapikanWaktuScan(out[IDX_WAKTU_SCAN]);
 
-  // Sisanya jadikan teks bersih. NIK dan Symbol dipakai sebagai kunci
-  // pencocokan di backend, jadi spasi liar wajib dibuang.
+  // Sisanya jadikan teks bersih. No.Akun, NIK, dan Symbol dipakai sebagai
+  // kunci pencocokan di backend, jadi spasi liar wajib dibuang.
   for (let i = 0; i < JUMLAH_KOLOM; i++) {
     if (typeof out[i] !== 'string') out[i] = String(out[i]);
     if (i !== IDX_WAKTU_SCAN) out[i] = out[i].trim();
@@ -182,6 +183,26 @@ export function normalisasiBaris(row) {
 // -------------------------------------------------------
 
 /**
+ * Kunci identitas satu baris absensi.
+ *
+ * ACUANNYA No.Akun (kolom B di dbabsen), BUKAN NIK. NIK bisa berubah —
+ * dikoreksi HRD, diketik ulang di mesin, atau berganti waktu karyawan
+ * pindah divisi — sedangkan No.Akun adalah nomor internal mesin absen
+ * yang tetap seumur karyawan. Kalau kunci memakai NIK, import ulang
+ * periode yang sama setelah NIK dikoreksi tidak menimpa baris lama
+ * melainkan menambah baris kedua untuk orang & tanggal yang sama.
+ *
+ * Prefiks 'A|'/'N|' mencegah nilai No.Akun kebetulan sama dengan nilai
+ * NIK karyawan lain lalu dianggap baris yang sama.
+ */
+export function kunciBaris(n) {
+  const akun = String(n[IDX_AKUN] || '').trim();
+  return akun
+    ? 'A|' + akun + '|' + n[IDX_TANGGAL]
+    : 'N|' + n[IDX_NIK] + '|' + n[IDX_TANGGAL];
+}
+
+/**
  * Sheet boleh berasal dari beberapa file sekaligus. Isi `file` dipakai
  * untuk pelaporan (pratinjau dan daftar bentrok) — parsing sendiri tidak
  * peduli batas file, semuanya digabung jadi satu kumpulan baris.
@@ -192,7 +213,7 @@ export function normalisasiBaris(row) {
  *   dilewati: Array<{file:string, sheet:string, baris:number, alasan:string, cuplikan:string}>,
  *   perSheet: Array<{file:string, nama:string, diterima:number, dilewati:number, adaHeader:boolean}>,
  *   perFile: Array<{nama:string, diterima:number, dilewati:number, sheets:number}>,
- *   bentrok: Array<{nik:string, tanggal:string, lama:string, baru:string}>,
+ *   bentrok: Array<{akun:string, nik:string, tanggal:string, lama:string, baru:string}>,
  *   tanggalMin: string, tanggalMaks: string,
  *   jumlahNik: number, duplikat: number
  * }}
@@ -206,9 +227,10 @@ export function parseWorkbook(sheets) {
   let tanggalMin = '';
   let tanggalMaks = '';
 
-  // Kunci 'NIK|tanggal' -> baris. Map menjaga urutan masuk, dan menulis
-  // ulang kunci yang sama berarti baris terakhir yang menang — persis
-  // seperti yang dijanjikan peringatan di layar.
+  // Kunci 'No.Akun|tanggal' (lihat kunciBaris) -> baris. Map menjaga
+  // urutan masuk, dan menulis ulang kunci yang sama berarti baris
+  // terakhir yang menang — persis seperti yang dijanjikan peringatan
+  // di layar.
   const peta = new Map();
 
   (sheets || []).forEach(({ nama, aoa, file }) => {
@@ -251,13 +273,14 @@ export function parseWorkbook(sheets) {
         return;
       }
 
-      const kunci = n[IDX_NIK] + '|' + n[IDX_TANGGAL];
+      const kunci = kunciBaris(n);
       const asal = asalBaris(namaFile, nama, nomorBaris);
 
       const sebelumnya = peta.get(kunci);
       if (sebelumnya) {
         duplikat++;
         bentrok.push({
+          akun: n[IDX_AKUN],
           nik: n[IDX_NIK],
           tanggal: n[IDX_TANGGAL],
           lama: sebelumnya.asal,
@@ -324,6 +347,6 @@ function cuplikan(row) {
 }
 
 export const IDX = {
-  NO_AKUN: 0, NIK: IDX_NIK, NAMA: 2, TANGGAL: IDX_TANGGAL, SHIFT: 4,
+  NO_AKUN: IDX_AKUN, NIK: IDX_NIK, NAMA: 2, TANGGAL: IDX_TANGGAL, SHIFT: 4,
   SYMBOL: IDX_SYMBOL, WAKTU_SCAN: IDX_WAKTU_SCAN, WEEK: 17
 };

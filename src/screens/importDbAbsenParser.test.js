@@ -125,10 +125,15 @@ describe('parseWorkbook', () => {
     '08:00', '16:00', '7:29', '16:02', '', '', '', '08:00', 'H',
     'BTR Romo Normal', '8:33', '07:29 16:02', 'Wed'];
 
+  // Karyawan lain punya No.Akun lain — kunci baris memakai kolom
+  // No.Akun, jadi mengganti NIK saja tidak membuatnya jadi orang lain.
+  const orangLain = (row, akun, nik) =>
+    row.map((v, i) => (i === 0 ? akun : i === 1 ? nik : v));
+
   test('membaca banyak sheet dan melewati sheet bantu', () => {
     const hasil = parseWorkbook([
       { nama: 'NON-SHIFT', aoa: [HEADER, barisSalam, barisDede] },
-      { nama: 'SHIFT', aoa: [HEADER, barisSalam.map((v, i) => (i === 1 ? 'G0020' : v))] },
+      { nama: 'SHIFT', aoa: [HEADER, orangLain(barisSalam, 204, 'G0020')] },
       { nama: 'Bantu', aoa: [['Tanggal', '', 'PERIODE'], ['21/07/2026', '', '2026-1']] }
     ]);
 
@@ -172,7 +177,7 @@ describe('parseWorkbook', () => {
     expect(hasil.dilewati[0].alasan).toBe('NIK kosong');
   });
 
-  test('duplikat NIK+tanggal dibuang, hanya baris terakhir yang dipakai', () => {
+  test('duplikat No.Akun+tanggal dibuang, hanya baris terakhir yang dipakai', () => {
     const kedua = [...barisSalam];
     kedua[7] = '09:15';   // Masuk berbeda, supaya bisa dibedakan
 
@@ -205,10 +210,56 @@ describe('parseWorkbook', () => {
     expect(hasil.bentrok[0].baru).toContain('agustus.xlsx');
   });
 
+  test('NIK berubah tapi No.Akun sama tetap dianggap baris yang sama', () => {
+    // Kasus nyata: NIK dikoreksi di mesin absen sebelum periode yang sama
+    // diimpor ulang. Yang tidak berubah cuma No.Akun.
+    const nikDikoreksi = [...barisSalam];
+    nikDikoreksi[1] = 'C0011-R';
+    nikDikoreksi[7] = '06:45';
+
+    const hasil = parseWorkbook([
+      { file: 'lama.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, barisSalam] },
+      { file: 'baru.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, nikDikoreksi] }
+    ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.duplikat).toBe(1);
+    expect(hasil.baris[0][1]).toBe('C0011-R');
+    expect(hasil.baris[0][7]).toBe('06:45');
+    expect(hasil.bentrok[0].akun).toBe('5');
+  });
+
+  test('No.Akun berbeda pada NIK yang sama tetap jadi dua baris', () => {
+    const akunLain = [...barisSalam];
+    akunLain[0] = 99;
+
+    const hasil = parseWorkbook([
+      { nama: 'NON-SHIFT', aoa: [HEADER, barisSalam, akunLain] }
+    ]);
+
+    expect(hasil.baris).toHaveLength(2);
+    expect(hasil.duplikat).toBe(0);
+  });
+
+  test('No.Akun kosong jatuh ke NIK sebagai kunci', () => {
+    const tanpaAkun = [...barisSalam];
+    tanpaAkun[0] = '';
+    const tanpaAkunUlang = [...tanpaAkun];
+    tanpaAkunUlang[7] = '06:45';
+
+    const hasil = parseWorkbook([
+      { nama: 'NON-SHIFT', aoa: [HEADER, tanpaAkun, tanpaAkunUlang] }
+    ]);
+
+    expect(hasil.baris).toHaveLength(1);
+    expect(hasil.duplikat).toBe(1);
+    expect(hasil.baris[0][7]).toBe('06:45');
+  });
+
   test('beberapa file digabung dan diringkas per file', () => {
     const hasil = parseWorkbook([
       { file: 'juli.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, barisSalam] },
-      { file: 'juli.xlsx', nama: 'SHIFT', aoa: [HEADER, barisSalam.map((v, i) => (i === 1 ? 'G0020' : v))] },
+      { file: 'juli.xlsx', nama: 'SHIFT', aoa: [HEADER, orangLain(barisSalam, 204, 'G0020')] },
       { file: 'agustus.xlsx', nama: 'NON-SHIFT', aoa: [HEADER, barisDede] }
     ]);
 

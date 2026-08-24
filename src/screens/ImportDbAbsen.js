@@ -218,10 +218,10 @@ export default function ImportDbAbsen({ user, masterData }) {
 
   // --- PARSING PER KELOMPOK TUJUAN ---
   // parseWorkbook() dipanggil sekali per sheet tujuan yang punya sumber,
-  // bukan sekali untuk semuanya — supaya deteksi duplikat NIK+tanggal
-  // tidak menyilang antar sheet tujuan yang berbeda (baris "SHIFT" dan
-  // "NON-SHIFT" untuk NIK+tanggal yang sama bukan duplikat, dua populasi
-  // berbeda yang kebetulan sama tanggalnya).
+  // bukan sekali untuk semuanya — supaya deteksi duplikat
+  // No.Akun+tanggal tidak menyilang antar sheet tujuan yang berbeda
+  // (baris "SHIFT" dan "NON-SHIFT" untuk kunci yang sama bukan duplikat,
+  // dua populasi berbeda yang kebetulan sama tanggalnya).
   const hasilPerTarget = useMemo(() => {
     const kelompok = new Map();
     sumberBeranotasi.forEach((s) => {
@@ -390,7 +390,7 @@ export default function ImportDbAbsen({ user, masterData }) {
     const kalimat = (mode === 'replace'
       ? `SELURUH isi tiap sheet tujuan di bawah akan dihapus dan diganti data dari ${asal}:\n${rincian}`
       : `Data dari ${asal} akan dimasukkan ke ${targetList.length > 1 ? 'sheet-sheet' : 'sheet'} berikut:\n${rincian}\n\n` +
-        `Baris lama dengan NIK + tanggal yang sama (per sheet) akan ditimpa, sisanya tetap.`)
+        `Baris lama dengan No. Akun + tanggal yang sama (per sheet) akan ditimpa, sisanya tetap.`)
       + '\n\nImport berjalan di latar — Anda boleh menutup layar ini dan memakai menu lain. '
       + 'Tapi JANGAN menutup atau me-reload tab browser sampai notifikasi selesai muncul.'
       + '\n\nLanjutkan?';
@@ -625,7 +625,9 @@ export default function ImportDbAbsen({ user, masterData }) {
             <div className="text-xs">
               <p className="font-bold text-slate-800">Perbarui periode ini saja</p>
               <p className="text-slate-500 mt-0.5">
-                Baris lama dengan NIK + tanggal yang sama (per sheet) ditimpa. Data lain tetap utuh.
+                Baris lama dengan No. Akun + tanggal yang sama (per sheet) ditimpa —
+                termasuk kalau NIK, nama, jam, atau symbol-nya sudah berubah.
+                Data lain tetap utuh.
               </p>
             </div>
           </label>
@@ -791,7 +793,7 @@ function PratinjauTarget({ label, tampilkanLabel, hasil, banyakFile, jumlahFile 
       {hasil.duplikat > 0 && (
         <div>
           <Peringatan>
-            {hasil.duplikat} baris punya kombinasi NIK + tanggal yang sama dengan
+            {hasil.duplikat} baris punya kombinasi No. Akun + tanggal yang sama dengan
             baris lain{banyakFile ? ' di kumpulan file ini' : ' di file ini'} untuk sheet tujuan
             yang sama. Yang dibaca belakangan dipakai, yang sebelumnya dibuang — jadi angka
             "baris terbaca" di atas sudah bersih dari duplikat.
@@ -804,7 +806,9 @@ function PratinjauTarget({ label, tampilkanLabel, hasil, banyakFile, jumlahFile 
             <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
               {hasil.bentrok.slice(0, 50).map((b, i) => (
                 <div key={i} className="bg-amber-50 border border-amber-100 px-2 py-1 rounded">
-                  <span className="font-bold">{b.nik} · {tglTampil(b.tanggal)}</span>
+                  <span className="font-bold">
+                    {b.akun ? `Akun ${b.akun}` : `NIK ${b.nik}`} · {tglTampil(b.tanggal)}
+                  </span>
                   <div className="text-slate-500">
                     dibuang: {b.lama}
                     <br />

@@ -28,7 +28,7 @@
 //   file mesin              dbabsen   dibaca oleh Code.gs sebagai
 //   ---------------------   -------   --------------------------
 //   (tidak ada)             A         -
-//   1  No.Akun              B         -
+//   1  No.Akun              B         -       KUNCI UPSERT (lihat _importKunciAkun)
 //   2  NIK.                 C         row[2]  kunci pencocokan user
 //   3  Nama                 D         row[3]
 //   4  Tanggal              E         row[4]
@@ -80,6 +80,7 @@ const DBABSEN_TOTAL_COLS = 19;   // A..S
 const IMPORT_SRC_COLS = 18;      // jumlah kolom file mesin
 const IMPORT_COL_OFFSET = 1;     // kolom A dbabsen dibiarkan kosong
 
+const IMPORT_IDX_AKUN = 1;       // kolom B — No.Akun, kunci upsert
 const IMPORT_IDX_NIK = 2;        // kolom C
 const IMPORT_IDX_TANGGAL = 4;    // kolom E
 
@@ -345,6 +346,7 @@ function _importPetakanBaris(src) {
     out[target] = (v === null || v === undefined) ? '' : v;
   }
 
+  out[IMPORT_IDX_AKUN] = String(out[IMPORT_IDX_AKUN] || '').trim();
   out[IMPORT_IDX_NIK] = String(out[IMPORT_IDX_NIK] || '').trim();
   out[IMPORT_IDX_TANGGAL] = _importParseYMD(out[IMPORT_IDX_TANGGAL]) || '';
 
@@ -368,12 +370,39 @@ function _importParseYMD(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function _importKunci(row) {
+/**
+ * KUNCI UPSERT: No.Akun (kolom B) + tanggal — BUKAN NIK.
+ *
+ * Alasannya: hanya No.Akun yang tidak pernah berubah. Isi kolom C:S
+ * (NIK, nama, jam, symbol, departemen) memang rutin dikoreksi di mesin
+ * atau di file sebelum diimpor ulang. Selama kuncinya NIK, import ulang
+ * periode yang sama setelah NIK dikoreksi TIDAK menimpa baris lama —
+ * baris lama tidak cocok dengan baris baru mana pun, jadi ikut lolos
+ * sebagai "dipertahankan" dan orang yang sama punya dua baris untuk
+ * tanggal yang sama.
+ *
+ * _importKunciNik() tetap ada sebagai jaring pengaman untuk baris lama
+ * peninggalan era IMPORTRANGE yang kolom B-nya kosong: tanpa itu baris
+ * seperti ini tidak akan pernah tertimpa oleh import mana pun. Lihat
+ * pemakaiannya di _importCommit().
+ *
+ * Prefiks 'A|'/'N|' memisahkan ruang nilai keduanya, supaya No.Akun
+ * "120" tidak dianggap sama dengan NIK "120" milik orang lain.
+ */
+function _importKunciAkun(row) {
+  const akun = String(row[IMPORT_IDX_AKUN] || '').trim();
+  if (!akun) return '';
+  const ymd = formatDateYMD_Strict(row[IMPORT_IDX_TANGGAL]);
+  if (!ymd) return '';
+  return 'A|' + akun + '|' + ymd;
+}
+
+function _importKunciNik(row) {
   const nik = String(row[IMPORT_IDX_NIK] || '').trim();
   if (!nik) return '';
   const ymd = formatDateYMD_Strict(row[IMPORT_IDX_TANGGAL]);
   if (!ymd) return '';
-  return nik + '|' + ymd;
+  return 'N|' + nik + '|' + ymd;
 }
 
 function _importBarisKosong(row) {
@@ -413,9 +442,12 @@ function _importBuatSheetTujuan(nama) {
 
 /**
  * mode 'replace' : seluruh A2:S dibuang, diganti isi file.
- * mode 'upsert'  : baris lama yang punya kombinasi NIK+tanggal sama
+ * mode 'upsert'  : baris lama yang punya kombinasi No.Akun+tanggal sama
  *                  dengan file baru dibuang; sisanya dipertahankan.
  *                  Ini yang dipakai kalau Anda mengimpor per periode.
+ *                  Jadi import ulang periode yang sama menimpa hasil
+ *                  import sebelumnya, termasuk kalau isi kolom C:S
+ *                  (NIK, nama, jam, symbol, ...) sudah diubah.
  *
  * `targetSheet` boleh sheet mana pun yang lolos _importNamaSheetValid —
  * default dbabsen kalau kosong. Dibuat otomatis kalau belum ada.
@@ -440,18 +472,26 @@ function _importCommit(tmp, mode, targetSheet) {
       ? db.getRange(2, 1, lastRow - 1, DBABSEN_TOTAL_COLS).getValues()
       : [];
 
+    // Dua ruang kunci didaftarkan sekaligus: No.Akun+tanggal (acuan
+    // utama) dan NIK+tanggal (jaring pengaman untuk baris lama tanpa
+    // No.Akun). Baris lama ditimpa kalau SALAH SATU-nya cocok — kalau
+    // hanya kunci No.Akun yang dipakai, baris warisan yang kolom B-nya
+    // kosong akan menumpuk selamanya karena tidak pernah bisa cocok.
     const kunciBaru = {};
     for (let i = 0; i < baru.length; i++) {
-      const k = _importKunci(baru[i]);
-      if (k) kunciBaru[k] = true;
+      const ka = _importKunciAkun(baru[i]);
+      if (ka) kunciBaru[ka] = true;
+      const kn = _importKunciNik(baru[i]);
+      if (kn) kunciBaru[kn] = true;
     }
 
     const sisa = [];
     for (let i = 0; i < lama.length; i++) {
       const row = lama[i];
       if (_importBarisKosong(row)) continue;
-      const k = _importKunci(row);
-      if (k && kunciBaru[k]) { barisDitimpa++; continue; }
+      const ka = _importKunciAkun(row);
+      const kn = _importKunciNik(row);
+      if ((ka && kunciBaru[ka]) || (kn && kunciBaru[kn])) { barisDitimpa++; continue; }
       sisa.push(row);
     }
 
