@@ -4004,10 +4004,14 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                     )}
 
                     <div className="absolute inset-x-0 bottom-0 pt-10 pb-4 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center gap-8">
-                      <button onClick={toggleCamera} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-sm border border-white/25 flex items-center justify-center text-white active:scale-90 transition-transform" title="Ganti kamera">
-                        <SwitchCamera className="w-[18px] h-[18px]" strokeWidth={2} />
-                      </button>
-                      <button 
+                      {['Hadir', 'Pulang'].includes(type) ? (
+                        <span className="w-10"></span>
+                      ) : (
+                        <button onClick={toggleCamera} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-sm border border-white/25 flex items-center justify-center text-white active:scale-90 transition-transform" title="Ganti kamera">
+                          <SwitchCamera className="w-[18px] h-[18px]" strokeWidth={2} />
+                        </button>
+                      )}
+                      <button
                         onClick={takePhoto} 
                         className={`w-[62px] h-[62px] rounded-full backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform ${
                           (['Hadir', 'Pulang'].includes(type) && facingMode === 'user' && !livenessStatus.isLive)
