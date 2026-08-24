@@ -46,7 +46,7 @@ const JOB_KOSONG = {
   chunkSelesai: 0,
   totalChunk: 0,
   jumlahBaris: 0,
-  mode: 'upsert',
+  mode: 'periode',
   jumlahFile: 0,
   pesan: '',
   totalKelompok: 0,     // berapa sheet tujuan terlibat di import ini
@@ -137,7 +137,7 @@ export function ImportJobProvider({ children }) {
    * @param {Array<{targetSheet:string, label:string, baris:Array<Array>}>} kelompok
    *   Satu entri per sheet tujuan. Dikirim BERURUTAN — lihat catatan di
    *   kepala file soal kenapa tidak paralel.
-   * @param {'upsert'|'replace'} mode  berlaku sama untuk semua kelompok
+   * @param {'periode'|'upsert'|'replace'} mode  berlaku sama untuk semua kelompok
    * @param {number} jumlahFile        hanya untuk teks notifikasi
    */
   const mulaiImport = useCallback((kelompok, mode, jumlahFile) => {

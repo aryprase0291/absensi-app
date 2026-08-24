@@ -52,7 +52,8 @@
 // Payload Apps Script dibatasi, jadi klien mengirim data per potongan:
 //
 //   { action:'import_db_absen', sessionId, chunkIndex, totalChunks,
-//     mode:'upsert'|'replace', targetSheet:'dbabsen', rows:[ [18 kolom], ... ] }
+//     mode:'periode'|'upsert'|'replace', targetSheet:'dbabsen',
+//     rows:[ [18 kolom], ... ] }
 //
 // Potongan ditumpuk lebih dulu di sheet sementara `_import_dbabsen_tmp`.
 // Baru pada potongan terakhir isinya dipindah ke sheet `targetSheet`. Kalau
@@ -159,7 +160,9 @@ function handleImportDbAbsen(data) {
     const propKey = IMPORT_PROP_PREFIX + sessionId;
 
     if (chunkIndex === 0) {
-      const mode = (data.mode === 'replace') ? 'replace' : 'upsert';
+      const mode = (data.mode === 'replace' || data.mode === 'periode')
+        ? data.mode
+        : 'upsert';
       props.setProperty(propKey, JSON.stringify({
         mode: mode,
         targetSheet: targetSheet,
@@ -219,6 +222,8 @@ function handleImportDbAbsen(data) {
       barisBaru: hasil.barisBaru,
       barisDitimpa: hasil.barisDitimpa,
       barisDipertahankan: hasil.barisDipertahankan,
+      periodeAwal: hasil.periodeAwal,
+      periodeAkhir: hasil.periodeAkhir,
       totalBaris: hasil.totalBaris,
       lastUpdate: hasil.lastUpdate
     });
@@ -412,6 +417,28 @@ function _importBarisKosong(row) {
   return true;
 }
 
+/**
+ * Rentang tanggal yang DICAKUP file yang diimpor: tanggal paling awal
+ * dan paling akhir di antara baris yang masuk. Dipakai mode 'periode'.
+ *
+ * Sengaja min..maks, bukan daftar tanggal yang persis ada di file: hari
+ * libur dan hari yang seluruh karyawannya tidak masuk memang tidak punya
+ * baris sama sekali di file mesin. Kalau yang dihapus hanya tanggal yang
+ * ada barisnya, sisa baris hari libur dari import sebelumnya akan
+ * tertinggal di tengah periode yang seharusnya sudah bersih.
+ */
+function _importRentangTanggal(rows) {
+  let min = '';
+  let maks = '';
+  for (let i = 0; i < rows.length; i++) {
+    const ymd = formatDateYMD_Strict(rows[i][IMPORT_IDX_TANGGAL]);
+    if (!ymd) continue;
+    if (!min || ymd < min) min = ymd;
+    if (!maks || ymd > maks) maks = ymd;
+  }
+  return { min: min, maks: maks };
+}
+
 
 // =======================================================
 // COMMIT KE dbabsen
@@ -441,6 +468,17 @@ function _importBuatSheetTujuan(nama) {
 }
 
 /**
+ * mode 'periode' : SEMUA baris lama yang tanggalnya jatuh di dalam
+ *                  rentang tanggal file (tanggal paling awal s/d paling
+ *                  akhir di file) dibuang, tak peduli No.Akun/NIK-nya;
+ *                  baris di luar rentang itu tetap. Ini cara paling
+ *                  tegas untuk "import periode ini menang atas isi
+ *                  lama": karyawan yang identitasnya berubah, baris
+ *                  ganda warisan, dan orang yang sudah tidak ada di file
+ *                  semuanya ikut bersih. Konsekuensinya file HARUS berisi
+ *                  seluruh karyawan untuk periode itu — siapa pun yang
+ *                  tidak ada di file akan hilang untuk rentang tersebut.
+ *
  * mode 'replace' : seluruh A2:S dibuang, diganti isi file.
  * mode 'upsert'  : baris lama yang punya kombinasi No.Akun+tanggal sama
  *                  dengan file baru dibuang; sisanya dipertahankan.
@@ -465,8 +503,38 @@ function _importCommit(tmp, mode, targetSheet) {
   let final = baru;
   let barisDitimpa = 0;
   let barisDipertahankan = 0;
+  let periodeAwal = '';
+  let periodeAkhir = '';
 
-  if (mode === 'upsert') {
+  if (mode === 'periode') {
+    const rentang = _importRentangTanggal(baru);
+    if (!rentang.min) {
+      throw new Error('Tanggal pada file tidak terbaca, rentang periode tidak bisa ditentukan.');
+    }
+    periodeAwal = rentang.min;
+    periodeAkhir = rentang.maks;
+
+    const lastRow = db.getLastRow();
+    const lama = (lastRow > 1)
+      ? db.getRange(2, 1, lastRow - 1, DBABSEN_TOTAL_COLS).getValues()
+      : [];
+
+    const sisa = [];
+    for (let i = 0; i < lama.length; i++) {
+      const row = lama[i];
+      if (_importBarisKosong(row)) continue;
+      const ymd = formatDateYMD_Strict(row[IMPORT_IDX_TANGGAL]);
+      // Baris yang tanggalnya tidak terbaca DIPERTAHANKAN: tidak bisa
+      // dipastikan masuk periode ini atau tidak, dan menghapus data yang
+      // tidak dimengerti lebih buruk daripada menyisakannya.
+      if (ymd && ymd >= rentang.min && ymd <= rentang.maks) { barisDitimpa++; continue; }
+      sisa.push(row);
+    }
+
+    barisDipertahankan = sisa.length;
+    final = sisa.concat(baru);
+
+  } else if (mode === 'upsert') {
     const lastRow = db.getLastRow();
     const lama = (lastRow > 1)
       ? db.getRange(2, 1, lastRow - 1, DBABSEN_TOTAL_COLS).getValues()
@@ -593,6 +661,8 @@ function _importCommit(tmp, mode, targetSheet) {
     barisBaru: baru.length,
     barisDitimpa: barisDitimpa,
     barisDipertahankan: barisDipertahankan,
+    periodeAwal: periodeAwal,
+    periodeAkhir: periodeAkhir,
     totalBaris: final.length,
     lastUpdate: sekarang.toISOString()
   };

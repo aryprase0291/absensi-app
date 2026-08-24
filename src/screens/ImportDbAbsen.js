@@ -119,7 +119,7 @@ export default function ImportDbAbsen({ user, masterData }) {
   const [daftarFile, setDaftarFile] = useState([]);  // File[]
   const [sumberSheets, setSumberSheets] = useState([]); // {file, nama, aoa}[] — hasil baca mentah semua tab
   const [overrideTujuan, setOverrideTujuan] = useState({}); // kunciSumber -> value sheet tujuan pilihan admin
-  const [mode, setMode] = useState('upsert');
+  const [mode, setMode] = useState('periode');
   const [konfirmasi, setKonfirmasi] = useState('');
   const [membaca, setMembaca] = useState(false);
   const [pesan, setPesan] = useState(null);          // { tipe, teks } — hanya error lokal (baca file / validasi)
@@ -244,6 +244,24 @@ export default function ImportDbAbsen({ user, masterData }) {
   }, [daftarSheetTujuan, hasilPerTarget]);
 
   const totalBarisSemua = targetList.reduce((n, t) => n + hasilPerTarget[t].baris.length, 0);
+
+  // Rentang tanggal gabungan — hanya untuk teks di layar. Yang dipakai
+  // backend adalah rentang PER SHEET TUJUAN, dihitung ulang di sana dari
+  // baris yang benar-benar masuk ke sheet itu (lihat _importRentangTanggal).
+  const rentangSemua = useMemo(() => {
+    let awal = '';
+    let akhir = '';
+    targetList.forEach((t) => {
+      const h = hasilPerTarget[t];
+      if (h.tanggalMin && (!awal || h.tanggalMin < awal)) awal = h.tanggalMin;
+      if (h.tanggalMaks && (!akhir || h.tanggalMaks > akhir)) akhir = h.tanggalMaks;
+    });
+    return { awal, akhir };
+  }, [targetList, hasilPerTarget]);
+
+  const rentangTeks = rentangSemua.awal
+    ? `${tglTampil(rentangSemua.awal)} s/d ${tglTampil(rentangSemua.akhir)}`
+    : '';
 
   // Ringkasan per file, digabung dari SEMUA kelompok tujuan — dipakai di
   // daftar file supaya angkanya tetap benar walau satu file punya tab
@@ -387,10 +405,19 @@ export default function ImportDbAbsen({ user, masterData }) {
       .map((t) => `• ${hasilPerTarget[t].baris.length} baris → sheet ${labelTujuan(t)}`)
       .join('\n');
 
-    const kalimat = (mode === 'replace'
-      ? `SELURUH isi tiap sheet tujuan di bawah akan dihapus dan diganti data dari ${asal}:\n${rincian}`
-      : `Data dari ${asal} akan dimasukkan ke ${targetList.length > 1 ? 'sheet-sheet' : 'sheet'} berikut:\n${rincian}\n\n` +
-        `Baris lama dengan No. Akun + tanggal yang sama (per sheet) akan ditimpa, sisanya tetap.`)
+    const pembuka = `Data dari ${asal} akan dimasukkan ke ${targetList.length > 1 ? 'sheet-sheet' : 'sheet'} berikut:\n${rincian}`;
+
+    const kalimat = (
+      mode === 'replace'
+        ? `SELURUH isi tiap sheet tujuan di bawah akan dihapus dan diganti data dari ${asal}:\n${rincian}`
+        : mode === 'periode'
+          ? `${pembuka}\n\n` +
+            `SEMUA baris lama bertanggal ${rentangTeks} akan dihapus dulu, lalu diganti isi file ini. ` +
+            `Baris di luar rentang tanggal itu tidak disentuh.\n\n` +
+            `Pastikan file ini berisi SELURUH karyawan untuk rentang tersebut — ` +
+            `siapa pun yang tidak ada di file akan hilang untuk tanggal-tanggal itu.`
+          : `${pembuka}\n\n` +
+            `Baris lama dengan No. Akun + tanggal yang sama (per sheet) akan ditimpa, sisanya tetap.`)
       + '\n\nImport berjalan di latar — Anda boleh menutup layar ini dan memakai menu lain. '
       + 'Tapi JANGAN menutup atau me-reload tab browser sampai notifikasi selesai muncul.'
       + '\n\nLanjutkan?';
@@ -440,7 +467,8 @@ export default function ImportDbAbsen({ user, masterData }) {
             <p className="text-[10px] text-slate-400 mt-1.5 tabular-nums">
               {job.chunkSelesai}/{job.totalChunk} bagian · {job.jumlahBaris} baris ·
               {job.totalKelompok > 1 && ` sheet ${job.kelompokSelesai}/${job.totalKelompok} ·`}
-              {' '}mode {job.mode === 'replace' ? 'ganti total' : 'perbarui'}
+              {' '}mode {job.mode === 'replace' ? 'ganti total'
+                : job.mode === 'periode' ? 'ganti per periode' : 'perbarui'}
             </p>
           </div>
         </div>
@@ -620,14 +648,31 @@ export default function ImportDbAbsen({ user, masterData }) {
             )}
           </h3>
 
+          <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'periode' ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
+            <input type="radio" name="mode" checked={mode === 'periode'} onChange={() => setMode('periode')} className="mt-1" />
+            <div className="text-xs">
+              <p className="font-bold text-slate-800">
+                Ganti semua tanggal dalam periode file
+                {rentangTeks && <span className="ml-1 text-blue-700">({rentangTeks})</span>}
+              </p>
+              <p className="text-slate-500 mt-0.5">
+                Semua baris lama bertanggal {rentangTeks || 'dalam rentang file'} dibuang
+                dulu, apa pun No. Akun dan NIK-nya, lalu diisi ulang dari file. Tanggal di
+                luar rentang itu tidak disentuh. Pakai ini untuk import rutin per periode —
+                paling bersih kalau ada karyawan yang NIK-nya berubah atau sudah keluar.
+              </p>
+            </div>
+          </label>
+
           <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'upsert' ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
             <input type="radio" name="mode" checked={mode === 'upsert'} onChange={() => setMode('upsert')} className="mt-1" />
             <div className="text-xs">
-              <p className="font-bold text-slate-800">Perbarui periode ini saja</p>
+              <p className="font-bold text-slate-800">Perbarui baris yang ada di file saja</p>
               <p className="text-slate-500 mt-0.5">
-                Baris lama dengan No. Akun + tanggal yang sama (per sheet) ditimpa —
-                termasuk kalau NIK, nama, jam, atau symbol-nya sudah berubah.
-                Data lain tetap utuh.
+                Hanya baris lama dengan No. Akun + tanggal yang sama (per sheet) yang
+                ditimpa — termasuk kalau NIK, nama, jam, atau symbol-nya sudah berubah.
+                Baris lain di tanggal yang sama tetap ada. Pakai kalau file ini cuma
+                berisi sebagian karyawan.
               </p>
             </div>
           </label>
@@ -645,6 +690,14 @@ export default function ImportDbAbsen({ user, masterData }) {
               </p>
             </div>
           </label>
+
+          {mode === 'periode' && rentangTeks && (
+            <Peringatan>
+              Baris lama bertanggal {rentangTeks} akan dihapus dulu di tiap sheet tujuan.
+              Karyawan yang tidak ada di file ini akan hilang untuk rentang tanggal
+              tersebut.
+            </Peringatan>
+          )}
 
           {mode === 'replace' && (
             <div>
@@ -705,6 +758,15 @@ export default function ImportDbAbsen({ user, masterData }) {
                 )}
                 <ul className="mt-0.5 space-y-0.5 text-green-700">
                   <li>Baris dari file: {r.barisBaru}</li>
+                  {r.mode === 'periode' && (
+                    <>
+                      <li>
+                        Periode yang diganti: {tglTampil(r.periodeAwal)} s/d {tglTampil(r.periodeAkhir)}
+                      </li>
+                      <li>Baris lama dalam periode itu dibuang: {r.barisDitimpa}</li>
+                      <li>Baris lama di luar periode dipertahankan: {r.barisDipertahankan}</li>
+                    </>
+                  )}
                   {r.mode === 'upsert' && (
                     <>
                       <li>Baris lama ditimpa: {r.barisDitimpa}</li>

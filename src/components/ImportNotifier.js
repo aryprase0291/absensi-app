@@ -16,6 +16,13 @@ import React from 'react';
 import { Loader2, CheckCircle, AlertTriangle, X, Database } from 'lucide-react';
 import { useImportJob } from '../context/ImportJobContext';
 
+/** 'YYYY-MM-DD' -> 'DD-MM-YYYY', sama seperti di layar Import. */
+function tglTampil(ymd) {
+  if (!ymd) return '-';
+  const p = String(ymd).split('-');
+  return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : ymd;
+}
+
 export default function ImportNotifier() {
   const { job, tutupNotifikasi } = useImportJob();
 
@@ -101,6 +108,13 @@ export default function ImportNotifier() {
                     )}
                     <ul className="mt-0.5 space-y-0.5 text-[11px] text-slate-500 tabular-nums">
                       <li>Baris dari file: <span className="font-semibold text-slate-700">{r.barisBaru}</span></li>
+                      {r.mode === 'periode' && (
+                        <>
+                          <li>Periode diganti: <span className="font-semibold text-slate-700">{tglTampil(r.periodeAwal)} s/d {tglTampil(r.periodeAkhir)}</span></li>
+                          <li>Baris lama dalam periode dibuang: <span className="font-semibold text-slate-700">{r.barisDitimpa}</span></li>
+                          <li>Baris lama di luar periode: <span className="font-semibold text-slate-700">{r.barisDipertahankan}</span></li>
+                        </>
+                      )}
                       {r.mode === 'upsert' && (
                         <>
                           <li>Baris lama ditimpa: <span className="font-semibold text-slate-700">{r.barisDitimpa}</span></li>
