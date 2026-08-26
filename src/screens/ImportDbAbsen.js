@@ -119,7 +119,7 @@ export default function ImportDbAbsen({ user, masterData }) {
   const [daftarFile, setDaftarFile] = useState([]);  // File[]
   const [sumberSheets, setSumberSheets] = useState([]); // {file, nama, aoa}[] — hasil baca mentah semua tab
   const [overrideTujuan, setOverrideTujuan] = useState({}); // kunciSumber -> value sheet tujuan pilihan admin
-  const [mode, setMode] = useState('periode');
+  const [mode, setMode] = useState('upsert');
   const [konfirmasi, setKonfirmasi] = useState('');
   const [membaca, setMembaca] = useState(false);
   const [pesan, setPesan] = useState(null);          // { tipe, teks } — hanya error lokal (baca file / validasi)
@@ -412,12 +412,14 @@ export default function ImportDbAbsen({ user, masterData }) {
         ? `SELURUH isi tiap sheet tujuan di bawah akan dihapus dan diganti data dari ${asal}:\n${rincian}`
         : mode === 'periode'
           ? `${pembuka}\n\n` +
-            `SEMUA baris lama bertanggal ${rentangTeks} akan dihapus dulu, lalu diganti isi file ini. ` +
-            `Baris di luar rentang tanggal itu tidak disentuh.\n\n` +
-            `Pastikan file ini berisi SELURUH karyawan untuk rentang tersebut — ` +
-            `siapa pun yang tidak ada di file akan hilang untuk tanggal-tanggal itu.`
+            `Untuk tiap No. Akun yang ada di file, semua baris lamanya bertanggal ` +
+            `${rentangTeks} akan dihapus dulu, lalu diganti isi file ini — termasuk ` +
+            `tanggal yang tidak ada di file.\n\n` +
+            `No. Akun yang tidak ada di file TIDAK disentuh, begitu juga tanggal di ` +
+            `luar rentang itu.`
           : `${pembuka}\n\n` +
-            `Baris lama dengan No. Akun + tanggal yang sama (per sheet) akan ditimpa, sisanya tetap.`)
+            `Kombinasi No. Akun + tanggal yang belum ada akan DITAMBAHKAN, yang sudah ada ` +
+            `akan DIPERBARUI. Selain itu tidak ada baris lama yang dibuang atau diubah.`)
       + '\n\nImport berjalan di latar — Anda boleh menutup layar ini dan memakai menu lain. '
       + 'Tapi JANGAN menutup atau me-reload tab browser sampai notifikasi selesai muncul.'
       + '\n\nLanjutkan?';
@@ -468,7 +470,7 @@ export default function ImportDbAbsen({ user, masterData }) {
               {job.chunkSelesai}/{job.totalChunk} bagian · {job.jumlahBaris} baris ·
               {job.totalKelompok > 1 && ` sheet ${job.kelompokSelesai}/${job.totalKelompok} ·`}
               {' '}mode {job.mode === 'replace' ? 'ganti total'
-                : job.mode === 'periode' ? 'ganti per periode' : 'perbarui'}
+                : job.mode === 'periode' ? 'ganti periode per akun' : 'tambah + perbarui'}
             </p>
           </div>
         </div>
@@ -648,54 +650,91 @@ export default function ImportDbAbsen({ user, masterData }) {
             )}
           </h3>
 
-          <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'periode' ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
-            <input type="radio" name="mode" checked={mode === 'periode'} onChange={() => setMode('periode')} className="mt-1" />
-            <div className="text-xs">
+          {/* JALUR NORMAL — tidak perlu memilih apa pun. Mode 'upsert'
+              sekaligus melayani dua kebutuhan yang sehari-hari muncul:
+              menambah data yang belum ada, dan memperbarui data yang
+              sudah ada. Dua mode lain bersifat merusak (membuang baris
+              yang tidak ada di file), jadi sengaja disembunyikan di balik
+              "Opsi lain" supaya tidak terpilih karena tidak sengaja. */}
+          {mode === 'upsert' && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs">
               <p className="font-bold text-slate-800">
-                Ganti semua tanggal dalam periode file
-                {rentangTeks && <span className="ml-1 text-blue-700">({rentangTeks})</span>}
+                Tambah data baru + perbarui yang sudah ada — otomatis
               </p>
-              <p className="text-slate-500 mt-0.5">
-                Semua baris lama bertanggal {rentangTeks || 'dalam rentang file'} dibuang
-                dulu, apa pun No. Akun dan NIK-nya, lalu diisi ulang dari file. Tanggal di
-                luar rentang itu tidak disentuh. Pakai ini untuk import rutin per periode —
-                paling bersih kalau ada karyawan yang NIK-nya berubah atau sudah keluar.
-              </p>
+              <ul className="mt-1.5 space-y-1 text-slate-600 list-disc list-inside">
+                <li>
+                  Kombinasi <b>No. Akun + tanggal</b> yang belum ada di sheet:
+                  ditambahkan sebagai baris baru.
+                </li>
+                <li>
+                  Kombinasi yang sudah ada: baris lamanya diperbarui dengan isi file —
+                  termasuk kalau NIK, nama, jam, atau symbol-nya sudah berubah.
+                </li>
+                <li>
+                  Selain itu <b>tidak disentuh sama sekali</b>: No. Akun atau tanggal yang
+                  tidak ada di file ini tetap seperti apa adanya.
+                </li>
+              </ul>
             </div>
-          </label>
+          )}
 
-          <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'upsert' ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
-            <input type="radio" name="mode" checked={mode === 'upsert'} onChange={() => setMode('upsert')} className="mt-1" />
-            <div className="text-xs">
-              <p className="font-bold text-slate-800">Perbarui baris yang ada di file saja</p>
-              <p className="text-slate-500 mt-0.5">
-                Hanya baris lama dengan No. Akun + tanggal yang sama (per sheet) yang
-                ditimpa — termasuk kalau NIK, nama, jam, atau symbol-nya sudah berubah.
-                Baris lain di tanggal yang sama tetap ada. Pakai kalau file ini cuma
-                berisi sebagian karyawan.
-              </p>
-            </div>
-          </label>
+          <details open={mode !== 'upsert'} className="text-xs">
+            <summary className="cursor-pointer font-bold text-slate-600">
+              Opsi lain — membuang baris lama yang tidak ada di file
+            </summary>
 
-          <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'replace' ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
-            <input type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} className="mt-1" />
-            <div className="text-xs">
-              <p className="font-bold text-slate-800">
-                Ganti seluruh isi {targetList.length > 1 ? 'tiap sheet tujuan' : 'sheet tujuan'}
-              </p>
-              <p className="text-slate-500 mt-0.5">
-                Semua baris lama di sheet itu dibuang. Pakai ini hanya kalau
-                {banyakFile ? ' kumpulan file ini berisi' : ' file ini berisi'} seluruh
-                data yang Anda perlukan untuk sheet tersebut.
-              </p>
+            <div className="mt-2 space-y-2">
+              <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'upsert' ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
+                <input type="radio" name="mode" checked={mode === 'upsert'} onChange={() => setMode('upsert')} className="mt-1" />
+                <div>
+                  <p className="font-bold text-slate-800">
+                    Tambah + perbarui <span className="font-medium text-slate-400">(dipakai secara normal)</span>
+                  </p>
+                  <p className="text-slate-500 mt-0.5">
+                    Tidak ada baris lama yang dibuang. Hanya kombinasi No. Akun + tanggal
+                    yang ada di file yang berubah.
+                  </p>
+                </div>
+              </label>
+
+              <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'periode' ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
+                <input type="radio" name="mode" checked={mode === 'periode'} onChange={() => setMode('periode')} className="mt-1" />
+                <div>
+                  <p className="font-bold text-slate-800">
+                    Ganti seluruh periode untuk No. Akun yang ada di file
+                    {rentangTeks && <span className="ml-1 text-amber-700">({rentangTeks})</span>}
+                  </p>
+                  <p className="text-slate-500 mt-0.5">
+                    Untuk tiap No. Akun yang ada di file, semua baris lamanya bertanggal{' '}
+                    {rentangTeks || 'dalam rentang file'} dibuang dulu — <b>termasuk tanggal
+                    yang tidak ada di file ini</b> — lalu diisi ulang. No. Akun yang tidak ada
+                    di file tidak disentuh. Pakai kalau ada baris sisa import lama yang harus
+                    hilang.
+                  </p>
+                </div>
+              </label>
+
+              <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-all ${mode === 'replace' ? 'border-red-400 bg-red-50' : 'border-gray-200'}`}>
+                <input type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} className="mt-1" />
+                <div>
+                  <p className="font-bold text-slate-800">
+                    Ganti seluruh isi {targetList.length > 1 ? 'tiap sheet tujuan' : 'sheet tujuan'}
+                  </p>
+                  <p className="text-slate-500 mt-0.5">
+                    Semua baris lama di sheet itu dibuang. Pakai ini hanya kalau
+                    {banyakFile ? ' kumpulan file ini berisi' : ' file ini berisi'} seluruh
+                    data yang Anda perlukan untuk sheet tersebut.
+                  </p>
+                </div>
+              </label>
             </div>
-          </label>
+          </details>
 
           {mode === 'periode' && rentangTeks && (
             <Peringatan>
-              Baris lama bertanggal {rentangTeks} akan dihapus dulu di tiap sheet tujuan.
-              Karyawan yang tidak ada di file ini akan hilang untuk rentang tanggal
-              tersebut.
+              Baris lama bertanggal {rentangTeks} milik No. Akun yang ada di file akan
+              dihapus dulu di tiap sheet tujuan — termasuk tanggal yang tidak ada di file
+              ini. No. Akun lain dan tanggal di luar rentang tidak disentuh.
             </Peringatan>
           )}
 
@@ -763,14 +802,18 @@ export default function ImportDbAbsen({ user, masterData }) {
                       <li>
                         Periode yang diganti: {tglTampil(r.periodeAwal)} s/d {tglTampil(r.periodeAkhir)}
                       </li>
-                      <li>Baris lama dalam periode itu dibuang: {r.barisDitimpa}</li>
-                      <li>Baris lama di luar periode dipertahankan: {r.barisDipertahankan}</li>
+                      <li>Baris lama akun tsb dalam periode dibuang: {r.barisDitimpa}</li>
+                      <li>Baris lama lainnya dipertahankan: {r.barisDipertahankan}</li>
                     </>
                   )}
                   {r.mode === 'upsert' && (
                     <>
-                      <li>Baris lama ditimpa: {r.barisDitimpa}</li>
-                      <li>Baris lama dipertahankan: {r.barisDipertahankan}</li>
+                      <li>Baris baru ditambahkan: {r.barisDitambahkan}</li>
+                      <li>Baris lama diperbarui: {r.barisDiperbarui}</li>
+                      {r.barisDitimpa > r.barisDiperbarui && (
+                        <li>Baris ganda lama ikut dibersihkan: {r.barisDitimpa - r.barisDiperbarui}</li>
+                      )}
+                      <li>Baris lama tidak disentuh: {r.barisDipertahankan}</li>
                     </>
                   )}
                   <li className="font-bold">Total {r.label} sekarang: {r.totalBaris}</li>

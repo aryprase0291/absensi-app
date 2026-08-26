@@ -221,6 +221,8 @@ function handleImportDbAbsen(data) {
       targetSheet: namaTarget,
       barisBaru: hasil.barisBaru,
       barisDitimpa: hasil.barisDitimpa,
+      barisDiperbarui: hasil.barisDiperbarui,
+      barisDitambahkan: hasil.barisDitambahkan,
       barisDipertahankan: hasil.barisDipertahankan,
       periodeAwal: hasil.periodeAwal,
       periodeAkhir: hasil.periodeAkhir,
@@ -439,6 +441,23 @@ function _importRentangTanggal(rows) {
   return { min: min, maks: maks };
 }
 
+/**
+ * Apakah baris lama ini milik identitas yang ikut diimpor?
+ *
+ * ACUANNYA No.Akun. NIK hanya dipakai kalau baris lama TIDAK punya
+ * No.Akun sama sekali (baris warisan era IMPORTRANGE) — tanpa itu baris
+ * seperti ini tidak akan pernah bisa ditimpa import mana pun. Baris yang
+ * punya No.Akun sengaja TIDAK ikut dicocokkan lewat NIK: kalau akunnya
+ * tidak ada di file, baris itu bukan urusan import ini, walau NIK-nya
+ * kebetulan sama dengan NIK orang lain di file.
+ */
+function _importIkutDiimpor(row, akunBaru, nikBaru) {
+  const akun = String(row[IMPORT_IDX_AKUN] || '').trim();
+  if (akun) return akunBaru[akun] === true;
+  const nik = String(row[IMPORT_IDX_NIK] || '').trim();
+  return nik ? nikBaru[nik] === true : false;
+}
+
 
 // =======================================================
 // COMMIT KE dbabsen
@@ -468,24 +487,34 @@ function _importBuatSheetTujuan(nama) {
 }
 
 /**
- * mode 'periode' : SEMUA baris lama yang tanggalnya jatuh di dalam
- *                  rentang tanggal file (tanggal paling awal s/d paling
- *                  akhir di file) dibuang, tak peduli No.Akun/NIK-nya;
- *                  baris di luar rentang itu tetap. Ini cara paling
- *                  tegas untuk "import periode ini menang atas isi
- *                  lama": karyawan yang identitasnya berubah, baris
- *                  ganda warisan, dan orang yang sudah tidak ada di file
- *                  semuanya ikut bersih. Konsekuensinya file HARUS berisi
- *                  seluruh karyawan untuk periode itu — siapa pun yang
- *                  tidak ada di file akan hilang untuk rentang tersebut.
+ * mode 'periode' : untuk SETIAP No.Akun yang ada di file, seluruh baris
+ *                  lamanya yang jatuh di rentang tanggal file (tanggal
+ *                  paling awal s/d paling akhir di file) dibuang, lalu
+ *                  diisi ulang dari file. No.Akun yang TIDAK ada di file
+ *                  sama sekali tidak disentuh, walau tanggalnya persis
+ *                  sama. Baris di luar rentang juga tidak disentuh.
+ *
+ *                  Bedanya dengan 'upsert': di sini yang dibuang seluruh
+ *                  rentang milik akun itu, bukan cuma tanggal yang
+ *                  kebetulan ada di file. Jadi baris sisa import lama
+ *                  pada tanggal yang sekarang TIDAK ada di file (mis.
+ *                  hari yang orangnya ternyata tidak masuk, atau baris
+ *                  ganda warisan) ikut bersih.
  *
  * mode 'replace' : seluruh A2:S dibuang, diganti isi file.
- * mode 'upsert'  : baris lama yang punya kombinasi No.Akun+tanggal sama
- *                  dengan file baru dibuang; sisanya dipertahankan.
- *                  Ini yang dipakai kalau Anda mengimpor per periode.
- *                  Jadi import ulang periode yang sama menimpa hasil
- *                  import sebelumnya, termasuk kalau isi kolom C:S
- *                  (NIK, nama, jam, symbol, ...) sudah diubah.
+ * mode 'upsert'  : MODE DEFAULT, dan satu-satunya yang dipakai untuk
+ *                  pemakaian rutin. Baris lama yang punya kombinasi
+ *                  No.Akun+tanggal sama dengan file baru dibuang lalu
+ *                  ditulis ulang dari file; SEMUA baris lain — kombinasi
+ *                  No.Akun+tanggal yang tidak ada di file — tidak
+ *                  disentuh sama sekali. Kombinasi yang belum pernah ada
+ *                  otomatis bertambah sebagai baris baru.
+ *
+ *                  Jadi satu mode ini sekaligus melayani dua kebutuhan:
+ *                  menambah data baru tanpa mengganggu yang lama, dan
+ *                  memperbarui data lama yang isinya berubah (termasuk
+ *                  kalau kolom C:S — NIK, nama, jam, symbol — diubah,
+ *                  karena kuncinya No.Akun, bukan NIK).
  *
  * `targetSheet` boleh sheet mana pun yang lolos _importNamaSheetValid —
  * default dbabsen kalau kosong. Dibuat otomatis kalau belum ada.
@@ -505,6 +534,8 @@ function _importCommit(tmp, mode, targetSheet) {
   let barisDipertahankan = 0;
   let periodeAwal = '';
   let periodeAkhir = '';
+  let barisDiperbarui = 0;    // baris file yang menimpa baris lama
+  let barisDitambahkan = 0;   // baris file yang benar-benar baru
 
   if (mode === 'periode') {
     const rentang = _importRentangTanggal(baru);
@@ -513,6 +544,19 @@ function _importCommit(tmp, mode, targetSheet) {
     }
     periodeAwal = rentang.min;
     periodeAkhir = rentang.maks;
+
+    // Daftar identitas yang IKUT diimpor. Hanya baris milik identitas
+    // inilah yang boleh dihapus — akun lain di tanggal yang sama sengaja
+    // tidak disentuh, karena file yang diimpor belum tentu memuat seluruh
+    // karyawan (mis. per departemen, atau satu tab saja).
+    const akunBaru = {};
+    const nikBaru = {};
+    for (let i = 0; i < baru.length; i++) {
+      const a = String(baru[i][IMPORT_IDX_AKUN] || '').trim();
+      if (a) akunBaru[a] = true;
+      const n = String(baru[i][IMPORT_IDX_NIK] || '').trim();
+      if (n) nikBaru[n] = true;
+    }
 
     const lastRow = db.getLastRow();
     const lama = (lastRow > 1)
@@ -523,11 +567,14 @@ function _importCommit(tmp, mode, targetSheet) {
     for (let i = 0; i < lama.length; i++) {
       const row = lama[i];
       if (_importBarisKosong(row)) continue;
-      const ymd = formatDateYMD_Strict(row[IMPORT_IDX_TANGGAL]);
+
       // Baris yang tanggalnya tidak terbaca DIPERTAHANKAN: tidak bisa
       // dipastikan masuk periode ini atau tidak, dan menghapus data yang
       // tidak dimengerti lebih buruk daripada menyisakannya.
-      if (ymd && ymd >= rentang.min && ymd <= rentang.maks) { barisDitimpa++; continue; }
+      const ymd = formatDateYMD_Strict(row[IMPORT_IDX_TANGGAL]);
+      if (!ymd || ymd < rentang.min || ymd > rentang.maks) { sisa.push(row); continue; }
+
+      if (_importIkutDiimpor(row, akunBaru, nikBaru)) { barisDitimpa++; continue; }
       sisa.push(row);
     }
 
@@ -542,9 +589,9 @@ function _importCommit(tmp, mode, targetSheet) {
 
     // Dua ruang kunci didaftarkan sekaligus: No.Akun+tanggal (acuan
     // utama) dan NIK+tanggal (jaring pengaman untuk baris lama tanpa
-    // No.Akun). Baris lama ditimpa kalau SALAH SATU-nya cocok — kalau
-    // hanya kunci No.Akun yang dipakai, baris warisan yang kolom B-nya
-    // kosong akan menumpuk selamanya karena tidak pernah bisa cocok.
+    // No.Akun — kalau hanya kunci No.Akun yang dipakai, baris warisan
+    // yang kolom B-nya kosong akan menumpuk selamanya karena tidak
+    // pernah bisa cocok).
     const kunciBaru = {};
     for (let i = 0; i < baru.length; i++) {
       const ka = _importKunciAkun(baru[i]);
@@ -553,15 +600,32 @@ function _importCommit(tmp, mode, targetSheet) {
       if (kn) kunciBaru[kn] = true;
     }
 
+    // Baris lama yang PUNYA No.Akun dinilai HANYA lewat kunci No.Akun.
+    // Kalau akunnya tidak ada di file, baris itu bukan urusan import ini
+    // walau NIK-nya kebetulan sama dengan NIK orang lain di file.
+    //
+    // `kunciLama` dikumpulkan di loop yang sama, dipakai sesudahnya untuk
+    // memisahkan "baris baru yang benar-benar menambah" dari "baris baru
+    // yang memperbarui data lama" — dua hal yang di layar hasil memang
+    // ditanyakan terpisah.
+    const kunciLama = {};
     const sisa = [];
     for (let i = 0; i < lama.length; i++) {
       const row = lama[i];
       if (_importBarisKosong(row)) continue;
       const ka = _importKunciAkun(row);
-      const kn = _importKunciNik(row);
-      if ((ka && kunciBaru[ka]) || (kn && kunciBaru[kn])) { barisDitimpa++; continue; }
+      const kunci = ka || _importKunciNik(row);
+      if (kunci) kunciLama[kunci] = true;
+      if (kunci && kunciBaru[kunci]) { barisDitimpa++; continue; }
       sisa.push(row);
     }
+
+    for (let i = 0; i < baru.length; i++) {
+      const ka = _importKunciAkun(baru[i]);
+      const kn = _importKunciNik(baru[i]);
+      if ((ka && kunciLama[ka]) || (kn && kunciLama[kn])) barisDiperbarui++;
+    }
+    barisDitambahkan = baru.length - barisDiperbarui;
 
     barisDipertahankan = sisa.length;
     final = sisa.concat(baru);
@@ -660,6 +724,8 @@ function _importCommit(tmp, mode, targetSheet) {
   return {
     barisBaru: baru.length,
     barisDitimpa: barisDitimpa,
+    barisDiperbarui: barisDiperbarui,
+    barisDitambahkan: barisDitambahkan,
     barisDipertahankan: barisDipertahankan,
     periodeAwal: periodeAwal,
     periodeAkhir: periodeAkhir,

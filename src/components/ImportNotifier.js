@@ -111,14 +111,15 @@ export default function ImportNotifier() {
                       {r.mode === 'periode' && (
                         <>
                           <li>Periode diganti: <span className="font-semibold text-slate-700">{tglTampil(r.periodeAwal)} s/d {tglTampil(r.periodeAkhir)}</span></li>
-                          <li>Baris lama dalam periode dibuang: <span className="font-semibold text-slate-700">{r.barisDitimpa}</span></li>
-                          <li>Baris lama di luar periode: <span className="font-semibold text-slate-700">{r.barisDipertahankan}</span></li>
+                          <li>Baris lama akun tsb dibuang: <span className="font-semibold text-slate-700">{r.barisDitimpa}</span></li>
+                          <li>Baris lama lainnya dipertahankan: <span className="font-semibold text-slate-700">{r.barisDipertahankan}</span></li>
                         </>
                       )}
                       {r.mode === 'upsert' && (
                         <>
-                          <li>Baris lama ditimpa: <span className="font-semibold text-slate-700">{r.barisDitimpa}</span></li>
-                          <li>Baris lama dipertahankan: <span className="font-semibold text-slate-700">{r.barisDipertahankan}</span></li>
+                          <li>Baris baru ditambahkan: <span className="font-semibold text-slate-700">{r.barisDitambahkan}</span></li>
+                          <li>Baris lama diperbarui: <span className="font-semibold text-slate-700">{r.barisDiperbarui}</span></li>
+                          <li>Baris lama tidak disentuh: <span className="font-semibold text-slate-700">{r.barisDipertahankan}</span></li>
                         </>
                       )}
                       <li className="pt-0.5 flex items-center gap-1.5 text-slate-700 font-semibold">

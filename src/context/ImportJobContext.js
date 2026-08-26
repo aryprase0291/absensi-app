@@ -46,7 +46,7 @@ const JOB_KOSONG = {
   chunkSelesai: 0,
   totalChunk: 0,
   jumlahBaris: 0,
-  mode: 'periode',
+  mode: 'upsert',
   jumlahFile: 0,
   pesan: '',
   totalKelompok: 0,     // berapa sheet tujuan terlibat di import ini

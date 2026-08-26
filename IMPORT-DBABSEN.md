@@ -106,48 +106,72 @@ week       → S        row[18]
 
 ---
 
-## Tiga mode
+## Mode penulisan
 
-### 1. Ganti semua tanggal dalam periode file (`periode`, default)
+Layar Import hanya menampilkan **satu** jalur normal; dua mode lain
+disembunyikan di balik "Opsi lain" karena keduanya membuang baris lama.
+
+### Normal: Tambah + perbarui (`upsert`, default)
+
+Satu mode ini melayani dua kebutuhan sekaligus, otomatis, tanpa perlu
+memilih apa pun:
+
+- Kombinasi **No.Akun + tanggal** yang **belum ada** di sheet →
+  ditambahkan sebagai baris baru. Data lama tidak tersentuh.
+- Kombinasi yang **sudah ada** → baris lamanya dibuang lalu ditulis ulang
+  dari file, termasuk kalau kolom C:S (NIK, nama, jam, symbol) berubah.
+- Selain itu **tidak ada yang disentuh**: No.Akun yang tidak ada di file,
+  dan tanggal yang tidak ada di file, tetap seperti apa adanya.
+
+Karena kuncinya No.Akun, mengoreksi NIK (mis. Sutiono `605` → `G0642`)
+tetap terbaca sebagai baris yang sama, bukan orang baru.
+
+Kalau di sheet ada dua baris lama untuk satu No.Akun + tanggal (sisa bug
+kunci-NIK yang lama), keduanya ikut dibuang dan diganti satu baris — jadi
+duplikat lama membersihkan diri pada import berikutnya. Angka
+`barisDitimpa` bisa lebih besar dari `barisDiperbarui` justru karena ini;
+selisihnya dilaporkan terpisah di layar hasil.
+
+### Opsi lain 1: Ganti seluruh periode untuk No.Akun yang ada di file (`periode`)
 
 Backend menghitung tanggal paling awal dan paling akhir di antara baris
-yang masuk ke satu sheet tujuan, lalu **membuang semua baris lama yang
-tanggalnya jatuh di rentang itu** — tak peduli No.Akun maupun NIK-nya —
-sebelum menulis isi file. Baris di luar rentang tidak disentuh.
+yang masuk ke satu sheet tujuan, lalu untuk **setiap No.Akun yang ada di
+file** membuang semua baris lamanya yang jatuh di rentang itu — termasuk
+tanggal yang TIDAK ada di file — sebelum menulis isi file.
 
-Ini mode paling tegas dan yang dipakai untuk import rutin: hasil import
-periode ini selalu menang atas apa pun yang sudah ada untuk tanggal-tanggal
-tersebut. Yang ikut bersih: karyawan yang NIK-nya berubah, baris ganda
-warisan import lama, dan orang yang sudah tidak ada lagi di file.
+Dua batas yang dijaga:
 
-Rentangnya `min..maks`, bukan daftar tanggal yang persis ada di file —
-hari libur dan hari yang semua orangnya tidak masuk memang tidak punya
-baris di file mesin, jadi kalau yang dihapus hanya tanggal yang ada
-barisnya, sisa baris hari libur dari import sebelumnya akan tertinggal
-di tengah periode.
+- **No.Akun yang tidak ada di file tidak disentuh**, walau tanggalnya
+  persis sama.
+- **Tanggal di luar rentang tidak disentuh**, untuk akun mana pun.
 
-**Konsekuensinya:** file harus berisi **seluruh** karyawan untuk periode
-itu. Siapa pun yang tidak ada di file akan hilang untuk rentang tanggal
-tersebut. Kalau yang diimpor cuma sebagian karyawan, pakai mode 2.
+Bedanya dengan mode normal cuma satu: baris lama pada tanggal yang tidak
+ada di file ikut dibuang. Pakai kalau ada baris sisa import lama yang
+memang harus hilang; untuk pemakaian rutin, mode normal sudah cukup.
 
+Rentangnya `min..maks`, bukan daftar tanggal yang persis ada di file.
 Baris lama yang kolom tanggalnya tidak terbaca **dipertahankan** — tidak
 bisa dipastikan masuk periode ini atau tidak.
 
-### 2. Perbarui baris yang ada di file saja (`upsert`)
+### Opsi lain 2: Ganti seluruh isi (`replace`)
 
-Baris lama yang punya kombinasi **No.Akun + tanggal** sama dengan file
-baru ditimpa; sisanya tetap — termasuk baris lain di tanggal yang sama
-yang tidak ada di file. Pakai kalau file hanya berisi sebagian karyawan.
+Semua baris lama dibuang. Perlu mengetik `GANTI` untuk mengaktifkan
+tombol. Pakai hanya kalau file — atau kumpulan file — berisi seluruh data
+yang diperlukan.
 
-Kuncinya sengaja No.Akun (kolom B), bukan NIK: hanya kolom B yang tetap
-untuk satu karyawan. Selama kuncinya NIK, satu NIK yang dikoreksi (mis.
-Sutiono `605` → `G0642`) membuat baris lama tidak cocok dengan baris baru
-mana pun — baris itu lolos sebagai "dipertahankan" dan orang yang sama
-jadi punya dua baris untuk tanggal yang sama.
+### Kenapa kuncinya No.Akun, bukan NIK
 
-NIK + tanggal masih ikut dicocokkan **sebagai cadangan**, khusus untuk
-baris warisan era IMPORTRANGE yang kolom B-nya kosong. Tanpa itu baris
-seperti ini tidak akan pernah bisa ditimpa import mana pun.
+Hanya kolom B yang tetap untuk satu karyawan. Selama kuncinya NIK, satu
+NIK yang dikoreksi (mis. Sutiono `605` → `G0642`) membuat baris lama tidak
+cocok dengan baris baru mana pun — baris itu lolos sebagai "dipertahankan"
+dan orang yang sama jadi punya dua baris untuk tanggal yang sama.
+
+NIK dipakai **hanya sebagai cadangan untuk baris lama yang kolom B-nya
+kosong** (warisan era IMPORTRANGE); tanpa itu baris seperti ini tidak akan
+pernah bisa ditimpa import mana pun. Baris yang punya No.Akun sengaja
+TIDAK ikut dicocokkan lewat NIK — kalau akunnya tidak ada di file, baris
+itu bukan urusan import ini, walau NIK-nya kebetulan sama dengan NIK orang
+lain di file. Berlaku untuk semua mode.
 
 ### 3. Ganti seluruh isi (`replace`)
 
