@@ -250,8 +250,6 @@ function handleAbsen(data) {
   }
   // =================================================================
   const sheet = SS.getSheetByName(SHEET_ABSENSI);
-  const sheetUsers = SS.getSheetByName(SHEET_USERS);
-  const userRows = sheetUsers.getDataRange().getValues();
 
   // =================================================================
   // --- [UPDATE] VALIDASI DUPLIKASI & KUOTA (SEMUA TIPE FORM) ---
@@ -261,7 +259,7 @@ function handleAbsen(data) {
   const TYPES_CHECK_DUPLICATE = ['Ijin', 'Cuti', 'Sakit', 'Dinas Luar', 'Cuti EO', 'Tukar Shift', 'Off', 'Dinas'];
 
   if (TYPES_CHECK_DUPLICATE.includes(data.tipe)) {
-      const rowsAbsen = sheet.getDataRange().getValues();
+      const rowsAbsen = bacaSheet(sheet, 14);
       
       // Tentukan Tanggal Input yang akan dicek (Format: yyyy-MM-dd)
       let inputDateStr = "";
@@ -336,18 +334,17 @@ function handleAbsen(data) {
   const waktu = new Date();
   const uuid = Utilities.getUuid();
 
-  // --- LOGIKA UPLOAD FOTO (TIDAK BERUBAH) ---
+  // --- LOGIKA UPLOAD FOTO ---
   let fotoUrl = '';
   if (data.foto && data.foto.includes('base64')) {
       try {
         const imageBlob = Utilities.newBlob(Utilities.base64Decode(data.foto.split(',')[1]), 'image/jpeg', `Absen_${data.nama}_${waktu.getTime()}.jpg`);
         const file = getFolder().createFile(imageBlob);
-        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         fotoUrl = "https://drive.google.com/uc?export=view&id=" + file.getId();
       } catch (e) { fotoUrl = 'Error Upload'; }
   } else if (data.existingFoto) { fotoUrl = data.existingFoto; }
 
-  // --- LOGIKA UPLOAD LAMPIRAN (TIDAK BERUBAH) ---
+  // --- LOGIKA UPLOAD LAMPIRAN ---
   let lampiranUrl = '-';
   if (data.fileLampiran && data.fileLampiran.includes('base64')) {
      try {
@@ -360,7 +357,6 @@ function handleAbsen(data) {
 
        const blob = Utilities.newBlob(decodedBlob, mimeType, finalFileName);
        const fileDoc = getFolder().createFile(blob);
-       fileDoc.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
        lampiranUrl = "https://drive.google.com/uc?export=view&id=" + fileDoc.getId();
      } catch(e) { 
        lampiranUrl = 'Gagal Upload Lampiran';
@@ -368,33 +364,24 @@ function handleAbsen(data) {
      }
   }
 
-  // --- CEK DATA USER ---
-  const foundUser = userRows.slice(1).find(row => String(row[0]) === String(data.userId));
+  // --- CEK DATA USER (Hanya jika tipe form membutuhkan approval / kuota) ---
+  const allowedTypes = ['Cuti', 'Sakit', 'Cuti EO', 'Dinas Luar', 'Lembur', 'Tukar Shift', 'Off'];
   let currentSisaCuti = 0;
   let emailAtasan = '';
   
-  if (foundUser) {
-    // 1. Ambil Email Atasan (Tetap dari Sheet Users)
-    emailAtasan = foundUser[12] || '';
-    
-    // 2. LOGIKA BARU: Ambil Sisa Cuti dari MASTER-CUTI (Kolom Y / Index 24)
-    const userNik = String(foundUser[7]); // Asumsi NIK ada di Sheet Users Kolom H (Index 7)
-    const sheetMasterCuti = SS.getSheetByName("MASTER-CUTI");
-    
-    if (sheetMasterCuti) {
-      const rowsMaster = sheetMasterCuti.getDataRange().getValues();
-      // Cari baris di Master Cuti yang NIK-nya (Kolom B/Index 1) cocok
-      const rowCuti = rowsMaster.find(r => String(r[1]) === userNik);
-      
-      if (rowCuti) {
-        // Ambil dari Kolom Y (Index 24)
-        currentSisaCuti = rowCuti[24]; 
+  if (allowedTypes.includes(data.tipe)) {
+    const sheetUsers = SS.getSheetByName(SHEET_USERS);
+    const userRows = sheetUsers ? bacaSheet(sheetUsers, 13) : [];
+    const foundUser = userRows.slice(1).find(row => String(row[0]) === String(data.userId));
+    if (foundUser) {
+      emailAtasan = foundUser[12] || '';
+      const userNik = String(foundUser[7] || '').trim();
+      const petaCuti = typeof getPetaCutiCached === 'function' ? getPetaCutiCached() : {};
+      if (userNik && petaCuti[userNik]) {
+        currentSisaCuti = petaCuti[userNik].tersedia || 0;
       } else {
-        // Fallback jika tidak ketemu di Master, ambil dari Users
-        currentSisaCuti = foundUser[8] || 0; 
+        currentSisaCuti = foundUser[8] || 0;
       }
-    } else {
-      currentSisaCuti = foundUser[8] || 0;
     }
   }
 
@@ -420,7 +407,6 @@ function handleAbsen(data) {
   ]);
 
   // --- KIRIM EMAIL ---
-  const allowedTypes = ['Cuti', 'Sakit', 'Cuti EO', 'Dinas Luar', 'Lembur', 'Tukar Shift', 'Off'];
   if (allowedTypes.includes(data.tipe)) {
       if (emailAtasan && emailAtasan.includes('@')) {
           let detailPeriode = formatDateStrict(waktu);
@@ -677,10 +663,8 @@ function handleSendRemark(data) {
   let fileUrl = '-';
   if (data.file && data.file.includes('base64')) {
     try {
-      const folder = DriveApp.getFoldersByName(FOLDER_NAME).hasNext() ? DriveApp.getFoldersByName(FOLDER_NAME).next() : DriveApp.createFolder(FOLDER_NAME);
       const blob = Utilities.newBlob(Utilities.base64Decode(data.file.split(',')[1]), data.file.split(';')[0].split(':')[1], data.nama + "_REMARK_" + uuid);
-      const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      const file = getFolder().createFile(blob);
       fileUrl = file.getUrl();
     } catch (e) {
       fileUrl = 'Error Upload';
@@ -1191,20 +1175,17 @@ function handleGetDbAbsen(data) {
   const rows = bacaSheet(sheet, 19);
 
   // --- CARI USER ---
-  const sheetUser = SS.getSheetByName(SHEET_USERS); // [cite: 163]
-  const rowsUser = bacaSheet(sheetUser, 8); // butuh index 0 dan 7 saja
   let userNik = data.noPayroll;
   let namaUser = data.nama || '-';
 
-  if (!userNik) {
+  if (!userNik || userNik === '-' || userNik === 'undefined') {
+    const sheetUser = SS.getSheetByName(SHEET_USERS);
+    const rowsUser = sheetUser ? bacaSheet(sheetUser, 8) : [];
     const foundUser = rowsUser.slice(1).find(r => String(r[0]) === String(data.userId));
     if (foundUser) {
       userNik = foundUser[7];
       namaUser = foundUser[3] || '-';
     }
-  } else {
-    const foundUser = rowsUser.slice(1).find(r => String(r[7]).trim() === String(userNik).trim());
-    if (foundUser) namaUser = foundUser[3] || '-';
   }
 
   if (!userNik || userNik === '-') return responseJSON({ result: 'success', list: [] });
@@ -1567,16 +1548,6 @@ function handleLogin(data) {
     // belakang login — masing-masing dengan 302 redirect dan boot container
     // sendiri. Dihitung dari jalur buka-aplikasi: 3 request -> 1.
     //
-    // Keduanya dibungkus try secara TERPISAH: kegagalan salah satu tidak
-    // boleh menggagalkan login, dan tidak boleh menyeret yang lain.
-    let statsLogin = null;
-    try {
-      // Tidak membaca ulang sheet: noPayroll dan petaCuti sudah di memori.
-      statsLogin = hitungStats(String(foundUser[0]), foundUser[5], noPayroll, petaCuti);
-    } catch (e) {
-      console.warn('Stats gagal dihitung saat login: ' + e.message);
-    }
-
     // Untuk pengumuman, null berarti dua hal yang berbeda: "tidak ada
     // pengumuman aktif" dan "gagal dibaca". Frontend perlu membedakannya —
     // kalau gagal, ia harus mengambil sendiri seperti dulu, bukan diam.
@@ -1588,6 +1559,19 @@ function handleLogin(data) {
       pengumumanOk = true;
     } catch (e) {
       console.warn('Pengumuman gagal dibaca saat login: ' + e.message);
+    }
+
+    let semuaPeriode = [];
+    let periodeAktifList = [];
+    let periodeDefault = null;
+    try {
+      if (typeof getSemuaPeriode_ === 'function') {
+        semuaPeriode = getSemuaPeriode_();
+        periodeAktifList = semuaPeriode.filter(function (p) { return p.aktif; });
+        periodeDefault = typeof getPeriodeAbsenAktif_ === 'function' ? getPeriodeAbsenAktif_() : null;
+      }
+    } catch (e) {
+      console.warn('Periode gagal dibaca saat login: ' + e.message);
     }
 
     return responseJSON({
@@ -1630,16 +1614,19 @@ function handleLogin(data) {
 
       masterData: masterData,
 
-      // Lihat blok "TITIPAN UNTUK MENGHEMAT REQUEST" di atas.
-      // stats bisa null kalau perhitungannya gagal — frontend menanganinya
-      // dengan mengambil sendiri lewat get_stats, seperti perilaku lama.
-      stats: statsLogin,
+      // Stats dimuat secara asinkron di Dashboard agar respon login kilat < 1.5 detik
+      stats: null,
 
       // pengumuman null = tidak ada pengumuman aktif ATAU gagal dibaca.
       // pengumumanDisertakan yang membedakannya: hanya true kalau
       // pembacaannya benar-benar berhasil.
       pengumuman: pengumumanLogin,
-      pengumumanDisertakan: pengumumanOk
+      pengumumanDisertakan: pengumumanOk,
+
+      // Periode absensi disertakan agar Dashboard tidak perlu request terpisah
+      periods: semuaPeriode,
+      periodsAktif: periodeAktifList,
+      periodeDefault: periodeDefault
     });
   } else { 
     return responseJSON({ result: 'error', message: 'Username/Password salah!' });
@@ -1672,7 +1659,9 @@ function handleTambahMaster(data) {
   // muncul untuk user LAIN setelah TTL cache (10 menit) habis — admin yang
   // menambahkannya sendiri tidak menyadari ini karena layarnya diperbarui
   // langsung dari state lokal, bukan dari cache.
-  try { CacheService.getScriptCache().remove(KUNCI_MASTERDATA); } catch (e) { console.warn('Gagal bersihkan cache MasterData: ' + e.message); }
+  if (typeof MASTERDATA_CACHE_BERSIHKAN === 'function') {
+    try { MASTERDATA_CACHE_BERSIHKAN(); } catch (e) { console.warn('Gagal bersihkan cache MasterData: ' + e.message); }
+  }
 
   return responseJSON({ result: 'success' });
 }
@@ -1694,7 +1683,7 @@ function handleUploadProfile(data) {
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) == String(data.id)) { 
       const imageBlob = Utilities.newBlob(Utilities.base64Decode(data.foto.split(',')[1]), 'image/jpeg', `Profil_${data.nama}.jpg`);
-      const url = "https://drive.google.com/uc?export=view&id=" + getFolder().createFile(imageBlob).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW).getId();
+      const url = "https://drive.google.com/uc?export=view&id=" + getFolder().createFile(imageBlob).getId();
       sheet.getRange(i + 1, 10).setValue(url);
       return responseJSON({ result: 'success', message: 'Foto profil diperbarui', fotoUrl: url });
     }
@@ -2131,20 +2120,8 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
     stats.periode_db = _labelPeriodeAbsen_(periodeAktif);
 
     // 5. Remarks Counter
-    const sheetRemarks = SS.getSheetByName(SHEET_REMARKS);
-    if(sheetRemarks) {
-        // Butuh index 2 (User ID) dan 9 (Status) -> 10 kolom.
-        const rRows = bacaSheet(sheetRemarks, 10);
-        const userRole = role ? String(role).toLowerCase() : '';
-        for (let k = 1; k < rRows.length; k++) {
-             const rStatus = rRows[k][9];
-             const rUserId = String(rRows[k][2]);
-             if(rStatus === 'Open') {
-                 if(userRole === 'admin' || userRole === 'hrd') stats.remarks_open++;
-                 else if (rUserId === targetId) stats.remarks_open++;
-             }
-        }
-    }
+    // 5. Remarks Counter (Ditetapkan 0 di sini; laporan diambil saat menu Laporan dibuka)
+    stats.remarks_open = 0;
 
     return stats;
 }
@@ -3133,7 +3110,33 @@ function handleSubmitShiftSchedule(data) {
 }
 
 // --- HELPER FUNCTIONS ---
-function getFolder() { const folders = DriveApp.getFoldersByName(FOLDER_NAME); return folders.hasNext() ? folders.next() : DriveApp.createFolder(FOLDER_NAME).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); }
+let _CACHED_FOLDER = null;
+function getFolder() {
+  if (_CACHED_FOLDER) return _CACHED_FOLDER;
+  const props = PropertiesService.getScriptProperties();
+  const cachedFolderId = props.getProperty('ABSEN_FOLDER_ID');
+  if (cachedFolderId) {
+    try {
+      _CACHED_FOLDER = DriveApp.getFolderById(cachedFolderId);
+      return _CACHED_FOLDER;
+    } catch (e) {
+      // Folder ID invalid atau dihapus, cari ulang atau buat baru
+    }
+  }
+  const folders = DriveApp.getFoldersByName(FOLDER_NAME);
+  let folder;
+  if (folders.hasNext()) {
+    folder = folders.next();
+  } else {
+    folder = DriveApp.createFolder(FOLDER_NAME);
+    folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  }
+  try {
+    props.setProperty('ABSEN_FOLDER_ID', folder.getId());
+  } catch (e) { /* ignore */ }
+  _CACHED_FOLDER = folder;
+  return folder;
+}
 function responseJSON(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }
 function hitungDurasi(start, end) { const diff = Math.abs(end - start); const minutes = Math.floor(diff / 60000); return `${minutes} Menit`; }
 // CATATAN DEDUP (12 Agustus 2026): dua deklarasi satu baris dihapus dari sini —

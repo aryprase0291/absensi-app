@@ -320,7 +320,7 @@ const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(
 useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart']; ev.forEach(e => window.addEventListener(e, resetTimer)); return () => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); ev.forEach(e => window.removeEventListener(e, resetTimer)); }; }, [user, resetTimer]);
 
     // FUNGSI HANDLER LOGIN & PENYIMPANAN SESI
-const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumumanAwal, pengumumanDisertakan) => {
+const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumumanAwal, pengumumanDisertakan, periodsAwal) => {
   cekVersi(versiServer);
 
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift'), sheetImport: rawMasterData.filter(m => m.kategori === 'SheetImport') };
@@ -335,28 +335,24 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
   // STATISTIK IKUT DALAM RESPONS LOGIN (Agu 2026).
   // Dititipkan lewat sessionStorage, bukan props, supaya Dashboard bisa
   // memakainya tanpa mengubah rantai props yang dilewati banyak layar.
-  // Dibaca SEKALI lalu dihapus oleh Dashboard — kalau halaman di-reload
-  // dan sesi dipulihkan, angkanya sudah usang dan harus diambil ulang.
-  //
-  // Backend boleh mengirim stats: null (perhitungannya dibungkus try di
-  // sana). Kalau null, Dashboard jatuh ke perilaku lama: tembak get_stats.
   if (statsAwal) {
     try {
       sessionStorage.setItem('app_stats_awal', JSON.stringify(statsAwal));
+      sessionStorage.setItem('app_stats_terakhir', JSON.stringify(statsAwal));
     } catch (e) { /* kuota penuh: bukan kegagalan fatal, cuma tidak hemat */ }
   }
 
-  // PENGUMUMAN juga ikut di respons login. Dititipkan HANYA kalau backend
-  // menyatakan pembacaannya berhasil (pengumumanDisertakan). Kalau tidak,
-  // kunci ini tidak ditulis sama sekali dan Dashboard mengambilnya sendiri
-  // seperti dulu — supaya pengumuman yang gagal dibaca tidak hilang diam-diam.
-  //
-  // isi null yang SAH (memang tidak ada pengumuman aktif) tetap perlu
-  // disimpan, karena itulah yang memberi tahu Dashboard "sudah dicek, kosong".
-  // Karena itu yang disimpan objek pembungkus, bukan nilainya langsung.
+  // PENGUMUMAN juga ikut di respons login.
   if (pengumumanDisertakan) {
     try {
       sessionStorage.setItem('app_pengumuman_awal', JSON.stringify({ isi: pengumumanAwal || null }));
+    } catch (e) { /* abaikan */ }
+  }
+
+  // DAFTAR PERIODE IKUT DI RESPONS LOGIN
+  if (periodsAwal && periodsAwal.periodsAktif && periodsAwal.periodsAktif.length) {
+    try {
+      sessionStorage.setItem('app_periods_awal', JSON.stringify(periodsAwal));
     } catch (e) { /* abaikan */ }
   }
 };
@@ -502,60 +498,86 @@ function labelPeriodeDDMM(mulai, selesai) {
   return `${susun(mulai)} - ${susun(selesai)}`;
 }
 
-function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice }) { const [time, setTime] = useState(new Date()); const [cuaca, setCuaca] = useState(null); const [stats, setStats] = useState({ total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' }); const [loadingStats, setLoadingStats] = useState(true); const [showNews, setShowNews] = useState(false); const [newsContent, setNewsContent] = useState(null);
-// Gagal-ambil vs benar-benar-nol dulu tampil identik (semua angka 0 dan
-// periode '-'), jadi request yang gagal terbaca seperti "user belum punya
-// data". Dua state ini memisahkannya.
-  const [statsError, setStatsError] = useState('');
+function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice }) {
+  const [time, setTime] = useState(new Date());
+  const [cuaca, setCuaca] = useState(null);
 
-const [statsRetry, setStatsRetry] = useState(0);
-
-// PEMILIH PERIODE (Agu 2026). Hanya periode AKTIF yang boleh dipilih di
-// dashboard — periode nonaktif tetap ada, tapi tempatnya di tab Riwayat.
-// `periodeIdPilih` kosong berarti "pakai periode default dari server".
-const [periodeOpsi, setPeriodeOpsi] = useState([]);
-const [periodeIdPilih, setPeriodeIdPilih] = useState('');
-
-// Saat default periode datang dari server, `periodeIdPilih` berubah dan efek
-// statistik ikut berjalan lagi. Padahal angka dari respons login SUDAH memakai
-// periode default itu — menembak ulang berarti mengembalikan satu request yang
-// sudah susah payah dihapus (lihat PERBAIKAN-LOGIN.md). Penanda ini melewati
-// tepat satu kali pengambilan: yang dipicu server, bukan yang dipicu user.
-const lewatiRefetchPeriodeAwal = useRef(false);
-useEffect(() => {
-  let batal = false;
-  (async () => {
+  // STATISTIK YANG SUDAH IKUT DI RESPONS LOGIN (Agu 2026).
+  const [statsAwal] = useState(() => {
     try {
-      const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_absence_period' }) })).json();
-      if (batal || d.result !== 'success') return;
-      const aktif = Array.isArray(d.periodsAktif) ? d.periodsAktif : (d.period ? [d.period] : []);
-      setPeriodeOpsi(aktif);
-      // Server yang menentukan default (periode yang memuat hari ini), bukan
-      // frontend — supaya aturannya cuma ada di satu tempat.
-      const idDefault = (d.periodeDefault && d.periodeDefault.id) || (aktif.length ? aktif[0].id : '');
-      if (idDefault) { lewatiRefetchPeriodeAwal.current = true; setPeriodeIdPilih(idDefault); }
-    } catch (e) { /* pemilih periode tidak muncul; dashboard tetap jalan */ }
-  })();
-  return () => { batal = true; };
-}, []);
+      const raw = sessionStorage.getItem('app_stats_awal');
+      if (!raw) return null;
+      sessionStorage.removeItem('app_stats_awal');
+      return JSON.parse(raw);
+    } catch (e) { return null; }
+  });
 
-// STATISTIK YANG SUDAH IKUT DI RESPONS LOGIN (Agu 2026).
-// Dibaca sekali saat komponen pertama dibuat, lalu dihapus dari
-// sessionStorage supaya reload halaman tidak memakai angka basi.
-// useState dengan fungsi inisialisasi = dijalankan sekali, bukan tiap render.
-const [statsAwal] = useState(() => {
-  try {
-    const raw = sessionStorage.getItem('app_stats_awal');
-    if (!raw) return null;
-    sessionStorage.removeItem('app_stats_awal');
-    return JSON.parse(raw);
-  } catch (e) { return null; }
-});
+  const [stats, setStats] = useState(() => {
+    try {
+      const rawAwal = sessionStorage.getItem('app_stats_awal');
+      if (rawAwal) return JSON.parse(rawAwal);
+      const rawTerakhir = sessionStorage.getItem('app_stats_terakhir');
+      if (rawTerakhir) return JSON.parse(rawTerakhir);
+    } catch (e) { /* ignore */ }
+    return { total_hadir: 0, total_ijin: 0, total_telat_freq: 0, total_telat_menit: 0, total_cuti: 0, total_cuti_bersama: 0, total_sakit: 0, total_alpa: 0, total_no_scan_in: 0, total_no_scan_out: 0, periode_db: '-' };
+  });
 
-// Menandai bahwa pengambilan get_stats PERTAMA boleh dilewati.
-// Dipakai sekali lalu dimatikan, sehingga tombol "coba lagi" (statsRetry)
-// dan pergantian user tetap menembak server seperti biasa.
-const lewatiFetchStatsAwal = useRef(!!statsAwal);
+  const [loadingStats, setLoadingStats] = useState(() => {
+    try {
+      const rawAwal = sessionStorage.getItem('app_stats_awal');
+      const rawTerakhir = sessionStorage.getItem('app_stats_terakhir');
+      return !(rawAwal || rawTerakhir);
+    } catch (e) { return true; }
+  });
+
+  const [showNews, setShowNews] = useState(false);
+  const [newsContent, setNewsContent] = useState(null);
+  const [statsError, setStatsError] = useState('');
+  const [statsRetry, setStatsRetry] = useState(0);
+
+  // PEMILIH PERIODE (Agu 2026).
+  const [periodeOpsi, setPeriodeOpsi] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('app_periods_awal');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (Array.isArray(p.periodsAktif) && p.periodsAktif.length) return p.periodsAktif;
+      }
+    } catch (e) { /* ignore */ }
+    return [];
+  });
+
+  const [periodeIdPilih, setPeriodeIdPilih] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('app_periods_awal');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p.periodeDefault && p.periodeDefault.id) return p.periodeDefault.id;
+        if (Array.isArray(p.periodsAktif) && p.periodsAktif.length) return p.periodsAktif[0].id;
+      }
+    } catch (e) { /* ignore */ }
+    return '';
+  });
+
+  const lewatiRefetchPeriodeAwal = useRef(false);
+
+  useEffect(() => {
+    if (periodeOpsi.length > 0) return;
+    let batal = false;
+    (async () => {
+      try {
+        const d = await (await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_absence_period' }) })).json();
+        if (batal || d.result !== 'success') return;
+        const aktif = Array.isArray(d.periodsAktif) ? d.periodsAktif : (d.period ? [d.period] : []);
+        setPeriodeOpsi(aktif);
+        const idDefault = (d.periodeDefault && d.periodeDefault.id) || (aktif.length ? aktif[0].id : '');
+        if (idDefault) { lewatiRefetchPeriodeAwal.current = true; setPeriodeIdPilih(idDefault); }
+      } catch (e) { /* pemilih periode tidak muncul; dashboard tetap jalan */ }
+    })();
+    return () => { batal = true; };
+  }, [periodeOpsi.length]);
+
+  const lewatiFetchStatsAwal = useRef(!!statsAwal);
 
     // LOGIC FETCH PENGUMUMAN / INFO HRD
 useEffect(() => { (async () => {
@@ -573,8 +595,13 @@ useEffect(() => { (async () => {
     if (raw) {
       sessionStorage.removeItem('app_pengumuman_awal');
       const bungkus = JSON.parse(raw);
-      if (bungkus && bungkus.isi) { setNewsContent(bungkus.isi); setShowNews(true); }
-      return;
+      if (bungkus && Object.prototype.hasOwnProperty.call(bungkus, 'isi')) {
+        if (bungkus.isi) {
+          setNewsContent(bungkus.isi);
+          setShowNews(true);
+        }
+        return;
+      }
     }
   } catch (e) { /* cache rusak: lanjut ambil dari server */ }
 
@@ -6609,7 +6636,12 @@ function LoginScreen({ onLogin }) {
           data.version,
           data.stats,
           data.pengumuman,
-          data.pengumumanDisertakan === true
+          data.pengumumanDisertakan === true,
+          {
+            periods: data.periods || [],
+            periodsAktif: data.periodsAktif || [],
+            periodeDefault: data.periodeDefault || null
+          }
         );
       } else {
         alert(data.message || 'Login Gagal');
@@ -6882,32 +6914,46 @@ const kunciHari = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 function DbAbsenScreen({ user, setView }) {
-  const [list, setList] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [ijinCount, setIjinCount] = useState(0);
-  const [lastUpdate, setLastUpdate] = useState(null); 
+  const [list, setList] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('app_db_absen_' + (user ? user.id : ''));
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* ignore */ }
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('app_db_absen_' + (user ? user.id : ''));
+      return !raw;
+    } catch (e) { return true; }
+  });
+  const [ijinCount, setIjinCount] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('app_stats_terakhir');
+      if (raw) {
+        const s = JSON.parse(raw);
+        return s ? (s.ijin_count || 0) : 0;
+      }
+    } catch (e) { /* ignore */ }
+    return 0;
+  });
+  const [lastUpdate, setLastUpdate] = useState(() => {
+    try {
+      return sessionStorage.getItem('app_db_absen_last_' + (user ? user.id : '')) || null;
+    } catch (e) { return null; }
+  });
 
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [showFilter, setShowFilter] = useState(false);
 
-  // Tampilan kalender jadi bawaan: satu layar memuat sebulan penuh,
-  // sedangkan versi daftar butuh ±30 kali gulir untuk cakupan yang sama.
-  // Daftar tetap dipertahankan — untuk membandingkan beberapa hari
-  // berturut-turut, membaca berjajar masih lebih cepat.
   const [tampilan, setTampilan] = useState('kalender'); // 'kalender' | 'daftar'
   const [bulanAktif, setBulanAktif] = useState(null);   // objek Date di tanggal 1
   const [hariDipilih, setHariDipilih] = useState(null); // 'YYYY-MM-DD'
 
-  // Hari libur nasional. Sumbernya berkas statis di GitHub, di-cache di
-  // localStorage seminggu. Gagal mengambilnya TIDAK menghentikan apa pun —
-  // lihat komentar di utils/hariLibur.js.
   const { libur, status: statusLibur, tahunAda } = useHariLibur();
 
-  // Memilih tanggal sekaligus memastikan kalender pindah ke bulannya.
-  // Tanpa ini, panah "hari berikutnya" di panel bisa melompat ke bulan
-  // lain sementara kisi di belakangnya masih menampilkan bulan lama.
   const pilihHari = (k) => {
     if (!k) return;
     setHariDipilih(k);
@@ -6915,15 +6961,13 @@ function DbAbsenScreen({ user, setView }) {
     setBulanAktif((b) => (b && b.getFullYear() === th && b.getMonth() === bl ? b : new Date(th, bl, 1)));
   };
 
-  // DAFTAR KODE YANG MEMICU TOMBOL 'AJUKAN IJIN'
   const TARGET_CODES = ['T', 'TSi', 'TSo', 'Si', 'So'];
 
-  // --- CEK AUTO FILTER DARI DASHBOARD ---
   useEffect(() => {
       const autoFilter = localStorage.getItem('dbAbsenFilter');
       if (autoFilter) {
           setFilterStatus(autoFilter); 
-          setShowFilter(true); // Buka panel filter otomatis
+          setShowFilter(true);
           localStorage.removeItem('dbAbsenFilter');
       }
   }, []);
@@ -6952,25 +6996,17 @@ function DbAbsenScreen({ user, setView }) {
         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
 
         if (diffMinutes < 1) return 'Baru saja update';
-        if (diffMinutes < 60) return `${diffMinutes} menit yang lalu`;
+        if (diffMinutes < 60) return diffMinutes + ' menit yang lalu';
         if (diffHours < 24) {
             const sisaMenit = diffMinutes % 60;
-            if (sisaMenit === 0) return `${diffHours} jam yang lalu`;
-            return `${diffHours} jam ${sisaMenit} menit yang lalu`;
+            if (sisaMenit === 0) return diffHours + ' jam yang lalu';
+            return diffHours + ' jam ' + sisaMenit + ' menit yang lalu';
         }
         return past.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute:'2-digit'});
     } catch (e) { return '-'; }
   };
 
   useEffect(() => {
-    // Layar ini hanya butuh SATU angka: ijin_count. Dulu ia menembak
-    // get_stats sendiri untuk mendapatkannya — satu request penuh (POST +
-    // 302 redirect + boot container Apps Script) yang mengantre di belakang
-    // get_db_absen di bawah, padahal Dashboard baru saja memegang angka itu.
-    //
-    // Sekarang dipakai ulang dari sessionStorage yang diisi Dashboard.
-    // Request hanya ditembak kalau nilainya benar-benar belum ada
-    // (misal user membuka layar ini tanpa lewat Dashboard).
     const dariCache = (() => {
       try {
         const raw = sessionStorage.getItem('app_stats_terakhir');
@@ -6990,14 +7026,13 @@ function DbAbsenScreen({ user, setView }) {
             });
             const data = await res.json();
             if (data.result === 'success') setIjinCount(data.stats.ijin_count || 0);
-        } catch (e) { console.error("Gagal load stats"); }
+        } catch (e) { console.error('Gagal load stats'); }
     };
     if (user) fetchStats();
   }, [user]);
 
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true);
       try {
         const res = await fetchApi(SCRIPT_URL, { 
             method: 'POST', 
@@ -7007,10 +7042,19 @@ function DbAbsenScreen({ user, setView }) {
         if (data.result === 'success') {
              setList(data.list);
              setLastUpdate(data.lastUpdate); 
+             try {
+               sessionStorage.setItem('app_db_absen_' + user.id, JSON.stringify(data.list));
+               if (data.lastUpdate) sessionStorage.setItem('app_db_absen_last_' + user.id, data.lastUpdate);
+             } catch (e) { /* ignore */ }
         } else {
-             alert(data.message);
+             if (!list.length) alert(data.message);
         }
-      } catch (e) { console.error(e); alert("Gagal memuat data mesin."); } finally { setLoading(false); }
+      } catch (e) {
+        console.error(e);
+        if (!list.length) alert('Gagal memuat data mesin.');
+      } finally {
+        setLoading(false);
+      }
     };
     if (user) fetchData();
   }, [user]);
