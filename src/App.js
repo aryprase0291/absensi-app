@@ -1799,18 +1799,25 @@ function AnalysisScreen({ user, setView }) {
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
 
-    // --- HELPER TANGGAL DEFAULT (7 HARI TERAKHIR) ---
+    // --- HELPER TANGGAL DEFAULT ---
+    // Periode analisa mengikuti siklus absensi: mulai tanggal 21 sampai hari ini.
+    // Jika hari ini masih sebelum tanggal 21, ambil tanggal 21 bulan sebelumnya.
     const getDefaultDates = () => {
         const today = new Date();
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(today.getDate() - 7);
+        const defaultStart = new Date(today);
+        if (today.getDate() >= 21) {
+            defaultStart.setDate(21);
+        } else {
+            defaultStart.setMonth(defaultStart.getMonth() - 1);
+            defaultStart.setDate(21);
+        }
         const formatYMD = (date) => {
             const y = date.getFullYear();
             const m = String(date.getMonth() + 1).padStart(2, '0');
             const d = String(date.getDate()).padStart(2, '0');
             return `${y}-${m}-${d}`;
         };
-        return { start: formatYMD(sevenDaysAgo), end: formatYMD(today) };
+        return { start: formatYMD(defaultStart), end: formatYMD(today) };
     };
 
     const defaultDates = getDefaultDates();
@@ -1825,7 +1832,7 @@ function AnalysisScreen({ user, setView }) {
     });
 
     // STATE SORTING
-    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+    const [sortConfig, setSortConfig] = useState({ key: 'status', direction: 'asc' });
     const [activeFilter, setActiveFilter] = useState(null);
 
     useEffect(() => {
@@ -1893,29 +1900,16 @@ function AnalysisScreen({ user, setView }) {
     };
 
     // --- AUTO-LOAD SAAT LAYAR DIBUKA ---
-    // 1) "Periode Mulai" default-nya sekarang mengikuti tanggal awal periode
-    //    absen aktif (bukan lagi "7 hari terakhir") — konsisten dengan
-    //    Riwayat Tim/Riwayat pribadi yang sudah lebih dulu pakai konsep ini.
+    // 1) "Periode Mulai" default-nya mengikuti tanggal 21 periode berjalan
+    //    sampai hari ini.
     // 2) Data langsung dianalisa otomatis begitu layar dibuka, tanpa perlu
     //    klik tombol "Analisa Data" dulu.
-    // Kalau pengambilan periode aktif gagal, tetap jalan pakai default lama
-    // (7 hari terakhir) supaya layar ini tidak berhenti total.
+    // Tidak perlu lagi mengambil periode aktif dari backend; state awal sudah
+    // sesuai kebutuhan default analisa.
     useEffect(() => {
         let batal = false;
         (async () => {
-            let mulai = startDate;
-            try {
-                const res = await fetchApi(SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'get_absence_period' })
-                });
-                const data = await res.json();
-                if (data.result === 'success' && data.period && data.period.mulai) {
-                    mulai = data.period.mulai;
-                    if (!batal) setStartDate(mulai);
-                }
-            } catch (e) { /* biarkan default 7 hari terakhir */ }
-            if (!batal) jalankanAnalisa(mulai, endDate);
+            if (!batal) jalankanAnalisa(startDate, endDate);
         })();
         return () => { batal = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1991,6 +1985,14 @@ function AnalysisScreen({ user, setView }) {
         });
     });
 
+    const getAnalysisStatusRank = (status) => {
+        const normalizedStatus = String(status || '').trim().toLowerCase();
+        if (normalizedStatus.includes('pending')) return 0;
+        if (normalizedStatus.includes('reject')) return 1;
+        if (normalizedStatus.includes('approve') || normalizedStatus.includes('verified')) return 2;
+        return 3;
+    };
+
     // SORTING
     const sortedList = React.useMemo(() => {
         let sortableItems = [...filteredList];
@@ -2000,6 +2002,15 @@ function AnalysisScreen({ user, setView }) {
                 let valB = b[sortConfig.key];
                 if (valA === null) valA = '';
                 if (valB === null) valB = '';
+
+                if (sortConfig.key === 'status') {
+                    const rankA = getAnalysisStatusRank(valA);
+                    const rankB = getAnalysisStatusRank(valB);
+                    if (rankA !== rankB) {
+                        return sortConfig.direction === 'asc' ? rankA - rankB : rankB - rankA;
+                    }
+                }
+
                 const numA = parseFloat(valA);
                 const numB = parseFloat(valB);
                 const isNum = !isNaN(numA) && !isNaN(numB) && String(valA).trim() !== '' && String(valB).trim() !== '';
