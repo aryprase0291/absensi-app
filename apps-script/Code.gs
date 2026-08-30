@@ -3471,6 +3471,12 @@ function handleGetAnalysisData(data) {
     
     if (!uData || !uData.nik || uData.nik === '-') continue; 
 
+    const tipeManual = String(row[4] || '').trim();
+
+    // Catatan "Hadir" / "Pulang" di sheet Absensi berasal dari absen online.
+    // User meminta jenis ini tidak ikut muncul di tabel analisa mismatch.
+    if (tipeManual === 'Hadir' || tipeManual === 'Pulang') continue;
+
     // Info Tanggal
     const tglPengajuanStr = formatDateDDMMYYYY(row[1]); 
     let startDateObj = new Date(row[1]); 
@@ -3505,7 +3511,6 @@ function handleGetAnalysisData(data) {
         
         const symbolMesin = mesinData ? mesinData.symbol : '-';
         const waktuMesin = mesinData ? mesinData.waktu : '-';
-        const tipeManual = String(row[4]).trim();
 
         // LOGIC MISMATCH
         let isMismatch = false;

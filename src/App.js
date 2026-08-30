@@ -1798,6 +1798,11 @@ function AnalysisScreen({ user, setView }) {
     const [dataList, setDataList] = useState([]);
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
+    const createEmptyColumnFilters = () => ({
+        tglPengajuan: [], idAkun: [], nik: [], nama: [], divisi: [],
+        periode: [], durasi: [], tglKonflik: [], tipeManual: [],
+        simbolMesin: [], waktuScan: [], status: []
+    });
 
     // --- HELPER TANGGAL DEFAULT ---
     // Periode analisa mengikuti siklus absensi: mulai tanggal 21 sampai hari ini.
@@ -1825,15 +1830,12 @@ function AnalysisScreen({ user, setView }) {
     const [endDate, setEndDate] = useState(defaultDates.end);
     
     // STATE FILTER (Multi Select)
-    const [columnFilters, setColumnFilters] = useState({
-        tglPengajuan: [], idAkun: [], nik: [], nama: [], divisi: [],
-        periode: [], durasi: [], tglKonflik: [], tipeManual: [], 
-        simbolMesin: [], waktuScan: [], status: []
-    });
+    const [columnFilters, setColumnFilters] = useState(createEmptyColumnFilters);
 
     // STATE SORTING
     const [sortConfig, setSortConfig] = useState({ key: 'status', direction: 'asc' });
     const [activeFilter, setActiveFilter] = useState(null);
+    const [quickStatusFilter, setQuickStatusFilter] = useState('all');
 
     useEffect(() => {
         if (user.role !== 'admin' && user.role !== 'hrd') {
@@ -1976,6 +1978,67 @@ function AnalysisScreen({ user, setView }) {
         });
     };
 
+    const isPendingStatus = (status) => String(status || '').trim().toLowerCase().includes('pending');
+
+    const getQuickStatusFilterValue = (selectedValues) => {
+        if (!selectedValues || selectedValues.length === 0) return 'all';
+        if (selectedValues.length !== 1) return 'custom';
+
+        const value = String(selectedValues[0] || '').trim().toLowerCase();
+        if (value.includes('pending')) return 'pending';
+        if (value.includes('verified') || value.includes('approved')) return 'verified';
+        if (value.includes('reject')) return 'rejected';
+        return 'custom';
+    };
+
+    useEffect(() => {
+        setQuickStatusFilter(getQuickStatusFilterValue(columnFilters.status));
+    }, [columnFilters.status]);
+
+    const applyQuickStatusFilter = (value) => {
+        setQuickStatusFilter(value);
+        const statusMap = {
+            pending: ['Pending'],
+            verified: ['Verified'],
+            rejected: ['Rejected']
+        };
+        setColumnFilters(prev => ({
+            ...prev,
+            status: statusMap[value] || []
+        }));
+    };
+
+    const requestSort = (key, direction) => {
+        setSortConfig({ key, direction });
+    };
+
+    const handleQuickSortChange = (value) => {
+        switch (value) {
+            case 'status:asc':
+                requestSort('status', 'asc');
+                break;
+            case 'tglPengajuan:desc':
+                requestSort('tglPengajuan', 'desc');
+                break;
+            case 'tglKonflik:desc':
+                requestSort('tglKonflik', 'desc');
+                break;
+            case 'nama:asc':
+                requestSort('nama', 'asc');
+                break;
+            default:
+                requestSort('status', 'asc');
+                break;
+        }
+    };
+
+    const resetAnalysisControls = () => {
+        setColumnFilters(createEmptyColumnFilters());
+        setSortConfig({ key: 'status', direction: 'asc' });
+        setQuickStatusFilter('all');
+        setActiveFilter(null);
+    };
+
     // FILTERING
     const filteredList = dataList.filter(item => {
         return Object.keys(columnFilters).every(key => {
@@ -1992,6 +2055,15 @@ function AnalysisScreen({ user, setView }) {
         if (normalizedStatus.includes('approve') || normalizedStatus.includes('verified')) return 2;
         return 3;
     };
+
+    const pendingTotal = React.useMemo(
+        () => dataList.filter(item => isPendingStatus(item.status)).length,
+        [dataList]
+    );
+    const pendingExportList = React.useMemo(
+        () => dataList.filter(item => isPendingStatus(item.status)),
+        [dataList]
+    );
 
     // SORTING
     const sortedList = React.useMemo(() => {
@@ -2027,9 +2099,16 @@ function AnalysisScreen({ user, setView }) {
         return sortableItems;
     }, [filteredList, sortConfig]);
 
-    const requestSort = (key, direction) => {
-        setSortConfig({ key, direction });
-    };
+    const visiblePendingTotal = React.useMemo(
+        () => sortedList.filter(item => isPendingStatus(item.status)).length,
+        [sortedList]
+    );
+
+    const quickSortValue = (() => {
+        const currentValue = `${sortConfig.key || 'status'}:${sortConfig.direction}`;
+        const allowedValues = ['status:asc', 'tglPengajuan:desc', 'tglKonflik:desc', 'nama:asc'];
+        return allowedValues.includes(currentValue) ? currentValue : 'status:asc';
+    })();
 
     const getStatusColor = (status) => {
         const s = String(status).toLowerCase();
@@ -2039,9 +2118,7 @@ function AnalysisScreen({ user, setView }) {
     };
 
     // --- EXPORT FUNCTIONS (EXCEL & PDF) ---
-    const handleExportExcel = () => {
-        if (sortedList.length === 0) return alert("Tidak ada data untuk diexport.");
-        const dataToExport = sortedList.map((item, index) => ({
+    const buildAnalysisExcelRows = (rows) => rows.map((item, index) => ({
             "No": index + 1,
             "Tgl Ajuan": item.tglPengajuan,
             "ID Akun": item.idAkun,
@@ -2056,12 +2133,24 @@ function AnalysisScreen({ user, setView }) {
             "Waktu Scan": item.waktuScan,
             "Status Approval": item.status 
         }));
+
+    const exportAnalysisExcel = (rows, fileName) => {
+        if (rows.length === 0) return alert("Tidak ada data untuk diexport.");
+        const dataToExport = buildAnalysisExcelRows(rows);
         const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Analisa_Mismatch");
         const wscols = [{wch:5}, {wch:15}, {wch:12}, {wch:12}, {wch:30}, {wch:20}, {wch:25}, {wch:10}, {wch:15}, {wch:15}, {wch:15}, {wch:15}, {wch:15}];
         ws['!cols'] = wscols;
-        XLSX.writeFile(wb, `Analisa_Absensi_${startDate}_${endDate}.xlsx`);
+        XLSX.writeFile(wb, fileName);
+    };
+
+    const handleExportExcel = () => {
+        exportAnalysisExcel(sortedList, `Analisa_Absensi_${startDate}_${endDate}.xlsx`);
+    };
+
+    const handleExportPendingExcel = () => {
+        exportAnalysisExcel(pendingExportList, `Analisa_Absensi_Pending_${startDate}_${endDate}.xlsx`);
     };
 
     const handleExportPDF = () => {
@@ -2192,6 +2281,46 @@ function AnalysisScreen({ user, setView }) {
                 >
                     <RefreshCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 </button>
+
+                {hasSearched && (
+                    <>
+                        <div>
+                            <label className="text-[10px] font-normal text-gray-400 uppercase block mb-1">Filter Cepat</label>
+                            <select
+                                value={quickStatusFilter}
+                                onChange={e => applyQuickStatusFilter(e.target.value)}
+                                className="border border-gray-300 p-1.5 rounded text-xs font-normal shadow-sm min-w-[120px]"
+                            >
+                                <option value="all">Semua Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="verified">Verified</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="custom" disabled>Custom Filter</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-normal text-gray-400 uppercase block mb-1">Sort Cepat</label>
+                            <select
+                                value={quickSortValue}
+                                onChange={e => handleQuickSortChange(e.target.value)}
+                                className="border border-gray-300 p-1.5 rounded text-xs font-normal shadow-sm min-w-[150px]"
+                            >
+                                <option value="status:asc">Status Pending Dulu</option>
+                                <option value="tglPengajuan:desc">Tgl Ajuan Terbaru</option>
+                                <option value="tglKonflik:desc">Tgl Konflik Terbaru</option>
+                                <option value="nama:asc">Nama A-Z</option>
+                            </select>
+                        </div>
+                        <button
+                            onClick={resetAnalysisControls}
+                            className="bg-white text-slate-700 border border-slate-200 px-3 py-2 rounded font-normal text-xs hover:bg-slate-50 transition flex items-center gap-2 shadow-sm"
+                            title="Reset Filter & Sort"
+                        >
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                            Reset
+                        </button>
+                    </>
+                )}
             </div>
 
             {/* MAIN CONTENT */}
@@ -2199,10 +2328,21 @@ function AnalysisScreen({ user, setView }) {
                 {hasSearched && (
                     <div className="flex-1 flex flex-col bg-white border border-gray-300 shadow-sm overflow-hidden">
                         {/* STATS */}
-                        <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-200 flex justify-between items-center shrink-0">
-                            <span className="text-xs font-normal text-gray-600">Total: {sortedList.length} Data</span>
+                        <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2 shrink-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-normal text-gray-600">Total Tampil: {sortedList.length} Data</span>
+                                <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-normal text-amber-700">
+                                    Pending: {pendingTotal} Data
+                                </span>
+                                {sortedList.length !== dataList.length && (
+                                    <span className="inline-flex items-center rounded border border-slate-200 bg-white px-2 py-1 text-[10px] font-normal text-slate-600">
+                                        Pending Tampil: {visiblePendingTotal}
+                                    </span>
+                                )}
+                            </div>
                             <div className="flex gap-2">
                                 <button onClick={handleExportExcel} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-normal shadow-sm"><FileSpreadsheet className="w-3 h-3" /> Excel</button>
+                                <button onClick={handleExportPendingExcel} disabled={pendingTotal === 0} className="flex items-center gap-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-200 disabled:text-amber-700 text-white px-2 py-1 rounded text-[10px] font-normal shadow-sm"><FileSpreadsheet className="w-3 h-3" /> Excel Pending</button>
                                 <button onClick={handleExportPDF} className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-[10px] font-normal shadow-sm"><Printer className="w-3 h-3" /> PDF</button>
                             </div>
                         </div>
