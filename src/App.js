@@ -7,6 +7,7 @@ import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, Cal
 import { SCRIPT_URL, TIMEOUT_DURATION, BOARD_ABSENSI_URL } from './config/constants';
 import { FRONTEND_VERSION } from './config/updateManifest';
 import BackButton from './components/BackButton';
+import RekapExcelScreen from './screens/RekapExcelScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
@@ -42,7 +43,8 @@ const ACTION_AMAN_DIULANG = [
   'ping', 'check_version', 'login', 'get_latest_announcement',
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
   'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config', 'get_team_history',
-  'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period'
+  'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period',
+  'get_rekap_admin', 'get_koreksi_list'
 ];
 
 const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
@@ -403,7 +405,7 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
 return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
        punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
        hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
-    {view !== 'login' && view !== 'dashboard' && view !== 'form' && (
+    {view !== 'login' && view !== 'dashboard' && view !== 'form' && view !== 'ganti_password' && view !== 'rekap_admin' && (
       <header className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white border border-slate-800/80 shadow-lg shadow-slate-950/20 backdrop-blur-xl p-3.5 sm:p-4 md:px-6 md:py-4 flex justify-between items-center z-10 relative rounded-2xl mb-4 md:mb-6">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 p-2 shadow-md shadow-blue-500/20 ring-1 ring-white/20">
@@ -432,7 +434,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
@@ -2023,7 +2025,11 @@ function AnalysisScreen({ user, setView }) {
             });
             const result = await res.json();
             if (result.result === 'success') {
-                setDataList(result.list);
+                const filtered = (result.list || []).filter(item => {
+                    const tipe = String(item.tipeManual || item.form || '').trim().toLowerCase();
+                    return tipe !== 'standby' && tipe !== 'hadir' && tipe !== 'pulang';
+                });
+                setDataList(filtered);
             } else {
                 alert(result.message);
             }
@@ -6282,6 +6288,12 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                                 {activeTab === 'approval_team' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
                             </button>
 
+                            <button onClick={() => setView('rekap_admin')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-700 hover:bg-emerald-50/50 hover:text-emerald-800 transition-colors">
+                                <FileSpreadsheet className="w-[17px] h-[17px] shrink-0 text-emerald-600" strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight font-medium">Rekap, Koreksi & Export Excel</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                            </button>
+
                             <button onClick={() => switchTab('board')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'board' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
                                 <FileSpreadsheet className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'board' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
                                 <span className="flex-1 leading-tight">Board absensi</span>
@@ -6919,6 +6931,7 @@ function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState(null);
   const [time, setTime] = useState(new Date());
+  const [showResetModal, setShowResetModal] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -7027,7 +7040,7 @@ function LoginScreen({ onLogin }) {
               <Clock className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <p className="text-[11px] text-slate-400 font-medium capitalize">{tglFormatted}</p>
+              <p className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider capitalize">{tglFormatted}</p>
               <p className="text-lg font-black text-white tabular-nums tracking-wide">{jamFormatted} <span className="text-xs font-semibold text-blue-400">WIB</span></p>
             </div>
           </div>
@@ -7095,6 +7108,17 @@ function LoginScreen({ onLogin }) {
               </div>
             </div>
 
+            <div className="flex items-center justify-end -mt-1 mb-1">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                className="text-[11.5px] font-bold text-blue-600 hover:text-blue-700 hover:underline transition-colors flex items-center gap-1.5 focus:outline-none"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Lupa / Reset Kata Sandi?</span>
+              </button>
+            </div>
+
             <button type="submit" disabled={loading} className="w-full py-3.5 sm:py-4 px-4 rounded-2xl text-white font-bold text-sm bg-slate-900 hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-xl shadow-slate-900/20 transform transition-all duration-300 hover:-translate-y-0.5 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed group relative overflow-hidden mt-2">
               <div className="absolute top-0 -left-full w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
               {loading ? (
@@ -7122,7 +7146,209 @@ function LoginScreen({ onLogin }) {
           </div>
         </div>
 
+        <ResetPasswordModal
+          isOpen={showResetModal}
+          onClose={() => setShowResetModal(false)}
+          onResetSuccess={(usr) => {
+            setUsername(usr);
+          }}
+        />
+
         <style>{`@keyframes scan { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } } @keyframes shimmer { 100% { left: 100%; } }`}</style>
+      </div>
+    </div>
+  );
+}
+
+// --- MODAL RESET PASSWORD MANDIRI (SELF-SERVICE) ---
+function ResetPasswordModal({ isOpen, onClose, onResetSuccess }) {
+  const [resetUsername, setResetUsername] = useState('');
+  const [resetPayroll, setResetPayroll] = useState('');
+  const [resetNewPass, setResetNewPass] = useState('');
+  const [resetConfirmPass, setResetConfirmPass] = useState('');
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleResetSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+
+    if (!resetUsername.trim()) {
+      setErrorMsg('ID Karyawan / Fingerprint wajib diisi.');
+      return;
+    }
+    if (!resetPayroll.trim()) {
+      setErrorMsg('No. Payroll / NIK wajib diisi.');
+      return;
+    }
+    if (resetNewPass.length < 6) {
+      setErrorMsg('Kata sandi baru minimal 6 karakter.');
+      return;
+    }
+    if (resetNewPass !== resetConfirmPass) {
+      setErrorMsg('Konfirmasi kata sandi baru tidak cocok.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetchApi(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'reset_password_mandiri',
+          username: resetUsername.trim(),
+          noPayroll: resetPayroll.trim(),
+          newPassword: resetNewPass
+        })
+      });
+      const data = await response.json();
+      if (data.result === 'success') {
+        alert(data.message || 'Kata sandi berhasil direset! Silakan login dengan kata sandi baru.');
+        onResetSuccess(resetUsername.trim());
+        onClose();
+      } else {
+        setErrorMsg(data.message || 'Verifikasi gagal. Periksa kembali ID Karyawan dan No. Payroll / NIK Anda.');
+      }
+    } catch (err) {
+      setErrorMsg('Gagal menghubungi server. Mohon periksa koneksi internet.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 w-full max-w-md my-8 relative animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25 shrink-0">
+              <KeyRound className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-800 tracking-tight leading-tight">Reset Kata Sandi</h3>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Layanan Mandiri Karyawan</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors"
+            title="Tutup"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {errorMsg && (
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleResetSubmit} className="space-y-3.5">
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">ID Karyawan / Fingerprint</label>
+            <input
+              required
+              type="text"
+              value={resetUsername}
+              onChange={e => setResetUsername(e.target.value)}
+              placeholder="Contoh: 1024"
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">No. Payroll / NIK</label>
+            <input
+              required
+              type="text"
+              value={resetPayroll}
+              onChange={e => setResetPayroll(e.target.value)}
+              placeholder="Masukkan No. Payroll / NIK"
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Kata Sandi Baru</label>
+            <div className="relative">
+              <input
+                required
+                type={showNewPass ? "text" : "password"}
+                value={resetNewPass}
+                onChange={e => setResetNewPass(e.target.value)}
+                placeholder="Minimal 6 karakter"
+                className="w-full px-4 py-3 pr-11 rounded-xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPass(!showNewPass)}
+                tabIndex={-1}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+              >
+                {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Konfirmasi Kata Sandi Baru</label>
+            <div className="relative">
+              <input
+                required
+                type={showConfirmPass ? "text" : "password"}
+                value={resetConfirmPass}
+                onChange={e => setResetConfirmPass(e.target.value)}
+                placeholder="Ulangi kata sandi baru"
+                className="w-full px-4 py-3 pr-11 rounded-xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPass(!showConfirmPass)}
+                tabIndex={-1}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+              >
+                {showConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm bg-slate-900 hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-xl shadow-slate-900/15 transform transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-200" />
+                  <span>Memverifikasi & Menyimpan...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>Simpan & Reset Kata Sandi</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-start gap-2.5">
+          <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-slate-500 leading-tight">
+            ID Karyawan dan No. Payroll / NIK harus sesuai dengan data yang terdaftar di HRD untuk verifikasi keamanan.
+          </p>
+        </div>
+
       </div>
     </div>
   );
@@ -7138,6 +7364,10 @@ function ChangePasswordScreen({ user, setView }) {
 
   const handleChangePassword = async (e) => { 
     e.preventDefault(); 
+    if (newPassword.length < 6) {
+      alert('Kata sandi baru minimal 6 karakter.');
+      return;
+    }
     setLoading(true);
     try { 
       const res = await fetchApi(SCRIPT_URL, { 
@@ -7145,7 +7375,7 @@ function ChangePasswordScreen({ user, setView }) {
         body: JSON.stringify({ action: 'ganti_password', id: user.id, oldPassword, newPassword }) 
       }).then(r => r.json());
       if (res.result === 'success') { 
-        alert('Password berhasil diubah!'); 
+        alert(res.message || 'Password berhasil diubah!'); 
         setView('dashboard');
       } else { 
         alert(res.message || 'Gagal mengubah kata sandi.');
@@ -7158,18 +7388,18 @@ function ChangePasswordScreen({ user, setView }) {
   };
 
   return ( 
-    <div className="min-h-screen pb-12 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-900/5 border border-slate-200/80 relative overflow-hidden">
+    <div className="min-h-[85vh] py-6 sm:py-10 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-[28px] sm:rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-900/5 border border-slate-200/80 relative">
         
         {/* Top Header inside Card */}
         <div className="flex items-center justify-between pb-5 mb-6 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-blue-500/25">
-              <KeyRound className="w-5 h-5" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25 shrink-0">
+              <KeyRound className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-slate-800 tracking-tight">Ubah Kata Sandi</h2>
-              <p className="text-[11px] text-slate-400 font-medium">Perbarui keamanan akun Anda</p>
+              <h2 className="text-xl font-black text-slate-800 tracking-tight">Ubah Kata Sandi</h2>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Perbarui keamanan akun Anda</p>
             </div>
           </div>
           <BackButton onClick={() => setView('dashboard')} />
@@ -7177,12 +7407,12 @@ function ChangePasswordScreen({ user, setView }) {
 
         <form onSubmit={handleChangePassword} className="space-y-4">
           <div>
-            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Kata Sandi Lama</label>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">KATA SANDI LAMA</label>
             <div className="relative">
               <input
                 required
                 type={showOldPassword ? "text" : "password"}
-                className="w-full px-4 py-3.5 pr-11 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                className="w-full px-4 py-3.5 pr-11 rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
                 value={oldPassword}
                 onChange={e => setOldPassword(e.target.value)}
                 placeholder="Masukkan kata sandi lama"
@@ -7199,12 +7429,12 @@ function ChangePasswordScreen({ user, setView }) {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Kata Sandi Baru</label>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">KATA SANDI BARU</label>
             <div className="relative">
               <input
                 required
                 type={showNewPassword ? "text" : "password"}
-                className="w-full px-4 py-3.5 pr-11 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                className="w-full px-4 py-3.5 pr-11 rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
                 placeholder="Minimal 6 karakter"
@@ -7224,12 +7454,12 @@ function ChangePasswordScreen({ user, setView }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 px-4 rounded-2xl text-white font-bold text-sm bg-slate-900 hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-xl shadow-slate-900/15 transform transition-all duration-300 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-4 px-4 rounded-2xl text-white font-bold text-sm bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-slate-900/20 shadow-xl shadow-slate-900/15 transform transition-all duration-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-6"
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Memproses Perubahan...</span>
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-300" />
+                  <span>Menyimpan...</span>
                 </>
               ) : (
                 <>
@@ -7241,8 +7471,8 @@ function ChangePasswordScreen({ user, setView }) {
           </div>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-          <p className="text-[11px] text-slate-400 leading-relaxed">
+        <div className="mt-6 pt-5 border-t border-slate-100 text-center">
+          <p className="text-xs text-slate-400 leading-relaxed max-w-xs mx-auto">
             Pastikan kata sandi baru mudah diingat dan tidak dibagikan kepada orang lain.
           </p>
         </div>

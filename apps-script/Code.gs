@@ -179,7 +179,14 @@ function doPost(e) {
     if (action === 'tambah_user') return handleTambahUser(data);
     if (action === 'tambah_master') return handleTambahMaster(data);
     if (action === 'ganti_password') return handleGantiPassword(data);
+    if (action === 'reset_password_mandiri') return handleResetPasswordMandiri(data);
     if (action === 'upload_profile') return handleUploadProfile(data);
+
+    // --- REKAP & KOREKSI ADMIN (DASHBOARD & EXPORT) ---
+    if (action === 'get_koreksi_list') return handleGetKoreksiList(data);
+    if (action === 'save_koreksi') return handleSaveKoreksi(data);
+    if (action === 'delete_koreksi') return handleDeleteKoreksi(data);
+    if (action === 'get_rekap_admin') return handleGetRekapAdmin(data);
 
     // --- FITUR ABSENSI UTAMA ---
     if (action === 'absen') return handleAbsen(data);
@@ -1667,15 +1674,57 @@ function handleTambahMaster(data) {
 }
 
 function handleGantiPassword(data) {
+  const newPassword = String(data.newPassword || '').trim();
+  if (!newPassword || newPassword.length < 6) {
+    return responseJSON({ result: 'error', message: 'Kata sandi baru minimal 6 karakter.' });
+  }
   const sheet = SS.getSheetByName(SHEET_USERS);
   const rows = sheet.getDataRange().getValues();
+  const userId = String(data.userId || data.id || '');
   for (let i = 1; i < rows.length; i++) { 
-      if (String(rows[i][0]) == String(data.id) && String(rows[i][2]) == String(data.oldPassword)) { 
-          sheet.getRange(i + 1, 3).setValue(data.newPassword);
-          return responseJSON({ result: 'success' }); 
+      if (String(rows[i][0]) === userId && String(rows[i][2]) === String(data.oldPassword)) { 
+          sheet.getRange(i + 1, 3).setValue(newPassword);
+          return responseJSON({ result: 'success', message: 'Password berhasil diubah!' }); 
       } 
   }
-  return responseJSON({ result: 'error', message: 'Password lama salah' });
+  return responseJSON({ result: 'error', message: 'Kata sandi lama salah.' });
+}
+
+function handleResetPasswordMandiri(data) {
+  const username = String(data.username || '').trim();
+  const noPayroll = String(data.noPayroll || '').trim();
+  const newPassword = String(data.newPassword || '').trim();
+
+  if (!username) {
+    return responseJSON({ result: 'error', message: 'ID Karyawan / Username wajib diisi.' });
+  }
+  if (!noPayroll) {
+    return responseJSON({ result: 'error', message: 'No. Payroll / NIK wajib diisi untuk verifikasi.' });
+  }
+  if (!newPassword || newPassword.length < 6) {
+    return responseJSON({ result: 'error', message: 'Kata sandi baru minimal 6 karakter.' });
+  }
+
+  const sheet = SS.getSheetByName(SHEET_USERS);
+  const rows = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < rows.length; i++) {
+    const rowUsername = String(rows[i][1] || '').trim().toLowerCase();
+    const rowPayroll = String(rows[i][7] || '').trim();
+
+    if (rowUsername === username.toLowerCase() && rowPayroll === noPayroll) {
+      sheet.getRange(i + 1, 3).setValue(newPassword);
+      return responseJSON({
+        result: 'success',
+        message: `Kata sandi untuk ${rows[i][3]} berhasil direset. Silakan login.`
+      });
+    }
+  }
+
+  return responseJSON({
+    result: 'error',
+    message: 'Verifikasi gagal: ID Karyawan dan No. Payroll / NIK tidak cocok.'
+  });
 }
 
 function handleUploadProfile(data) {
@@ -3506,6 +3555,11 @@ function handleGetAnalysisData(data) {
         const symbolMesin = mesinData ? mesinData.symbol : '-';
         const waktuMesin = mesinData ? mesinData.waktu : '-';
         const tipeManual = String(row[4]).trim();
+        const tipeManualLower = tipeManual.toLowerCase();
+        if (tipeManualLower === 'standby' || tipeManualLower === 'hadir' || tipeManualLower === 'pulang') {
+            currentDate.setDate(currentDate.getDate() + 1);
+            continue;
+        }
 
         // LOGIC MISMATCH
         let isMismatch = false;
@@ -3999,4 +4053,324 @@ function handleUpdateStatusAbsen(data) {
   sheet.getRange(rowIndex, 15).setValue(formattedTime);
 
   return responseJSON({ result: 'success', message: `Status berhasil diubah menjadi ${newStatus}` });
+}
+
+// ==========================================
+// FITUR REKAP, KOREKSI & DASHBOARD ADMIN
+// ==========================================
+const SHEET_KOREKSI = "KOREKSI";
+const KOREKSI_HEADERS = ["ID", "NO AKUN", "PAYROLL", "NAMA", "TGL MULAI", "TGL SELESAI", "ID2", "KETERANGAN", "CREATED_AT"];
+
+function _pastikanSheetKoreksi() {
+  let sheet = SS.getSheetByName(SHEET_KOREKSI);
+  if (!sheet) {
+    sheet = SS.insertSheet(SHEET_KOREKSI);
+    sheet.appendRow(KOREKSI_HEADERS);
+  }
+  return sheet;
+}
+
+function handleGetKoreksiList(data) {
+  const sheet = _pastikanSheetKoreksi();
+  const rows = sheet.getDataRange().getValues();
+  const list = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0] && !r[2] && !r[3]) continue;
+    list.push({
+      id: String(r[0] || ('KOR-' + i)),
+      noAkun: String(r[1] || ''),
+      payroll: String(r[2] || ''),
+      nama: String(r[3] || ''),
+      tglMulai: formatDateYMD_Strict(r[4]) || String(r[4] || ''),
+      tglSelesai: formatDateYMD_Strict(r[5]) || String(r[5] || ''),
+      id2: String(r[6] || '').trim(),
+      keterangan: String(r[7] || ''),
+      createdAt: String(r[8] || '')
+    });
+  }
+  return responseJSON({ result: 'success', list: list });
+}
+
+function handleSaveKoreksi(data) {
+  const sheet = _pastikanSheetKoreksi();
+  const rows = sheet.getDataRange().getValues();
+  const id = data.id ? String(data.id) : ('KOR-' + new Date().getTime());
+  const noAkun = String(data.noAkun || '').trim();
+  const payroll = String(data.payroll || '').trim();
+  const nama = String(data.nama || '').trim();
+  const tglMulai = String(data.tglMulai || '').trim();
+  const tglSelesai = String(data.tglSelesai || tglMulai).trim();
+  const id2 = String(data.id2 || 'H').trim().toUpperCase();
+  const keterangan = String(data.keterangan || '-').trim();
+  const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+
+  if (!payroll && !nama) {
+    return responseJSON({ result: 'error', message: 'Pegawai (Payroll/Nama) wajib diisi.' });
+  }
+  if (!tglMulai) {
+    return responseJSON({ result: 'error', message: 'Tanggal mulai wajib diisi.' });
+  }
+
+  let foundRow = -1;
+  if (data.id) {
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) === String(data.id)) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 1, 1, 9).setValues([[id, noAkun, payroll, nama, tglMulai, tglSelesai, id2, keterangan, nowStr]]);
+    return responseJSON({ result: 'success', message: 'Koreksi berhasil diperbarui.' });
+  } else {
+    sheet.appendRow([id, noAkun, payroll, nama, tglMulai, tglSelesai, id2, keterangan, nowStr]);
+    return responseJSON({ result: 'success', message: 'Koreksi berhasil ditambahkan.' });
+  }
+}
+
+function handleDeleteKoreksi(data) {
+  const sheet = _pastikanSheetKoreksi();
+  const rows = sheet.getDataRange().getValues();
+  const targetId = String(data.id || '');
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0]) === targetId) {
+      sheet.deleteRow(i + 1);
+      return responseJSON({ result: 'success', message: 'Data koreksi berhasil dihapus.' });
+    }
+  }
+  return responseJSON({ result: 'error', message: 'Data koreksi tidak ditemukan.' });
+}
+
+function handleGetRekapAdmin(data) {
+  // 1. Ambil data DB_ABSEN
+  const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
+  const rowsDb = sheetDb ? sheetDb.getDataRange().getValues() : [];
+  
+  // 2. Ambil data KOREKSI
+  const sheetKoreksi = _pastikanSheetKoreksi();
+  const rowsKoreksi = sheetKoreksi.getDataRange().getValues();
+  const koreksiList = [];
+  for (let k = 1; k < rowsKoreksi.length; k++) {
+    const kr = rowsKoreksi[k];
+    if (!kr[2] && !kr[3]) continue;
+    koreksiList.push({
+      id: String(kr[0] || ('KOR-' + k)),
+      noAkun: String(kr[1] || '').trim(),
+      payroll: String(kr[2] || '').trim(),
+      nama: String(kr[3] || '').trim(),
+      tglMulai: formatDateYMD_Strict(kr[4]) || String(kr[4] || ''),
+      tglSelesai: formatDateYMD_Strict(kr[5]) || String(kr[5] || ''),
+      id2: String(kr[6] || '').trim().toUpperCase(),
+      keterangan: String(kr[7] || '')
+    });
+  }
+
+  // 3. Ambil data Users / Master Pegawai untuk Dept, Jabatan, Sisa Cuti
+  const sheetUsers = SS.getSheetByName(SHEET_USERS);
+  const rowsUsers = sheetUsers ? sheetUsers.getDataRange().getValues() : [];
+  const petaCuti = typeof getPetaCutiCached === 'function' ? getPetaCutiCached() : {};
+  const userMap = {};
+  for (let u = 1; u < rowsUsers.length; u++) {
+    const ur = rowsUsers[u];
+    const nik = String(ur[7] || ur[1] || '').trim();
+    if (nik) {
+      const cutiInfo = petaCuti[nik] || {};
+      userMap[nik] = {
+        nama: ur[3] || '',
+        dept: ur[4] || ur[10] || 'Staff',
+        role: ur[5] || 'karyawan',
+        sisaCuti: cutiInfo.tersedia !== undefined ? cutiInfo.tersedia : (Number(ur[8]) || 0),
+        cutiAwal: cutiInfo.terpakai !== undefined ? cutiInfo.terpakai : 0,
+        perusahaan: ur[10] || '-'
+      };
+    }
+  }
+
+  // 4. Map DB_ABSEN rows ke object & terapkan Koreksi
+  const dbRecords = [];
+  const empSummary = {};
+
+  for (let i = 1; i < rowsDb.length; i++) {
+    const r = rowsDb[i];
+    const noAkun = String(r[1] || '').trim();
+    const payroll = String(r[2] || '').trim();
+    const nama = String(r[3] || '').trim();
+    const rawDate = r[4];
+    const tglYMD = formatDateYMD_Strict(rawDate) || '';
+    const tglIndo = formatDateDDMMYYYY(rawDate) || formatDate(rawDate);
+    const jamKerja = String(r[5] || '').trim();
+    const mTugas = _formatTimeVal(r[6]);
+    const aTugas = _formatTimeVal(r[7]);
+    const masuk = _formatTimeVal(r[8]);
+    const pulang = _formatTimeVal(r[9]);
+    const telat = _formatTimeVal(r[10]);
+    const pAwal = _formatTimeVal(r[11]);
+    const bolos = String(r[12] || '').trim();
+    const tjk = _formatTimeVal(r[13]);
+    let id2 = String(r[14] || '').trim();
+    const dept = String(r[15] || (userMap[payroll] ? userMap[payroll].dept : 'Staff')).trim();
+    const attTime = _formatTimeVal(r[16]);
+    const waktuScan = String(r[17] || '').trim();
+    const week = String(r[18] || '').trim();
+    const nominal = _hitungNominalDenda(r[10] || telat, r[19]);
+
+    // Periksa apakah ada koreksi yang cocok
+    let isKoreksi = false;
+    let koreksiKet = '';
+    for (let c = 0; c < koreksiList.length; c++) {
+      const kor = koreksiList[c];
+      const matchEmp = (payroll && kor.payroll && payroll.toLowerCase() === kor.payroll.toLowerCase()) ||
+                       (noAkun && kor.noAkun && noAkun === kor.noAkun) ||
+                       (nama && kor.nama && nama.toLowerCase() === kor.nama.toLowerCase());
+      if (matchEmp && tglYMD >= kor.tglMulai && tglYMD <= kor.tglSelesai) {
+        id2 = kor.id2;
+        isKoreksi = true;
+        koreksiKet = kor.keterangan;
+        break;
+      }
+    }
+
+    const recordObj = {
+      noAkun, payroll, nama,
+      tanggal: tglIndo,
+      tanggalYMD: tglYMD,
+      jamKerja, mTugas, aTugas, masuk, pulang,
+      telat, pAwal, bolos, tjk,
+      id2: id2 || 'A',
+      departemen: dept,
+      attTime, waktuScan, week,
+      nominal: nominal ? Number(nominal) : '',
+      isKoreksi, koreksiKet
+    };
+
+    dbRecords.push(recordObj);
+
+    // Akumulasi summary per employee
+    const empKey = payroll || noAkun || nama;
+    if (!empSummary[empKey]) {
+      const uInfo = userMap[payroll] || userMap[noAkun] || {};
+      const cutiInfo = petaCuti[payroll] || petaCuti[noAkun] || {};
+      empSummary[empKey] = {
+        dept: dept || uInfo.dept || 'Staff',
+        nama: nama || uInfo.nama || '-',
+        jabatan: uInfo.role || 'Staff',
+        payroll: payroll || noAkun,
+        sisaCuti: cutiInfo.tersedia !== undefined ? cutiInfo.tersedia : (uInfo.sisaCuti !== undefined ? uInfo.sisaCuti : 0),
+        cutiDiambil: 0,
+        cutiAwal: cutiInfo.terpakai !== undefined ? cutiInfo.terpakai : (uInfo.cutiAwal || 0),
+        sakit: 0,
+        alpa: 0,
+        ijin: 0,
+        tdkAbsenMasuk: 0,
+        tdkAbsenPulang: 0,
+        telat: 0,
+        hadir: 0,
+        nominalTerlambat: 0
+      };
+    }
+
+    if (nominal && Number(nominal) > 0) {
+      empSummary[empKey].nominalTerlambat += Number(nominal);
+    }
+
+    const sym = id2.toUpperCase();
+    if (['C', 'CB', 'CUTI', 'CUTI BERSAMA'].includes(sym)) {
+      empSummary[empKey].cutiDiambil++;
+    } else if (['S', 'SAKIT'].includes(sym)) {
+      empSummary[empKey].sakit++;
+    } else if (['A', 'AC', 'ALPA'].includes(sym)) {
+      empSummary[empKey].alpa++;
+    } else if (['I', 'IJIN'].includes(sym)) {
+      empSummary[empKey].ijin++;
+    } else if (['H', 'ONL', 'HADIR'].includes(sym)) {
+      empSummary[empKey].hadir++;
+    }
+
+    if (['SI', 'TSI', 'SISO', 'SIPC'].includes(sym)) {
+      empSummary[empKey].tdkAbsenMasuk++;
+    }
+    if (['SO', 'TSO', 'SISO'].includes(sym)) {
+      empSummary[empKey].tdkAbsenPulang++;
+    }
+    if (['T', 'TPC', 'TSI', 'TSO'].includes(sym) || (telat && telat !== '-' && telat !== '00:00')) {
+      empSummary[empKey].telat++;
+    }
+  }
+
+  const dashboardList = Object.values(empSummary).map(function(emp) {
+    if (emp.cutiDiambil === 0 && emp.cutiAwal > 0) {
+      emp.cutiDiambil = emp.cutiAwal;
+    }
+    delete emp.cutiAwal;
+    return emp;
+  });
+  dashboardList.sort((a, b) => (a.dept || '').localeCompare(b.dept || '') || (a.nama || '').localeCompare(b.nama || ''));
+
+  return responseJSON({
+    result: 'success',
+    rawRecords: dbRecords,
+    dashboardData: dashboardList,
+    koreksiList: koreksiList
+  });
+}
+
+function _formatTimeVal(val) {
+  if (val === null || val === undefined || val === '' || val === '-') return '';
+  if (typeof val === 'number') {
+    if (val >= 0 && val < 1) {
+      const totalMin = Math.round(val * 24 * 60);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+    return String(val);
+  }
+  if (typeof val === 'string') {
+    val = val.trim();
+    if (val.includes('T')) {
+      try {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        }
+      } catch (e) {}
+    }
+    return val;
+  }
+  return String(val);
+}
+
+function _hitungNominalDenda(telatVal, existingNominal) {
+  if (existingNominal !== undefined && existingNominal !== null && existingNominal !== "" && Number(existingNominal) > 0) {
+    return Number(existingNominal);
+  }
+  if (!telatVal || telatVal === "-" || telatVal === "00:00" || telatVal === "0") return "";
+  
+  let minutes = 0;
+  if (typeof telatVal === "number") {
+    if (telatVal >= 0 && telatVal < 1) {
+      minutes = Math.round(telatVal * 24 * 60);
+    } else {
+      minutes = Math.round(telatVal);
+    }
+  } else if (typeof telatVal === "string") {
+    const s = telatVal.trim();
+    if (s.includes(":")) {
+      const parts = s.split(":");
+      minutes = (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+    } else if (!isNaN(Number(s))) {
+      const num = Number(s);
+      if (num > 0 && num < 1) minutes = Math.round(num * 24 * 60);
+      else minutes = Math.round(num);
+    }
+  }
+  
+  if (minutes <= 0) return "";
+  if (minutes <= 25) return 25000;
+  if (minutes <= 35) return 50000;
+  if (minutes <= 50) return 75000;
+  return 100000;
 }

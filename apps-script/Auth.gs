@@ -150,7 +150,7 @@ function _timingSafeEqual(a, b) {
 
 // '*' = semua user yang sudah login
 // array = hanya role tersebut
-const PUBLIC_ACTIONS = ['ping', 'check_version', 'login'];
+const PUBLIC_ACTIONS = ['ping', 'check_version', 'login', 'reset_password_mandiri'];
 
 const ACTION_ROLES = {
   // --- Semua user yang sudah login ---
@@ -201,7 +201,13 @@ const ACTION_ROLES = {
   'update_absensi': ['admin'],
 
   // Menimpa isi sheet dbabsen — sengaja admin saja, tanpa HRD.
-  'import_db_absen': ['admin']
+  'import_db_absen': ['admin'],
+
+  // --- Rekap & Koreksi Admin (GSheet DATABASE ABSENSI) ---
+  'get_koreksi_list': ['admin'],
+  'save_koreksi': ['admin'],
+  'delete_koreksi': ['admin'],
+  'get_rekap_admin': ['admin']
 };
 
 /**
