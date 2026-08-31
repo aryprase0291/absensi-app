@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List,
+import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
   Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION, BOARD_ABSENSI_URL } from './config/constants';
 import { FRONTEND_VERSION } from './config/updateManifest';
@@ -163,25 +163,25 @@ const COLOR_MAP = {'Hadir': 'bg-emerald-50 text-emerald-600', 'Pulang': 'bg-rose
 // akan pernah ikut ter-generate.
 // ============================================================
 const TEMA_DEFAULT = {
-  grad: 'from-blue-600 to-indigo-700',
-  chip: 'bg-blue-50 text-blue-600',
-  fokus: 'focus:border-blue-400 focus:ring-blue-500/10',
-  tombol: 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/25',
+  grad: 'from-slate-950 via-slate-900 to-blue-950',
+  chip: 'bg-blue-500/15 text-blue-400 border border-blue-500/20',
+  fokus: 'focus:border-blue-500 focus:ring-blue-500/20',
+  tombol: 'bg-slate-900 hover:bg-blue-600 shadow-slate-900/25',
   garis: 'bg-blue-500',
 };
 const TEMA_FORM = {
-  'Hadir':       { grad: 'from-emerald-500 to-teal-600',  chip: 'bg-emerald-50 text-emerald-600', fokus: 'focus:border-emerald-400 focus:ring-emerald-500/10', tombol: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25', garis: 'bg-emerald-500' },
-  'Pulang':      { grad: 'from-rose-500 to-red-600',      chip: 'bg-rose-50 text-rose-600',       fokus: 'focus:border-rose-400 focus:ring-rose-500/10',       tombol: 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25',       garis: 'bg-rose-500' },
-  'Ijin':        { grad: 'from-amber-500 to-orange-600',  chip: 'bg-amber-50 text-amber-600',     fokus: 'focus:border-amber-400 focus:ring-amber-500/10',     tombol: 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25',     garis: 'bg-amber-500' },
-  'Sakit':       { grad: 'from-red-500 to-rose-600',      chip: 'bg-red-50 text-red-600',         fokus: 'focus:border-red-400 focus:ring-red-500/10',         tombol: 'bg-red-600 hover:bg-red-700 shadow-red-600/25',         garis: 'bg-red-500' },
-  'Lembur':      { grad: 'from-violet-500 to-purple-600', chip: 'bg-violet-50 text-violet-600',   fokus: 'focus:border-violet-400 focus:ring-violet-500/10',   tombol: 'bg-violet-600 hover:bg-violet-700 shadow-violet-600/25', garis: 'bg-violet-500' },
-  'Dinas':       { grad: 'from-sky-500 to-blue-600',      chip: 'bg-sky-50 text-sky-600',         fokus: 'focus:border-sky-400 focus:ring-sky-500/10',         tombol: 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/25',         garis: 'bg-sky-500' },
-  'Dinas Luar':  { grad: 'from-sky-500 to-cyan-600',      chip: 'bg-sky-50 text-sky-600',         fokus: 'focus:border-sky-400 focus:ring-sky-500/10',         tombol: 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/25',         garis: 'bg-sky-500' },
-  'Cuti':        { grad: 'from-teal-500 to-emerald-600',  chip: 'bg-teal-50 text-teal-600',       fokus: 'focus:border-teal-400 focus:ring-teal-500/10',       tombol: 'bg-teal-600 hover:bg-teal-700 shadow-teal-600/25',       garis: 'bg-teal-500' },
-  'Cuti EO':     { grad: 'from-teal-500 to-cyan-600',     chip: 'bg-teal-50 text-teal-600',       fokus: 'focus:border-teal-400 focus:ring-teal-500/10',       tombol: 'bg-teal-600 hover:bg-teal-700 shadow-teal-600/25',       garis: 'bg-teal-500' },
-  'Tukar Shift': { grad: 'from-indigo-500 to-blue-700',   chip: 'bg-indigo-50 text-indigo-600',   fokus: 'focus:border-indigo-400 focus:ring-indigo-500/10',   tombol: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/25', garis: 'bg-indigo-500' },
-  'Off':         { grad: 'from-slate-600 to-slate-800',   chip: 'bg-slate-100 text-slate-500',    fokus: 'focus:border-slate-400 focus:ring-slate-500/10',     tombol: 'bg-slate-800 hover:bg-slate-900 shadow-slate-800/25',   garis: 'bg-slate-500' },
-  'Standby':     { grad: 'from-slate-600 to-slate-800',   chip: 'bg-slate-100 text-slate-500',    fokus: 'focus:border-slate-400 focus:ring-slate-500/10',     tombol: 'bg-slate-800 hover:bg-slate-900 shadow-slate-800/25',   garis: 'bg-slate-500' },
+  'Hadir':       { grad: 'from-slate-950 via-emerald-950/80 to-teal-950',  chip: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20', fokus: 'focus:border-emerald-500 focus:ring-emerald-500/20', tombol: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25', garis: 'bg-emerald-500' },
+  'Pulang':      { grad: 'from-slate-950 via-rose-950/80 to-red-950',      chip: 'bg-rose-500/15 text-rose-400 border border-rose-500/20',       fokus: 'focus:border-rose-500 focus:ring-rose-500/20',       tombol: 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/25',       garis: 'bg-rose-500' },
+  'Ijin':        { grad: 'from-slate-950 via-amber-950/80 to-orange-950',  chip: 'bg-amber-500/15 text-amber-400 border border-amber-500/20',     fokus: 'focus:border-amber-500 focus:ring-amber-500/20',     tombol: 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25',     garis: 'bg-amber-500' },
+  'Sakit':       { grad: 'from-slate-950 via-red-950/80 to-rose-950',      chip: 'bg-red-500/15 text-red-400 border border-red-500/20',         fokus: 'focus:border-red-500 focus:ring-red-500/20',         tombol: 'bg-red-600 hover:bg-red-700 shadow-red-600/25',         garis: 'bg-red-500' },
+  'Lembur':      { grad: 'from-slate-950 via-purple-950/80 to-violet-950', chip: 'bg-violet-500/15 text-violet-400 border border-violet-500/20',   fokus: 'focus:border-violet-500 focus:ring-violet-500/20',   tombol: 'bg-violet-600 hover:bg-violet-700 shadow-violet-600/25', garis: 'bg-violet-500' },
+  'Dinas':       { grad: 'from-slate-950 via-sky-950/80 to-blue-950',      chip: 'bg-sky-500/15 text-sky-400 border border-sky-500/20',         fokus: 'focus:border-sky-500 focus:ring-sky-500/20',         tombol: 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/25',         garis: 'bg-sky-500' },
+  'Dinas Luar':  { grad: 'from-slate-950 via-sky-950/80 to-cyan-950',      chip: 'bg-sky-500/15 text-sky-400 border border-sky-500/20',         fokus: 'focus:border-sky-500 focus:ring-sky-500/20',         tombol: 'bg-sky-600 hover:bg-sky-700 shadow-sky-600/25',         garis: 'bg-sky-500' },
+  'Cuti':        { grad: 'from-slate-950 via-teal-950/80 to-emerald-950',  chip: 'bg-teal-500/15 text-teal-400 border border-teal-500/20',       fokus: 'focus:border-teal-500 focus:ring-teal-500/20',       tombol: 'bg-teal-600 hover:bg-teal-700 shadow-teal-600/25',       garis: 'bg-teal-500' },
+  'Cuti EO':     { grad: 'from-slate-950 via-teal-950/80 to-cyan-950',     chip: 'bg-teal-500/15 text-teal-400 border border-teal-500/20',       fokus: 'focus:border-teal-500 focus:ring-teal-500/20',       tombol: 'bg-teal-600 hover:bg-teal-700 shadow-teal-600/25',       garis: 'bg-teal-500' },
+  'Tukar Shift': { grad: 'from-slate-950 via-indigo-950/80 to-blue-950',   chip: 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/20',   fokus: 'focus:border-indigo-500 focus:ring-indigo-500/20',   tombol: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/25', garis: 'bg-indigo-500' },
+  'Off':         { grad: 'from-slate-950 via-slate-900 to-slate-800',   chip: 'bg-slate-500/15 text-slate-400 border border-slate-500/20',     fokus: 'focus:border-slate-500 focus:ring-slate-500/20',     tombol: 'bg-slate-800 hover:bg-slate-900 shadow-slate-800/25',   garis: 'bg-slate-500' },
+  'Standby':     { grad: 'from-slate-950 via-slate-900 to-slate-800',   chip: 'bg-slate-500/15 text-slate-400 border border-slate-500/20',     fokus: 'focus:border-slate-500 focus:ring-slate-500/20',     tombol: 'bg-slate-800 hover:bg-slate-900 shadow-slate-800/25',   garis: 'bg-slate-500' },
 };
 const temaFor = (tipe) => TEMA_FORM[tipe] || TEMA_DEFAULT;
 
@@ -399,10 +399,39 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
   }, [user]);
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
-return (<div className="min-h-screen bg-gray-100 font-sans text-slate-800"><div className="max-w-md mx-auto bg-white min-h-screen shadow-xl overflow-hidden relative">{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
+return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
        punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
        hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
-    {view!=='login'&&view!=='dashboard'&&view!=='form'&&(<div className="bg-blue-600 p-4 text-white flex justify-between items-center shadow-md z-10 relative"><div className="flex items-center gap-2"><button onClick={()=>setView('dashboard')} className="flex items-center gap-2"><Activity className="w-6 h-6"/><span className="font-bold text-lg">Menu {view==='history'?'Riwayat':'Lainnya'}</span></button></div></div>)}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+    {view !== 'login' && view !== 'dashboard' && view !== 'form' && (
+      <header className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white border border-slate-800/80 shadow-lg shadow-slate-950/20 backdrop-blur-xl p-3.5 sm:p-4 md:px-6 md:py-4 flex justify-between items-center z-10 relative rounded-2xl mb-4 md:mb-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 p-2 shadow-md shadow-blue-500/20 ring-1 ring-white/20">
+            <Activity className="h-full w-full text-white" />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-300/80">Menu Navigasi</p>
+            <h2 className="text-base sm:text-lg font-black tracking-tight text-white leading-tight">
+              {view === 'history' ? 'Riwayat & Laporan' :
+               view === 'admin' ? 'Panel Administrator' :
+               view === 'approval' ? 'Approval Pengajuan' :
+               view === 'db_absen' ? 'Data Mesin Fingerprint' :
+               view === 'analysis' ? 'Analisa Kehadiran' :
+               view === 'input_shift' ? 'Jadwal Running Shift' :
+               view === 'remark' ? 'Respon / Lapor HRD' :
+               view === 'ganti_password' ? 'Ubah Kata Sandi' : 'Menu Aplikasi'}
+            </h2>
+          </div>
+        </div>
+        <button
+          onClick={() => setView('dashboard')}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 backdrop-blur-md text-xs font-bold text-white transition-all active:scale-95 shadow-sm"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          <span className="hidden sm:inline">Kembali ke Dashboard</span>
+          <span className="sm:hidden">Kembali</span>
+        </button>
+      </header>
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
@@ -841,80 +870,180 @@ const Skeleton = ({ className }) => (
 
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 pb-24 pt-4 font-sans flex flex-col">
+    <div className="min-h-screen bg-slate-50 md:bg-transparent px-4 pb-24 pt-4 md:px-0 md:pb-8 md:pt-0 font-sans flex flex-col">
       
-      {/* --- KARTU PROFIL HEADER --- */}
-      <section className="mb-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_12px_35px_-24px_rgba(15,23,42,0.55)]">
-        <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-600 to-indigo-700 px-5 pb-5 pt-4 text-white">
-          <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-white/15 blur-3xl" />
-          <div className="relative flex items-center justify-between">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
-                <ScanLine className="h-[18px] w-[18px] text-blue-200" strokeWidth={1.8} />
+      {/* --- KARTU PROFIL HEADER (EPIC LUXURY OBSIDIAN & SAPPHIRE THEME) --- */}
+      <section className="mb-5 md:mb-6 overflow-hidden rounded-[26px] sm:rounded-[28px] border border-slate-800/80 bg-slate-950 shadow-[0_20px_50px_-15px_rgba(15,23,42,0.4)] relative">
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 px-4 sm:px-6 pt-5 pb-5 text-white">
+          
+          {/* Ambient Glow Effects */}
+          <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-blue-500/20 blur-3xl" />
+          <div className="pointer-events-none absolute -left-16 bottom-0 h-48 w-48 rounded-full bg-cyan-500/15 blur-3xl" />
+          <div className="pointer-events-none absolute right-1/3 top-1/2 h-36 w-36 rounded-full bg-indigo-500/15 blur-2xl" />
+
+          {/* 1. Baris Atas: Brand Identity & Aksi */}
+          <div className="relative z-10 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 sm:gap-3">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 p-2 shadow-lg shadow-blue-500/25 ring-1 ring-white/20">
+                <ScanFace className="h-full w-full text-white" />
               </div>
-              <div className="min-w-0">
-                <p className="break-words text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-100">Absensi {namaPerusahaan}</p>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-medium text-blue-50">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Sistem aktif
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] sm:text-xs font-black tracking-widest text-white uppercase">{namaPerusahaan} GROUP</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[8.5px] sm:text-[9px] font-bold text-emerald-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Aktif
+                  </span>
+                </div>
+                <p className="text-[9px] sm:text-[9.5px] font-medium text-slate-400 tracking-wide">Portal Kehadiran Digital</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setView('ganti_password')}
+                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 backdrop-blur-md text-white/90 transition-all hover:text-white active:scale-95 shadow-sm"
+                title="Ubah password"
+                aria-label="Ubah password"
+              >
+                <KeyRound className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-white/10 hover:bg-rose-500/20 border border-white/10 hover:border-rose-400/30 backdrop-blur-md text-white/90 hover:text-rose-200 transition-all active:scale-95 shadow-sm"
+                title="Keluar aplikasi"
+                aria-label="Keluar aplikasi"
+              >
+                <LogOut className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Baris Tengah: Sapaan, Cuaca & Profil Karyawan */}
+          <div className="relative z-10 mt-4 pt-3.5 border-t border-white/[0.08]">
+            
+            {/* Sapaan + Cuaca (Inline Capsule) */}
+            <div className="flex items-center justify-start gap-2 mb-2.5">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.08] border border-white/10 px-3 py-1 text-[11px] font-medium text-slate-200 backdrop-blur-md shadow-sm">
+                <IkonCuaca kode={cuaca?.kode} malam={hour >= 18 || hour < 5} />
+                <span>{greeting}</span>
+                {cuaca && (
+                  <>
+                    <span className="text-white/30">&bull;</span>
+                    <span className="font-semibold text-cyan-300 tabular-nums">{Math.round(Number(cuaca.suhu))}°C</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Identitas Karyawan (Nama + Inisial Avatar + Badge Divisi) */}
+            <div className="flex items-center gap-3 mt-1">
+              <div className="h-11 w-11 sm:h-12 sm:w-12 shrink-0 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-purple-600 flex items-center justify-center text-white font-black text-sm sm:text-base shadow-md shadow-indigo-500/25 ring-2 ring-white/20">
+                {(user.nama || 'U').split(' ').map(n => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <h1 className="text-lg sm:text-xl md:text-2xl font-black text-white tracking-tight leading-tight truncate md:whitespace-nowrap">
+                  {user.nama}
+                </h1>
+
+                <div className="flex items-center flex-wrap gap-1.5 mt-1">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/20 border border-blue-400/30 px-2 py-0.5 text-[9.5px] sm:text-[10px] font-bold text-cyan-200">
+                    <Layers className="w-2.5 h-2.5" /> {user.divisi || 'Karyawan'}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-white/[0.07] border border-white/10 px-2 py-0.5 text-[9.5px] sm:text-[10px] font-medium text-slate-300">
+                    <MapPin className="w-2.5 h-2.5 text-rose-400" /> {user.lokasi || 'All'}
+                  </span>
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => setView('ganti_password')} className="flex h-9 w-9 items-center justify-center rounded-xl text-white/80 transition-colors hover:bg-white/15 hover:text-white active:scale-95" title="Ubah password" aria-label="Ubah password">
-                <KeyRound className="h-[17px] w-[17px]" strokeWidth={1.8} />
-              </button>
-              <button onClick={handleLogout} className="flex h-9 w-9 items-center justify-center rounded-xl text-white/80 transition-colors hover:bg-white/15 hover:text-white active:scale-95" title="Keluar aplikasi" aria-label="Keluar aplikasi">
-                <LogOut className="h-[17px] w-[17px]" strokeWidth={1.8} />
-              </button>
-            </div>
-          </div>
 
-          <div className="relative mt-7 flex items-end justify-between gap-4">
-            <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-medium text-blue-50">
-                <IkonCuaca kode={cuaca?.kode} malam={hour >= 18 || hour < 5} />
-                <span>{greeting}</span>
-                {cuaca && <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-white">{Math.round(Number(cuaca.suhu))}°C</span>}
+            {/* 3. Live Digital Time Capsule Widget */}
+            <div className="mt-3.5 p-3 rounded-2xl bg-white/[0.06] border border-white/10 backdrop-blur-md flex items-center justify-between shadow-inner">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-400/10 text-cyan-300 flex items-center justify-center border border-cyan-400/20 shrink-0">
+                  <Clock className="w-4 h-4 animate-pulse" />
+                </div>
+                <div>
+                  <p className="text-[9.5px] text-slate-400 font-semibold uppercase tracking-wider capitalize">{hariString}</p>
+                  <p className="text-[11.5px] sm:text-[12px] font-bold text-slate-200 leading-tight">{tanggalString}</p>
+                </div>
               </div>
-              <h1 className={`${ukuranNama} max-w-[15rem] break-words font-semibold leading-[1.08] tracking-[-0.03em]`}>{user.nama}</h1>
-              <p className="mt-1 break-words text-[11px] font-medium text-blue-100">{user.divisi || 'Karyawan'} <span className="px-1 text-blue-200/70">·</span> {user.lokasi || 'All'}</p>
-            </div>
-            <div className="shrink-0 text-right leading-tight">
-              <p className="text-[17px] font-semibold capitalize tracking-[-0.02em] text-white">{hariString}</p>
-              <p className="mt-1 font-mono text-[31px] font-medium leading-none tracking-[-0.06em] text-white tabular-nums">{jamDigital}</p>
-              <p className="mt-2 text-[14px] font-medium text-blue-100">{tanggalString}</p>
+
+              <div className="text-right">
+                <div className="flex items-baseline gap-1 justify-end">
+                  <span className="font-mono text-xl sm:text-2xl font-black text-white tabular-nums tracking-wider leading-none">
+                    {jamDigital}
+                  </span>
+                  <span className="text-[9px] sm:text-[10px] font-bold text-cyan-400">WIB</span>
+                </div>
+                <span className="text-[9px] font-medium text-emerald-400 flex items-center justify-end gap-1 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> Real-time
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 bg-white">
-          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
-            <Building className="h-4 w-4 shrink-0 text-blue-500" strokeWidth={1.8} />
-            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Perusahaan</p><p className="truncate text-[12px] font-semibold text-slate-700">{user.perusahaan || 'JPT Group'}</p></div>
+        {/* 4. Bagian Bawah: 4 Kartu Metrik Kunci (Glassmorphism Tiles) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 p-2.5 sm:p-3 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800">
+          
+          {/* Tile 1: Perusahaan */}
+          <div className="flex items-center gap-2.5 p-2 sm:p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:bg-slate-800/90 transition-colors">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20">
+              <Building className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[8.5px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400">Perusahaan</p>
+              <p className="truncate text-[11.5px] sm:text-[12px] font-bold text-white">{user.perusahaan || 'JPT Group'}</p>
+            </div>
           </div>
-          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
-            <CreditCard className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={1.8} />
-            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">ID akun</p><p className="truncate font-mono text-[12px] font-semibold text-slate-700">{user.noPayroll || '-'}</p></div>
+
+          {/* Tile 2: ID Akun */}
+          <div className="flex items-center gap-2.5 p-2 sm:p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:bg-slate-800/90 transition-colors">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-indigo-500/15 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/20">
+              <CreditCard className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[8.5px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400">ID Payroll</p>
+              <p className="truncate font-mono text-[11.5px] sm:text-[12px] font-bold text-indigo-200">{user.noPayroll || '-'}</p>
+            </div>
           </div>
-          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
-            <User className="h-4 w-4 shrink-0 text-emerald-500" strokeWidth={1.8} />
-            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Status</p><p className="truncate text-[12px] font-semibold text-slate-700">{user.statusKaryawan || '-'}</p></div>
+
+          {/* Tile 3: Status */}
+          <div className="flex items-center gap-2.5 p-2 sm:p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:bg-slate-800/90 transition-colors">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+              <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[8.5px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400">Status</p>
+              <p className="truncate text-[11.5px] sm:text-[12px] font-bold text-emerald-300">{user.statusKaryawan || '-'}</p>
+            </div>
           </div>
-          <div className="flex min-w-0 items-center gap-2.5 px-4 py-3.5">
-            <PieChart className="h-4 w-4 shrink-0 text-amber-500" strokeWidth={1.8} />
-            <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Cuti tersedia</p><p className="truncate text-[12px] font-semibold text-slate-700">{user.sisaCuti ?? 0} hari</p></div>
+
+          {/* Tile 4: Sisa Cuti */}
+          <div className="flex items-center gap-2.5 p-2 sm:p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 hover:bg-slate-800/90 transition-colors">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/20">
+              <PieChart className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={1.8} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[8.5px] sm:text-[9px] font-bold uppercase tracking-wider text-slate-400">Cuti Tersedia</p>
+              <p className="truncate text-[11.5px] sm:text-[12px] font-bold text-amber-300">{user.sisaCuti ?? 0} hari</p>
+            </div>
           </div>
+
         </div>
       </section>
-
-      {/* --- ABSEN HARI INI --- */}
+      
+      {/* --- TOP ROW: ABSEN HARI INI & MENU SHORTCUT (Side by side on desktop) --- */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5 mb-5 md:mb-6">
+        {/* --- ABSEN HARI INI --- */}
       {/* Dulu "Absen Masuk" dan "Absen Pulang" hanya dua baris di antara
           delapan baris daftar e-Form — padahal keduanya dipakai setiap hari
           oleh setiap orang, sedangkan sisanya sebulan sekali. Sekarang
           keduanya naik ke atas sebagai satu kartu tersendiri, dan jamnya
           langsung terbaca tanpa harus membuka Riwayat. */}
       {adaTombolAbsen && (
-        <div className="mb-5 overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)]">
+        <div className={`overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)] ${canAccessPanel || canApprove ? "md:col-span-6 lg:col-span-5" : "md:col-span-6"}`}>
 
             <div className="flex items-center justify-between px-4 pb-1 pt-4">
                 <div className="flex items-center gap-2">
@@ -975,13 +1104,13 @@ const Skeleton = ({ className }) => (
             )}
         </div>
       )}
-
-      {/* --- MENU SHORTCUT --- */}
+        
+        {/* --- MENU SHORTCUT --- */}
       {/* Satu bar tersegmentasi. Versi lama memakai kartu terpisah dengan warna teks
           berbeda-beda + scroll horizontal, jadi scrollbar-nya ikut terlihat di layar kecil.
           Posisinya dinaikkan ke atas kartu Statistik (Agu 2026): ini navigasi, dan
           navigasi tidak boleh berada di bawah blok angka setinggi satu layar. */}
-      <div className="mb-6 overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)]">
+      <div className={`overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)] flex flex-col justify-center ${adaTombolAbsen ? (canAccessPanel || canApprove ? "md:col-span-6 lg:col-span-7" : "md:col-span-6") : "col-span-12"}`}>
         <div className={`grid divide-x divide-slate-100 ${canApprove && canAccessPanel ? 'grid-cols-5' : (canApprove || canAccessPanel ? 'grid-cols-4' : 'grid-cols-3')}`}>
 
             <button onClick={() => setView('history')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
@@ -1019,9 +1148,10 @@ const Skeleton = ({ className }) => (
             )}
         </div>
       </div>
-
+      </div>
+      
       {approvalNotice && (
-        <div className="mb-5 overflow-hidden rounded-[22px] border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 shadow-[0_10px_30px_-24px_rgba(79,70,229,0.45)]">
+        <div className="mb-5 md:mb-6 overflow-hidden rounded-[22px] border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 shadow-[0_10px_30px_-24px_rgba(79,70,229,0.45)]">
           <div className="flex items-start gap-3 px-4 py-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
               <UsersRound className="h-5 w-5" strokeWidth={1.8} />
@@ -1065,14 +1195,19 @@ const Skeleton = ({ className }) => (
           </div>
         </div>
       )}
-
-      {/* --- STATISTIK (CLICKABLE) --- */}
+      
+      {/* --- RESPONSIVE 2-COLUMN SECTION ON DESKTOP --- */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* LEFT COLUMN: STATISTIK & RINGKASAN PENGAJUAN */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+          {/* --- STATISTIK (CLICKABLE) --- */}
       <div className="mb-5">
 
-        <div className="mb-2 flex items-center justify-between px-1">
+        <div className="mb-3 flex items-center justify-between px-1">
             <div className="flex items-center gap-2">
-                <h3 className="text-[17px] font-semibold tracking-tight text-slate-900">Ringkasan kehadiran</h3>
-                {loadingStats && <Loader2 className="w-3 h-3 text-slate-400 animate-spin"/>}
+                <h3 className="text-base md:text-lg font-bold tracking-tight text-slate-900">Ringkasan Kehadiran</h3>
+                {loadingStats && <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin"/>}
             </div>
             {periodeOpsi.length <= 1 && (
               <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-medium text-slate-400 shadow-sm ring-1 ring-slate-200/80">
@@ -1202,12 +1337,12 @@ const Skeleton = ({ className }) => (
             </div>
         </div>
       </div>
-
-      {/* --- RINGKASAN PENGAJUAN FORM --- */}
+          
+          {/* --- RINGKASAN PENGAJUAN FORM --- */}
       <div className="mb-5">
-        <div className="mb-2 flex items-center justify-between px-1">
-          <h3 className="text-[17px] font-semibold tracking-tight text-slate-900">Ringkasan pengajuan</h3>
-          <span className="text-[10px] text-slate-400">periode yang sama</span>
+        <div className="mb-3 flex items-center justify-between px-1">
+          <h3 className="text-base md:text-lg font-bold tracking-tight text-slate-900">Ringkasan Pengajuan Form</h3>
+          <span className="text-xs font-medium text-slate-400">Periode Terpilih</span>
         </div>
 
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -1320,8 +1455,8 @@ const Skeleton = ({ className }) => (
           )}
         </div>
       </div>
-
-      {/* --- MENU INPUT SHIFT --- */}
+          
+          {/* --- MENU INPUT SHIFT --- */}
       {isShiftWorker && (
          <div className="mb-5">
             <h3 className="font-bold text-slate-700 mb-2 px-1 flex items-center gap-2 text-sm">
@@ -1339,8 +1474,11 @@ const Skeleton = ({ className }) => (
             </button>
          </div>
       )}
-
-      {/* --- MENU ABSENSI (DAFTAR) --- */}
+        </div>
+        
+        {/* RIGHT COLUMN: PENGAJUAN E-FORM & FOOTER */}
+        <div className="lg:col-span-5 xl:col-span-4 space-y-6">
+          {/* --- MENU ABSENSI (DAFTAR) --- */}
       {/* Dulu grid kartu dengan blob dekoratif dan subjudul "Pengajuan Form" yang
           diulang di tiap kartu. Sekarang jadi daftar: kolom kanan dipakai untuk
           sisa kuota, informasi yang sebelumnya baru muncul setelah tombol mati. */}
@@ -1349,9 +1487,10 @@ const Skeleton = ({ className }) => (
           hanya membuat orang ragu mana yang "benar". */}
       {menuEForm.length > 0 && (
       <>
-      <h3 className="text-[15px] font-semibold text-slate-900 tracking-tight mb-2.5 px-1">
-          Pengajuan e-Form
-      </h3>
+      <div className="mb-3 flex items-center justify-between px-1">
+        <h3 className="text-base md:text-lg font-bold tracking-tight text-slate-900">Pengajuan e-Form</h3>
+        <span className="text-xs font-medium text-slate-400">Layanan Mandiri</span>
+      </div>
 
       <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden divide-y divide-slate-100">
         {menuEForm.map((item) => {
@@ -1399,15 +1538,18 @@ const Skeleton = ({ className }) => (
       </div>
       </>
       )}
+          
 
-      {/* --- FOOTER --- */}
-      <div className="p-6 text-center mt-4 border-t border-dashed border-gray-200">
-          <p className="text-[10px] text-slate-400 font
-          -bold uppercase tracking-widest">
-              Version {FRONTEND_VERSION} | &copy; {new Date().getFullYear()}
-          </p>
+        </div>
+        
       </div>
-
+      
+            {/* --- GLOBAL FOOTER (Paling Bawah Halaman - 1 Baris) --- */}
+      <footer className="w-full text-center py-5 mt-8 border-t border-slate-200/80">
+        <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-widest whitespace-nowrap overflow-x-auto">
+          VERSION {FRONTEND_VERSION} &bull; &copy; {new Date().getFullYear()} JPT GROUP &bull; IT SUPPORT DEPT.
+        </p>
+      </footer>
 
       {/* --- ANNOUNCEMENT POPUP (SOFT & ELEGANT V2) --- */}
       {showNews && newsContent && (
@@ -1488,9 +1630,11 @@ const Skeleton = ({ className }) => (
           `}</style>
         </div>
       )}
-    </div> 
+      
+    </div>
   );
 }
+
 
 // --- BARU: SHIFT SCHEDULE SCREEN (LENGKAP: View Report, Edit, Delete, Validasi 1 Jam) ---
 function ShiftScheduleScreen({ user, setView, masterData }) {
@@ -3946,7 +4090,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       : 'Pilih tanggal…';
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-32">
+    <div className="min-h-screen bg-slate-50 pb-32 md:pb-12 md:max-w-2xl lg:max-w-3xl md:mx-auto md:my-4 md:rounded-3xl md:overflow-hidden md:shadow-lg md:border md:border-slate-200">
 
       {/* ================= KEPALA ================= */}
       <div className={`relative overflow-hidden bg-gradient-to-br ${tema.grad} px-5 pt-5 pb-14`}>
@@ -5459,7 +5603,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         </div>
 
         <div className="flex items-center gap-2">
-            <button onClick={() => { fetchHistory(); if(canViewAll) fetchUsers(); }} disabled={loading} className="p-2.5 bg-white text-blue-600 rounded-xl border border-blue-100 hover:bg-blue-50 active:scale-95 transition-all shadow-sm flex items-center justify-center">
+            <button onClick={() => { fetchHistory(); if(canViewAll) fetchUsers(); }} disabled={loading} className="p-2.5 bg-white text-slate-700 hover:text-blue-600 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/50 active:scale-95 transition-all shadow-sm flex items-center justify-center">
                 <RefreshCcw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
             <BackButton onClick={() => setView('dashboard')} />
@@ -5514,7 +5658,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         </div>
       </div>
 
-      <button onClick={() => setShowWebReport(true)} className="w-full mb-4 flex items-center justify-center gap-2 p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all text-xs font-bold shadow-md shadow-indigo-200 active:scale-[0.98]">
+      <button onClick={() => setShowWebReport(true)} className="w-full mb-4 flex items-center justify-center gap-2 p-3.5 bg-slate-900 hover:bg-blue-600 text-white rounded-2xl transition-all text-xs font-bold shadow-lg shadow-slate-900/15 active:scale-[0.98]">
           <Eye className="w-4 h-4" /> MENU LAPORAN
       </button>
 
@@ -6761,26 +6905,30 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   );
 }
 
-// --- 7. LOGIN SCREEN (MODERN & DYNAMIC LIGHT THEME) ---
-function LoginScreen({ onLogin }) { 
+// --- 7. LOGIN SCREEN (RESPONSIVE: FIXED MOBILE & FULLSCREEN DESKTOP) ---
+function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState(''); 
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [focused, setFocused] = useState(null); // Untuk efek fokus input
+  const [focused, setFocused] = useState(null);
+  const [time, setTime] = useState(new Date());
 
-  const handleSubmit = async (e) => { 
-    e.preventDefault(); 
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setLoading(true);
-    try { 
-      const response = await fetchApi(SCRIPT_URL, { 
-        method: 'POST', 
-        body: JSON.stringify({ action: 'login', username, password }) 
+    try {
+      const response = await fetchApi(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'login', username, password })
       });
-      const data = await response.json(); 
+      const data = await response.json();
       if (data.result === 'success' && data.user) {
-        // data.stats / data.pengumuman boleh tidak ada (backend lama) atau
-        // null (gagal dihitung di server). Dashboard menanganinya dengan
-        // mengambil sendiri, persis seperti perilaku sebelum perubahan ini.
         onLogin(
           data.user,
           data.masterData || [],
@@ -6797,147 +6945,191 @@ function LoginScreen({ onLogin }) {
       } else {
         alert(data.message || 'Login Gagal');
       }
-    } catch (err) { 
+    } catch (err) {
       alert('Gagal koneksi server.');
-    } finally { 
-      setLoading(false); 
-    } 
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return ( 
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 relative overflow-hidden font-sans">
-      
-      {/* --- BACKGROUND ANIMATION (Modern Light Blobs) --- */}
-      {/* Blob Biru Muda - Bergerak lambat */}
-      <div className="absolute -top-20 -left-20 w-96 h-96 bg-blue-200/40 rounded-full blur-3xl animate-[pulse_8s_ease-in-out_infinite]"></div>
-      {/* Blob Cyan - Bergerak lambat */}
-      <div className="absolute top-40 right-0 w-72 h-72 bg-cyan-200/30 rounded-full blur-3xl animate-[bounce_10s_infinite]"></div>
-      {/* Blob Ungu Tipis - Bawah */}
-      <div className="absolute -bottom-20 left-20 w-80 h-80 bg-indigo-200/30 rounded-full blur-3xl animate-[pulse_6s_ease-in-out_infinite]"></div>
+  const jamFormatted = time.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const tglFormatted = time.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-      {/* --- CARD CONTAINER (Glassmorphism Light) --- */}
-      <div className="bg-white/80 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-2xl shadow-blue-100/50 w-full max-w-[380px] border border-white/60 relative z-10 transform transition-all duration-500 hover:shadow-blue-200/50">
-        
-        {/* HEADER & ANIMATED LOGO */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="relative group cursor-pointer">
-            {/* Lingkaran Luar Berputar */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-cyan-400 rounded-full blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
-            
-            <div className="relative bg-white p-5 rounded-3xl shadow-lg border border-slate-50 flex items-center justify-center overflow-hidden w-24 h-24 group-hover:scale-105 transition-transform duration-300">
-               {/* Garis Scan Animasi */}
-               <div className="absolute w-full h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent top-0 animate-[scan_2.5s_linear_infinite]"></div>
-               <div className="absolute w-full h-full bg-blue-500/5 top-0 animate-[scan_2.5s_linear_infinite]"></div>
-               
-               <ScanFace className="w-10 h-10 text-slate-700 relative z-10" />
+  return (
+    <div className="min-h-screen w-full flex flex-col md:flex-row bg-slate-950 text-slate-800 font-sans relative overflow-hidden">
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-600/20 md:bg-blue-600/15 rounded-full blur-3xl pointer-events-none animate-[pulse_8s_ease-in-out_infinite]"></div>
+      <div className="absolute top-1/3 -right-32 w-96 h-96 bg-cyan-500/15 md:bg-cyan-500/10 rounded-full blur-3xl pointer-events-none animate-[pulse_10s_ease-in-out_infinite]"></div>
+      <div className="absolute -bottom-32 left-1/3 w-96 h-96 bg-indigo-600/20 md:bg-indigo-600/15 rounded-full blur-3xl pointer-events-none animate-[pulse_7s_ease-in-out_infinite]"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-30 md:opacity-40 pointer-events-none"></div>
+
+      {/* DESKTOP VIEW HERO */}
+      <div className="hidden md:flex md:w-1/2 lg:w-3/5 flex-col justify-between p-8 lg:p-14 relative z-10 border-r border-slate-800/80 bg-gradient-to-br from-slate-950 via-slate-900/90 to-blue-950/80 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/30 p-2.5">
+              <ScanFace className="w-full h-full text-white" />
             </div>
-
-            {/* Status Badge Kecil */}
-            <div className="absolute -bottom-2 -right-2 bg-white p-1.5 rounded-full shadow-md border border-slate-100">
-              <div className="bg-emerald-500 w-3 h-3 rounded-full animate-pulse"></div>
+            <div>
+              <h1 className="text-base font-black tracking-wider text-white">JPT GROUP</h1>
+              <p className="text-[11px] font-medium text-blue-300/80 tracking-wide uppercase">Portal Kehadiran Digital</p>
             </div>
           </div>
-          
-          <div className="text-center mt-6">
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight">Welcome Back</h2>
-            <p className="text-slate-500 text-xs font-medium mt-1">Sistem Absensi Terintegrasi</p>
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/80 border border-slate-700/60 shadow-inner">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 -ml-4"></span>
+            <span className="text-[11px] font-semibold text-slate-300">Sistem Aktif & Terintegrasi</span>
           </div>
         </div>
 
-        {/* FORM INPUT */}
-        <form onSubmit={handleSubmit} className="space-y-5">
-          
-          {/* Input ID Fingerprint */}
-          <div className={`group relative transition-all duration-300 rounded-2xl border bg-white ${focused === 'user' ? 'border-blue-500 ring-4 ring-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-slate-200 shadow-sm'}`}>
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-               <div className={`p-1.5 rounded-lg transition-colors duration-300 ${focused === 'user' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
-                 <Smartphone className="h-4 w-4" />
-               </div>
-            </div>
-            <input 
-              type="text" 
-              value={username} 
-              onFocus={() => setFocused('user')}
-              onBlur={() => setFocused(null)}
-              onChange={e => setUsername(e.target.value)} 
-              className="block w-full pl-12 pr-4 py-4 bg-transparent rounded-2xl text-sm font-bold text-slate-700 placeholder-slate-400 focus:outline-none transition-colors" 
-              placeholder="ID Fingerprint" 
-              required 
-            />
+        <div className="my-auto py-8">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-xs font-semibold mb-5 shadow-sm">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Smart Workforce & Attendance Platform</span>
           </div>
-
-          {/* Input Password */}
-          <div className={`group relative transition-all duration-300 rounded-2xl border bg-white ${focused === 'pass' ? 'border-blue-500 ring-4 ring-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-slate-200 shadow-sm'}`}>
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-               <div className={`p-1.5 rounded-lg transition-colors duration-300 ${focused === 'pass' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
-                 <Key className="h-4 w-4" />
-               </div>
-            </div>
-            <input 
-              type="password" 
-              value={password} 
-              onFocus={() => setFocused('pass')}
-              onBlur={() => setFocused(null)}
-              onChange={e => setPassword(e.target.value)} 
-              className="block w-full pl-12 pr-4 py-4 bg-transparent rounded-2xl text-sm font-bold text-slate-700 placeholder-slate-400 focus:outline-none transition-colors" 
-              placeholder="Kata Sandi" 
-              required 
-            />
-          </div>
-
-          {/* Tombol Login */}
-          <button 
-            type="submit" 
-            disabled={loading} 
-            className="w-full py-4 px-4 rounded-2xl text-white font-bold text-sm bg-slate-900 hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-xl shadow-slate-200 transform transition-all duration-300 hover:-translate-y-1 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed group relative overflow-hidden"
-          >
-            {/* Efek Kilap pada Button */}
-            <div className="absolute top-0 -left-full w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
-            
-            {loading ? (
-              <div className="flex items-center justify-center gap-2">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-200" />
-                <span>Sedang Memproses...</span>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center gap-2">
-                <span>Masuk Aplikasi</span>
-                <ChevronDown className="w-4 h-4 -rotate-90 group-hover:translate-x-1 transition-transform" />
-              </div>
-            )}
-          </button>
-        </form>
-        
-        {/* Footer */}
-        <div className="mt-8 text-center">
-          <p className="text-[10px] text-slate-400 font-medium">
-            &copy; {new Date().getFullYear()} JPT Group &bull; IT Support Dept.
+          <h2 className="text-3xl lg:text-4xl xl:text-5xl font-black text-white tracking-tight leading-tight">
+            Sistem Absensi & <br />
+            <span className="bg-gradient-to-r from-blue-400 via-cyan-300 to-indigo-300 bg-clip-text text-transparent">Manajemen Kehadiran</span>
+          </h2>
+          <p className="mt-4 text-slate-300/90 text-sm lg:text-base leading-relaxed max-w-xl">
+            Solusi digital cerdas untuk pencatatan absensi presisi, validasi geofencing lokasi kerja, verifikasi biometrik anti-spoofing, dan rekapitulasi data kehadiran secara real-time.
           </p>
-          <div className="w-10 h-1 bg-slate-100 rounded-full mx-auto mt-3"></div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 mt-8 max-w-2xl">
+            <div className="bg-slate-900/60 backdrop-blur-md p-4 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all duration-300 hover:translate-y-[-2px] shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center mb-2.5">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <h4 className="text-xs font-bold text-white mb-1">Smart Geofencing</h4>
+              <p className="text-[11px] text-slate-400 leading-snug">Deteksi lokasi & radius presisi dengan proteksi anti fake GPS.</p>
+            </div>
+            <div className="bg-slate-900/60 backdrop-blur-md p-4 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all duration-300 hover:translate-y-[-2px] shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center mb-2.5">
+                <ScanFace className="w-4 h-4" />
+              </div>
+              <h4 className="text-xs font-bold text-white mb-1">Face Liveness</h4>
+              <p className="text-[11px] text-slate-400 leading-snug">Verifikasi wajah aman dan terpercaya tanpa manipulasi foto.</p>
+            </div>
+            <div className="bg-slate-900/60 backdrop-blur-md p-4 rounded-2xl border border-slate-800 hover:border-slate-700 transition-all duration-300 hover:translate-y-[-2px] shadow-sm">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mb-2.5">
+                <Activity className="w-4 h-4" />
+              </div>
+              <h4 className="text-xs font-bold text-white mb-1">Real-time Sync</h4>
+              <p className="text-[11px] text-slate-400 leading-snug">Rekap kehadiran, cuti, lembur, dan shift otomatis terpusat.</p>
+            </div>
+          </div>
+          <div className="mt-8 inline-flex items-center gap-4 bg-slate-900/70 border border-slate-800/80 rounded-2xl px-5 py-3 shadow-inner">
+            <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-cyan-400 flex items-center justify-center">
+              <Clock className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-400 font-medium capitalize">{tglFormatted}</p>
+              <p className="text-lg font-black text-white tabular-nums tracking-wide">{jamFormatted} <span className="text-xs font-semibold text-blue-400">WIB</span></p>
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-6 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>256-bit Encrypted Session • Akses Terautentikasi</span>
+          </div>
+          <span className="font-mono text-[11px] text-slate-500">v{FRONTEND_VERSION}</span>
         </div>
       </div>
-      
-      {/* --- INJECT KEYFRAMES STYLE KHUSUS LOGIN --- */}
-      <style>{`
-        @keyframes scan {
-          0% { top: 0%; opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { top: 100%; opacity: 0; }
-        }
-        @keyframes shimmer {
-          100% { left: 100%; }
-        }
-      `}</style>
-    </div> 
+
+      {/* FORM LOGIN PANEL */}
+      <div className="w-full md:w-1/2 lg:w-2/5 min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 md:p-8 lg:p-12 relative z-10 bg-slate-50 md:bg-slate-950/60 md:backdrop-blur-xl transition-all">
+        <div className="md:hidden absolute -top-20 -left-20 w-80 h-80 bg-blue-200/50 rounded-full blur-3xl pointer-events-none animate-[pulse_8s_ease-in-out_infinite]"></div>
+        <div className="md:hidden absolute top-40 right-0 w-72 h-72 bg-cyan-200/40 rounded-full blur-3xl pointer-events-none animate-[bounce_10s_infinite]"></div>
+        <div className="md:hidden absolute -bottom-20 left-10 w-80 h-80 bg-indigo-200/40 rounded-full blur-3xl pointer-events-none animate-[pulse_6s_ease-in-out_infinite]"></div>
+
+        <div className="bg-white/90 md:bg-white/95 backdrop-blur-2xl p-7 sm:p-9 rounded-[2.25rem] shadow-2xl shadow-blue-500/10 md:shadow-2xl border border-white/80 md:border-white/50 w-full max-w-[370px] sm:max-w-[400px] md:max-w-[420px] relative z-10 transform transition-all duration-300">
+          <div className="flex flex-col items-center mb-7 sm:mb-8">
+            <div className="relative group cursor-pointer">
+              <div className="absolute inset-0 bg-gradient-to-tr from-blue-500 to-cyan-400 rounded-full blur opacity-25 group-hover:opacity-40 transition duration-500"></div>
+              <div className="relative bg-white p-4 sm:p-5 rounded-3xl shadow-lg border border-slate-100 flex items-center justify-center overflow-hidden w-20 h-20 sm:w-24 sm:h-24 group-hover:scale-105 transition-transform duration-300">
+                 <div className="absolute w-full h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent top-0 animate-[scan_2.5s_linear_infinite]"></div>
+                 <div className="absolute w-full h-full bg-blue-500/5 top-0 animate-[scan_2.5s_linear_infinite]"></div>
+                 <ScanFace className="w-9 h-9 sm:w-10 sm:h-10 text-slate-800 relative z-10" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 sm:-bottom-2 sm:-right-2 bg-white p-1.5 rounded-full shadow-md border border-slate-100">
+                <div className="bg-emerald-500 w-3 h-3 rounded-full animate-pulse"></div>
+              </div>
+            </div>
+            <div className="text-center mt-5 sm:mt-6">
+              <h2 className="text-2xl sm:text-2xl font-black text-slate-800 tracking-tight">Selamat Datang</h2>
+              <p className="text-slate-500 text-xs font-medium mt-1">Silakan masuk ke akun presensi Anda</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">ID Karyawan / Fingerprint</label>
+              <div className={`group relative transition-all duration-300 rounded-2xl border bg-white ${focused === 'user' ? 'border-blue-500 ring-4 ring-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-slate-200 shadow-sm'}`}>
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                   <div className={`p-1.5 rounded-lg transition-colors duration-300 ${focused === 'user' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                     <Smartphone className="h-4 w-4" />
+                   </div>
+                </div>
+                <input type="text" value={username} onFocus={() => setFocused('user')} onBlur={() => setFocused(null)} onChange={e => setUsername(e.target.value)} className="block w-full pl-12 pr-4 py-3.5 sm:py-4 bg-transparent rounded-2xl text-sm font-bold text-slate-800 placeholder-slate-400 focus:outline-none transition-colors" placeholder="Contoh: 1024" autoComplete="username" required />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Kata Sandi</label>
+              <div className={`group relative transition-all duration-300 rounded-2xl border bg-white ${focused === 'pass' ? 'border-blue-500 ring-4 ring-blue-500/10 shadow-lg shadow-blue-500/10' : 'border-slate-200 shadow-sm'}`}>
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                   <div className={`p-1.5 rounded-lg transition-colors duration-300 ${focused === 'pass' ? 'bg-blue-50 text-blue-600' : 'bg-slate-50 text-slate-400'}`}>
+                     <Key className="h-4 w-4" />
+                   </div>
+                </div>
+                <input type={showPassword ? "text" : "password"} value={password} onFocus={() => setFocused('pass')} onBlur={() => setFocused(null)} onChange={e => setPassword(e.target.value)} className="block w-full pl-12 pr-11 py-3.5 sm:py-4 bg-transparent rounded-2xl text-sm font-bold text-slate-800 placeholder-slate-400 focus:outline-none transition-colors" placeholder="Masukkan kata sandi" autoComplete="current-password" required />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} tabIndex={-1} className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none" aria-label={showPassword ? "Sembunyikan sandi" : "Tampilkan sandi"}>
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" disabled={loading} className="w-full py-3.5 sm:py-4 px-4 rounded-2xl text-white font-bold text-sm bg-slate-900 hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-xl shadow-slate-900/20 transform transition-all duration-300 hover:-translate-y-0.5 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed group relative overflow-hidden mt-2">
+              <div className="absolute top-0 -left-full w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent group-hover:animate-[shimmer_1.5s_infinite]"></div>
+              {loading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-200" />
+                  <span>Sedang Memverifikasi...</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-2">
+                  <span>Masuk Aplikasi</span>
+                  <ChevronDown className="w-4 h-4 -rotate-90 group-hover:translate-x-1 transition-transform" />
+                </div>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-5 p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-slate-500 leading-tight">Gunakan ID Fingerprint yang terdaftar di HRD. Hubungi tim IT Support jika mengalami kendala login.</p>
+          </div>
+
+          <div className="mt-6 text-center">
+            <p className="text-[10px] text-slate-400 font-medium">&copy; {new Date().getFullYear()} JPT Group &bull; IT Support Dept.</p>
+            <div className="w-10 h-1 bg-slate-100 rounded-full mx-auto mt-2.5"></div>
+          </div>
+        </div>
+
+        <style>{`@keyframes scan { 0% { top: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } } @keyframes shimmer { 100% { left: 100%; } }`}</style>
+      </div>
+    </div>
   );
 }
 
-// --- 8. CHANGE PASSWORD SCREEN (TIDAK BERUBAH) ---
+// --- 8. CHANGE PASSWORD SCREEN (EPIC THEME) ---
 function ChangePasswordScreen({ user, setView }) { 
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState(''); 
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
   const handleChangePassword = async (e) => { 
     e.preventDefault(); 
     setLoading(true);
@@ -6950,7 +7142,7 @@ function ChangePasswordScreen({ user, setView }) {
         alert('Password berhasil diubah!'); 
         setView('dashboard');
       } else { 
-        alert(res.message);
+        alert(res.message || 'Gagal mengubah kata sandi.');
       } 
     } catch (err) { 
       alert('Gagal menghubungi server.');
@@ -6958,19 +7150,97 @@ function ChangePasswordScreen({ user, setView }) {
       setLoading(false); 
     } 
   };
+
   return ( 
-    <div className="p-4">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold ml-2">Ganti Password</h2>
-        <BackButton onClick={() => setView('dashboard')} />
-      </div>
-      
-      <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+    <div className="min-h-screen pb-12 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-900/5 border border-slate-200/80 relative overflow-hidden">
+        
+        {/* Top Header inside Card */}
+        <div className="flex items-center justify-between pb-5 mb-6 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-blue-500/25">
+              <KeyRound className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-slate-800 tracking-tight">Ubah Kata Sandi</h2>
+              <p className="text-[11px] text-slate-400 font-medium">Perbarui keamanan akun Anda</p>
+            </div>
+          </div>
+          <BackButton onClick={() => setView('dashboard')} />
+        </div>
+
         <form onSubmit={handleChangePassword} className="space-y-4">
-          <input required type="password" className="w-full p-2 border rounded" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="Password Lama" />
-          <input required type="password" className="w-full p-2 border rounded" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Password Baru" />
-          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-blue-700">{loading ? 'Memproses...' : 'Ubah Password'}</button>
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Kata Sandi Lama</label>
+            <div className="relative">
+              <input
+                required
+                type={showOldPassword ? "text" : "password"}
+                className="w-full px-4 py-3.5 pr-11 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                value={oldPassword}
+                onChange={e => setOldPassword(e.target.value)}
+                placeholder="Masukkan kata sandi lama"
+              />
+              <button
+                type="button"
+                onClick={() => setShowOldPassword(!showOldPassword)}
+                tabIndex={-1}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+              >
+                {showOldPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">Kata Sandi Baru</label>
+            <div className="relative">
+              <input
+                required
+                type={showNewPassword ? "text" : "password"}
+                className="w-full px-4 py-3.5 pr-11 rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Minimal 6 karakter"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                tabIndex={-1}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 px-4 rounded-2xl text-white font-bold text-sm bg-slate-900 hover:bg-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-500/30 shadow-xl shadow-slate-900/15 transform transition-all duration-300 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Memproses Perubahan...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>Simpan Kata Sandi Baru</span>
+                </>
+              )}
+            </button>
+          </div>
         </form>
+
+        <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Pastikan kata sandi baru mudah diingat dan tidak dibagikan kepada orang lain.
+          </p>
+        </div>
+
       </div>
     </div> 
   );
