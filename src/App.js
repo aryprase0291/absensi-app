@@ -11,6 +11,7 @@ import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
 import ImportNotifier from './components/ImportNotifier';
+import ProcessingModal from './components/ProcessingModal';
 import { getVerifiedGeolocation } from './utils/antiFakeGps';
 import { startFaceLivenessTracker } from './utils/faceLiveness';
 
@@ -4466,6 +4467,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           </div>
         </div>
       )}
+      <ProcessingModal
+        isOpen={isSubmitting}
+        title={isEditMode ? "Menyimpan Perubahan..." : "Mengirim Pengajuan..."}
+        subtitle="Sistem sedang memverifikasi koordinat GPS, validasi biometrik, dan sinkronisasi ke server."
+      />
     </div>
   );
 }

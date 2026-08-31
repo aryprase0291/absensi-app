@@ -16,3 +16,39 @@ html, body {
   touch-action: manipulation;
   overscroll-behavior-y: none;
 }
+
+@keyframes radarSweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.08); }
+}
+
+@keyframes shimmerBar {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes softFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-radar {
+  animation: radarSweep 2.5s linear infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.animate-shimmer-bar {
+  animation: shimmerBar 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-soft-float {
+  animation: softFloat 3s ease-in-out infinite;
+}
