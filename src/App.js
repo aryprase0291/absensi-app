@@ -5114,17 +5114,25 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           let availableDivisions = [];
           const start = reportStartDate ? new Date(reportStartDate).setHours(0, 0, 0, 0) : null;
           const end = reportEndDate ? new Date(reportEndDate).setHours(23, 59, 59, 999) : null;
+
+          const getAcaraDateSource = (item) => {
+              if (item && item.tglMulai && item.tglMulai !== '-' && !isNaN(new Date(item.tglMulai).getTime())) {
+                  return String(item.tglMulai);
+              }
+              return String(item.waktu);
+          };
           
           if (reportCategory === 'Tally') {
               const tallyTypes = ['Hadir', 'Pulang', 'Standby', 'Off'];
               const filteredRaw = history.filter(item => {
-                 const itemDate = new Date(item.waktu).setHours(0,0,0,0);
+                 const itemDate = new Date(getAcaraDateSource(item)).setHours(0,0,0,0);
                  const matchDate = (!start && !end) || (itemDate >= start && itemDate <= end);
                  return matchDate && tallyTypes.includes(item.tipe);
               });
               const groupedMap = {};
               filteredRaw.forEach(item => {
-                  const dateKey = new Date(item.waktu).toLocaleDateString('en-CA'); 
+                  const acaraDateSrc = getAcaraDateSource(item);
+                  const dateKey = new Date(acaraDateSrc).toLocaleDateString('en-CA'); 
                   const groupKey = `${item.userId}_${dateKey}`;
                   if (!groupedMap[groupKey]) {
                       groupedMap[groupKey] = {
@@ -5133,7 +5141,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                           nama: item.nama, 
                           noPayroll: item.noPayroll, 
                           divisi: item.divisi || '-',
-                          dateObj: new Date(item.waktu), tanggal: item.waktu, foto: item.foto || '-', 
+                          dateObj: new Date(acaraDateSrc), tanggal: acaraDateSrc, foto: item.foto || '-', 
                           catatanList: item.catatan ? [item.catatan] : [], masuk: '-', pulang: '-', standby: '-'
                       };
                   } else {
@@ -5156,7 +5164,12 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           } else {
               let sourceData = (reportCategory === 'RunningShift') ? shiftReport : history;
               finalData = sourceData.filter(item => {
-                  const dateRef = reportCategory === 'RunningShift' ? item.tanggal : item.waktu;
+                  let dateRef;
+                  if (reportCategory === 'RunningShift') {
+                      dateRef = item.tanggal;
+                  } else {
+                      dateRef = getAcaraDateSource(item);
+                  }
                   const itemDate = new Date(dateRef).setHours(0, 0, 0, 0);
                   const matchDate = (!start && !end) || (itemDate >= start && itemDate <= end);
                   let matchStatus = true; let matchForm = true;

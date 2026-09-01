@@ -2980,8 +2980,9 @@ function handleGetHistory(data) {
         idAkun: rowsAbsen[i][21] || rowUserId
       });
     }
-    if (!data.canViewAll && history.length >= 50) break;
-    if (data.canViewAll && history.length >= 500) break;
+  }
+  if (history.length > 5000) {
+    history.length = 5000;
   }
   return responseJSON({ result: 'success', history: history, period: { ...periodeFilter, aktif: periodeAktif } });
 }
