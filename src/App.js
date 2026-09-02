@@ -96,6 +96,9 @@ const fetchApi = async (url, opts = {}, percobaan = 1) => {
   let jsonValid = true;
   try {
     data = await res.clone().json();
+    if (data && typeof data === 'object' && data.serverTimestamp) {
+      updateServerTime(data.serverTimestamp);
+    }
   } catch (e) {
     jsonValid = false;
   }
@@ -136,11 +139,36 @@ const fetchApi = async (url, opts = {}, percobaan = 1) => {
   return res;
 };
 
+// ============================================================
+// SINKRONISASI WAKTU SERVER (Mencegah manipulasi jam perangkat)
+// ============================================================
+let serverTimeOffset = (() => {
+  try {
+    const val = sessionStorage.getItem('server_time_offset');
+    return val !== null ? parseInt(val, 10) : 0;
+  } catch (e) {
+    return 0;
+  }
+})();
+
+export const updateServerTime = (serverTimestamp) => {
+  if (typeof serverTimestamp === 'number' && !isNaN(serverTimestamp)) {
+    const offset = serverTimestamp - Date.now();
+    serverTimeOffset = offset;
+    try {
+      sessionStorage.setItem('server_time_offset', String(offset));
+    } catch (e) {}
+  }
+};
+
+export const getServerNow = () => {
+  return new Date(Date.now() + serverTimeOffset);
+};
+
     // HELPER FORMAT TANGGAL GLOBAL
-// Tanggal hari ini menurut jam PERANGKAT (bukan UTC), format yyyy-MM-dd.
-// Dipakai untuk mencocokkan catatan absen lokal dengan hari berjalan:
-// toISOString() akan menggeser absen pagi hari WIB ke tanggal kemarin.
-const tglLokal = (d = new Date()) =>
+// Tanggal hari ini mengikuti jam SERVER (WIB), format yyyy-MM-dd.
+// Dipakai untuk mencocokkan catatan absen lokal dengan hari berjalan.
+const tglLokal = (d = getServerNow()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
@@ -531,7 +559,7 @@ function labelPeriodeDDMM(mulai, selesai) {
 }
 
 function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice }) {
-  const [time, setTime] = useState(new Date());
+  const [time, setTime] = useState(() => getServerNow());
   const [cuaca, setCuaca] = useState(null);
 
   // STATISTIK YANG SUDAH IKUT DI RESPONS LOGIN (Agu 2026).
@@ -641,7 +669,7 @@ useEffect(() => { (async () => {
 })(); }, []);
   
     // LOGIC TIMER / DETAK JAM REAL-TIME
-useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
+useEffect(() => { const t = setInterval(() => setTime(getServerNow()), 1000); return () => clearInterval(t); }, []);
 
 // Cuaca bersifat tambahan saja: izin lokasi ditolak, API gagal, atau perangkat
 // offline tidak boleh menghambat proses login maupun absensi.
@@ -3954,7 +3982,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0);
           const fontSize = Math.floor(canvas.width / 25); ctx.font = `bold ${fontSize}px sans-serif`;
           ctx.textAlign = "right"; ctx.textBaseline = "bottom"; const paddingX = 20; const paddingY = 20;
-          const now = new Date(); const timestampText = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour12: false })}`;
+          const now = getServerNow(); const timestampText = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour12: false })}`;
           let gpsText = location ? `${location.lat}, ${location.lng}` : "No GPS";
           ctx.lineWidth = 3; ctx.strokeStyle = 'black'; ctx.fillStyle = "white";
           ctx.strokeText(timestampText, canvas.width - paddingX, canvas.height - paddingY); ctx.fillText(timestampText, canvas.width - paddingX, canvas.height - paddingY);
@@ -4027,24 +4055,22 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       if (data.result === 'success') {
         alert(data.message);
 
-        // Catat jam masuk/pulang hari ini secara lokal supaya kartu
-        // "Absensi hari ini" di dashboard langsung terisi, tanpa menunggu
-        // stats berikutnya turun dari server. Ini CADANGAN, bukan sumber
-        // kebenaran — dashboard selalu mendahulukan angka dari hitungStats.
+        // Catat jam masuk/pulang hari ini mengikuti JAM SERVER
+        // Nilai diambil langsung dari data.serverTime / data.jam respons server
         if (!isEditMode && (type === 'Hadir' || type === 'Pulang')) {
           try {
-            const skr = new Date();
-            const hariIni = tglLokal(skr);
+            const serverJam = data.serverTime || data.jam || getServerNow().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
+            const serverTgl = data.serverDate || data.tanggal || tglLokal(getServerNow());
+
             let simpan = {};
             try {
               const lama = JSON.parse(localStorage.getItem('absen_hari_ini') || '{}');
-              if (lama.tgl === hariIni && String(lama.userId) === String(user.id)) simpan = lama;
+              if (lama.tgl === serverTgl && String(lama.userId) === String(user.id)) simpan = lama;
             } catch (e2) { /* isi rusak: mulai dari kosong */ }
 
-            simpan.tgl = hariIni;
+            simpan.tgl = serverTgl;
             simpan.userId = user.id;
-            simpan[type === 'Hadir' ? 'masuk' : 'pulang'] =
-              String(skr.getHours()).padStart(2, '0') + ':' + String(skr.getMinutes()).padStart(2, '0');
+            simpan[type === 'Hadir' ? 'masuk' : 'pulang'] = serverJam;
 
             localStorage.setItem('absen_hari_ini', JSON.stringify(simpan));
           } catch (e2) { /* localStorage penuh/diblokir: abaikan saja */ }
@@ -6943,11 +6969,11 @@ function LoginScreen({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState(null);
-  const [time, setTime] = useState(new Date());
+  const [time, setTime] = useState(() => getServerNow());
   const [showResetModal, setShowResetModal] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
+    const timer = setInterval(() => setTime(getServerNow()), 1000);
     return () => clearInterval(timer);
   }, []);
 
