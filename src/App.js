@@ -3858,6 +3858,51 @@ function gambarStempelKanan(ctx, teks, xKanan, yBawah, fontSizeAwal, maxWidth, m
   return baris.length * tinggiBaris;
 }
 
+// Menggambar seluruh stempel (waktu + lokasi) pada sebuah context canvas.
+// Dipakai dua kali: saat foto dijepret, dan saat stempel digambar ULANG
+// setelah nama alamat tiba.
+function gambarStempelFoto(ctx, lebar, tinggi, timestampText, lokasiText) {
+  const fontSize = Math.floor(lebar / 25);
+  const paddingX = 20;
+  const paddingY = 20;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'black';
+  ctx.fillStyle = 'white';
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  ctx.strokeText(timestampText, lebar - paddingX, tinggi - paddingY);
+  ctx.fillText(timestampText, lebar - paddingX, tinggi - paddingY);
+  gambarStempelKanan(ctx, lokasiText, lebar - paddingX, tinggi - paddingY - (fontSize * 1.2), fontSize, lebar - (paddingX * 2), 2);
+}
+
+// Menggambar ulang stempel di atas foto MENTAH (yang belum berstempel).
+//
+// Kenapa perlu: seksi Foto berada di ATAS seksi Lokasi pada form, jadi
+// karyawan hampir selalu menjepret SEBELUM nama alamat selesai diambil
+// dari server. Kalau stempel hanya digambar sekali saat menjepret, foto
+// akan hampir selalu berisi koordinat — persis keluhan yang muncul.
+function buatFotoBerstempel(dataUrlMentah, timestampText, lokasiText) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        gambarStempelFoto(ctx, c.width, c.height, timestampText, lokasiText);
+        resolve(c.toDataURL('image/jpeg', 0.8));
+      } catch (e) {
+        resolve(null); // gagal menggambar ulang: foto lama tetap dipakai
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrlMentah;
+  });
+}
+
 function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterData }) {
   const type = localStorage.getItem('absenType') || 'Hadir';
   const isEditMode = !!editItem;
@@ -3885,6 +3930,9 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const trackerRef = useRef(null);
+  // Menyimpan foto SEBELUM diberi stempel, supaya stempelnya bisa digambar
+  // ulang begitu nama alamat tiba tanpa perlu menjepret ulang.
+  const fotoMentahRef = useRef(null);
   const [photo, setPhoto] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [facingMode, setFacingMode] = useState(type === 'Sakit' ? 'environment' : 'user');
@@ -4024,6 +4072,24 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
     return () => { hidup = false; };
   }, [location]);
 
+  // --- GAMBAR ULANG STEMPEL SETELAH ALAMAT TIBA ---
+  // Ini yang membuat nama alamat benar-benar sampai ke foto. Tanpa efek
+  // ini, stempel hanya ditulis sekali saat menjepret — dan karena seksi
+  // Foto ada di atas seksi Lokasi, saat itu alamat hampir tidak pernah
+  // sudah siap, sehingga foto selalu berisi koordinat.
+  useEffect(() => {
+    if (alamatStatus !== 'ada' || !alamat) return;
+    const mentah = fotoMentahRef.current;
+    if (!mentah || mentah.pakaiAlamat) return; // belum ada foto, atau sudah beralamat
+    let hidup = true;
+    buatFotoBerstempel(mentah.dataUrl, mentah.timestampText, alamat).then((baru) => {
+      if (!hidup || !baru) return;
+      fotoMentahRef.current = { ...mentah, pakaiAlamat: true };
+      setPhoto(baru);
+    });
+    return () => { hidup = false; };
+  }, [alamatStatus, alamat]);
+
   // Clean up camera & face tracker on unmount
   useEffect(() => {
     return () => {
@@ -4095,20 +4161,22 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       if (video && canvas) { 
           canvas.width = video.videoWidth; canvas.height = video.videoHeight; 
           const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0);
-          const fontSize = Math.floor(canvas.width / 25); ctx.font = `bold ${fontSize}px sans-serif`;
-          ctx.textAlign = "right"; ctx.textBaseline = "bottom"; const paddingX = 20; const paddingY = 20;
           const now = getServerNow(); const timestampText = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour12: false })}`;
-          // Nama tempat lebih dulu. Koordinat hanya dipakai kalau alamat
-          // belum sempat didapat saat tombol jepret ditekan — pengambilan
-          // foto sengaja TIDAK ditahan menunggu jaringan.
-          // Koordinat aslinya tetap tersimpan penuh di kolom Lokasi dan
-          // sheet GpsAudit, jadi nilai forensiknya tidak hilang.
-          const lokasiText = (alamatStatus === 'ada' && alamat)
+          // Simpan gambar POLOS dulu. Waktu jepret ikut disimpan supaya
+          // penggambaran ulang nanti tetap memakai jam saat foto diambil,
+          // bukan jam saat alamat tiba.
+          const pakaiAlamat = !!(alamatStatus === 'ada' && alamat);
+          fotoMentahRef.current = {
+            dataUrl: canvas.toDataURL('image/jpeg', 0.92),
+            timestampText,
+            pakaiAlamat
+          };
+          // Nama tempat kalau sudah ada; kalau belum, koordinat dipakai
+          // sementara dan akan diganti otomatis begitu alamat tiba.
+          const lokasiText = pakaiAlamat
             ? alamat
             : (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : "No GPS");
-          ctx.lineWidth = 3; ctx.strokeStyle = 'black'; ctx.fillStyle = "white";
-          ctx.strokeText(timestampText, canvas.width - paddingX, canvas.height - paddingY); ctx.fillText(timestampText, canvas.width - paddingX, canvas.height - paddingY);
-          gambarStempelKanan(ctx, lokasiText, canvas.width - paddingX, canvas.height - paddingY - (fontSize * 1.2), fontSize, canvas.width - (paddingX * 2), 2);
+          gambarStempelFoto(ctx, canvas.width, canvas.height, timestampText, lokasiText);
           setPhoto(canvas.toDataURL('image/jpeg', 0.8)); 
           if (trackerRef.current) {
             trackerRef.current.stop();
@@ -4515,7 +4583,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
 
               {photo && (
                 <button
-                  onClick={() => { setPhoto(null); startCamera(); }}
+                  onClick={() => { /* Wajib dikosongkan: tanpa ini efek penggambaran ulang stempel bisa memunculkan kembali foto yang baru saja dibuang. */ fotoMentahRef.current = null; setPhoto(null); startCamera(); }}
                   className="mt-2.5 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[12.5px] font-semibold text-slate-700 transition-colors active:scale-[0.99]"
                 >
                   <RotateCcw className="w-3.5 h-3.5" strokeWidth={2.2} /> Ambil ulang

@@ -195,6 +195,16 @@ besar daripada menambah heuristik baru.
 | `src/App.js` | Import, rute `gps_audit`, menu di AdminPanel, kirim `gpsBukti`. |
 | `scripts/test-antifakegps.js` | **Baru.** 15 kasus uji. |
 
+### Judul kolom sheet GpsAudit
+
+Sheet `GpsAudit` yang sudah terlanjur dibuat SEBELUM kolom `Alamat` ada akan
+punya judul lama (18 nama) sementara baris barunya ditulis 19 nilai — kolom
+Alamat muncul di bawah judul `Akurasi(m)`. `_pastikanSheetGpsAudit()` kini
+memeriksa dan memperbaiki baris judul setiap kali menulis audit.
+
+Baris yang tercatat sebelum perbaikan tetap bergeser satu kolom mulai dari
+Alamat. Karena hanya menyangkut baris uji awal, tidak diperbaiki otomatis.
+
 Lihat juga `NAMA-LOKASI.md` — koordinat ditampilkan sebagai nama alamat, dan
 sheet `GpsAudit` ikut menyimpan alamat setiap percobaan.
 

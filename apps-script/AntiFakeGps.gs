@@ -327,6 +327,26 @@ function _pastikanSheetGpsAudit() {
     sheet = SS.insertSheet(SHEET_GPS_AUDIT);
     sheet.getRange(1, 1, 1, GPS_AUDIT_HEADERS.length).setValues([GPS_AUDIT_HEADERS]);
     sheet.setFrozenRows(1);
+    return sheet;
+  }
+
+  // Perbaikan judul kolom.
+  //
+  // Sheet ini dibuat SEBELUM kolom "Alamat" ditambahkan, dan dulu judulnya
+  // hanya ditulis saat sheet pertama kali dibuat. Akibatnya baris baru
+  // ditulis dengan 19 nilai sementara judulnya masih 18 nama lama, sehingga
+  // kolom Alamat muncul di bawah judul "Akurasi(m)" — menyesatkan siapa pun
+  // yang membaca sheet ini langsung.
+  try {
+    const lebar = Math.max(sheet.getLastColumn(), GPS_AUDIT_HEADERS.length);
+    const judul = sheet.getRange(1, 1, 1, lebar).getValues()[0];
+    let cocok = true;
+    for (let i = 0; i < GPS_AUDIT_HEADERS.length; i++) {
+      if (String(judul[i] || '').trim() !== GPS_AUDIT_HEADERS[i]) { cocok = false; break; }
+    }
+    if (!cocok) sheet.getRange(1, 1, 1, GPS_AUDIT_HEADERS.length).setValues([GPS_AUDIT_HEADERS]);
+  } catch (e) {
+    console.warn('Judul kolom GpsAudit gagal diperbaiki: ' + e.message);
   }
   return sheet;
 }

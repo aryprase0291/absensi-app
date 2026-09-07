@@ -227,9 +227,29 @@ teks alamat jauh lebih panjang dari koordinat:
   dibungkus sama sekali, jadi dipotong dengan `…`. Tanpa ini teksnya meluber
   keluar bingkai dan justru bagian depan alamat yang hilang.
 
-Pengambilan foto **tidak ditahan** menunggu alamat. Kalau tombol jepret ditekan
-sebelum alamat tiba, koordinat dipakai sebagai cadangan — tapi kini diformat 6
-desimal, bukan 15 digit penuh seperti sebelumnya.
+### Stempel digambar ULANG setelah alamat tiba
+
+Perbaikan pertama masih kurang, dan gejalanya tetap sama: foto terus berisi
+koordinat meski geocoding jelas berjalan.
+
+Sebabnya urutan layar. Seksi **Foto** berada di ATAS seksi **Lokasi**, jadi
+karyawan menekan jepret lebih dulu — sementara nama alamat baru tiba beberapa
+detik kemudian, setelah GPS terkunci (dua sampel + jeda 1,2 detik untuk
+pengukuran jitter) lalu satu perjalanan bolak-balik ke Apps Script. Praktis
+tidak pernah ada alamat pada saat tombol jepret ditekan.
+
+Sekarang foto **polos** disimpan di `fotoMentahRef` beserta jam jepretnya.
+Begitu alamat tiba, stempel digambar ulang di atas gambar polos itu, dan
+pratinjau ikut diperbarui. Jam yang tertulis tetap jam saat foto diambil,
+bukan jam saat alamat datang.
+
+Pengambilan foto tetap **tidak ditahan** menunggu jaringan. Kalau alamat tidak
+pernah datang, koordinat dipakai sebagai cadangan — kini 6 desimal, bukan 15
+digit penuh.
+
+Satu hal yang wajib ikut: tombol ambil ulang foto **harus mengosongkan**
+`fotoMentahRef`. Tanpa itu, efek penggambaran ulang akan memunculkan kembali
+foto yang baru saja dibuang karyawan.
 
 Koordinat aslinya tetap tersimpan penuh di kolom Lokasi dan sheet `GpsAudit`,
 jadi nilai forensiknya tidak berkurang sedikit pun.
