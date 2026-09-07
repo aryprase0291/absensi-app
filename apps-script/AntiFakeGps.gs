@@ -20,7 +20,7 @@
 
 const SHEET_GPS_AUDIT = "GpsAudit";
 const GPS_AUDIT_HEADERS = [
-  "Waktu", "UUID", "UserID", "Nama", "Tipe", "Latitude", "Longitude",
+  "Waktu", "UUID", "UserID", "Nama", "Tipe", "Latitude", "Longitude", "Alamat",
   "Akurasi(m)", "Skor", "Level", "Keputusan", "Alasan",
   "Jarak Geofence(m)", "Kecepatan(km/j)", "Jitter(m)", "Device ID",
   "Platform", "User Agent"
@@ -353,6 +353,10 @@ function catatAuditGps(data, analisa, keputusan, uuid) {
       tipe,
       titik ? titik.lat : '-',
       titik ? titik.lng : '-',
+      // Alamat terbaca. Untuk percobaan yang DITOLAK ini justru paling
+      // berharga: HRD melihat "Jl. X, Sidoarjo", bukan sederet angka.
+      // Hampir selalu gratis karena Geocode.gs meng-cache per titik.
+      (typeof alamatDariLokasi === 'function' ? (alamatDariLokasi(data.lokasi) || '-') : '-'),
       isFinite(Number(data.gpsAccuracy)) ? Math.round(Number(data.gpsAccuracy)) : '-',
       analisa.skor,
       analisa.level,
@@ -522,6 +526,7 @@ function auditGpsHistoris(opsi) {
     laporan.push({
       userId: uid,
       nama: u.nama,
+      alamatDominan: (typeof alamatDariLokasi === 'function' ? (alamatDariLokasi(kunciDominan) || '') : ''),
       totalAbsen: total,
       titikUnik: jumlahUnik,
       koordinatDominan: kunciDominan,
@@ -565,16 +570,16 @@ function handleGetGpsAudit(data) {
     const nilai = sheet.getRange(lastRow - jumlah + 1, 1, jumlah, GPS_AUDIT_HEADERS.length).getValues();
     for (let i = nilai.length - 1; i >= 0; i--) {
       const r = nilai[i];
-      const level = String(r[9] || '');
+      const level = String(r[10] || '');
       if (data.hanyaMencurigakan !== false && level !== 'BLOKIR' && level !== 'TINJAU' && level !== 'WASPADA') continue;
       if (data.userId && String(r[2]) !== String(data.userId)) continue;
       kejadian.push({
         waktu: r[0] instanceof Date ? Utilities.formatDate(r[0], Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') : String(r[0]),
         uuid: r[1], userId: r[2], nama: r[3], tipe: r[4],
-        lat: r[5], lng: r[6], akurasi: r[7],
-        skor: r[8], level: level, keputusan: r[10], alasan: r[11],
-        jarakGeofence: r[12], kecepatan: r[13], jitter: r[14],
-        deviceId: r[15], platform: r[16]
+        lat: r[5], lng: r[6], alamat: r[7], akurasi: r[8],
+        skor: r[9], level: level, keputusan: r[11], alasan: r[12],
+        jarakGeofence: r[13], kecepatan: r[14], jitter: r[15],
+        deviceId: r[16], platform: r[17]
       });
     }
   }

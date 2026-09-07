@@ -165,6 +165,7 @@ function doPost(e) {
     if (action === 'get_user_list_admin') return handleGetUserListAdmin(data); // Ambil list user lengkap
     if (action === 'get_approval_team_config') return handleGetApprovalTeamConfig(data);
     if (action === 'save_approval_team_config') return handleSaveApprovalTeamConfig(data);
+    if (action === 'get_alamat') return handleGetAlamat(data);
     if (action === 'get_gps_audit') return handleGetGpsAudit(data);
     if (action === 'run_gps_audit_historis') return handleRunGpsAuditHistoris(data);
     if (action === 'get_geofence_config') return handleGetGeofenceConfig(data);
@@ -463,6 +464,17 @@ function handleAbsen(data) {
   // saat menilai satu kasus.
   catatGps(analisaGps.level === 'AMAN' ? 'DITERIMA' : 'DITERIMA-DITANDAI', uuid);
 
+  // --- NAMA ALAMAT DARI KOORDINAT (lihat Geocode.gs) ---
+  // Ditulis ke kolom "Alamat", BUKAN menimpa kolom Lokasi: geofence dan
+  // AntiFakeGps.gs membaca kolom Lokasi sebagai angka. Kegagalan di sini
+  // (kuota habis, layanan bermasalah) hanya berarti kolom Alamat kosong —
+  // absen tetap tersimpan. Bisa diisi belakangan lewat isiAlamatYangKosong().
+  let alamatTersimpan = '';
+  if (typeof tulisAlamatAbsensi === 'function') {
+    try { alamatTersimpan = tulisAlamatAbsensi(sheet, sheet.getLastRow(), data.lokasi); }
+    catch (e) { console.warn('Alamat gagal ditulis: ' + e.message); }
+  }
+
   // --- KIRIM EMAIL ---
   if (allowedTypes.includes(data.tipe)) {
       if (emailAtasan && emailAtasan.includes('@')) {
@@ -489,7 +501,7 @@ function handleAbsen(data) {
       }
   }
 
-  return responseJSON({ result: 'success', message: '✅Pengajuan Berhasil...!' });
+  return responseJSON({ result: 'success', message: '✅Pengajuan Berhasil...!', alamat: alamatTersimpan || '' });
 }
 
 function checkCutiOverlap(userId, newStartStr, newEndStr) {
@@ -1315,7 +1327,15 @@ function handleGetDbAbsen(data) {
   const onlineByDate = {};
   let latestOnlineTimestamp = 0;
   const sheetOnline = SS.getSheetByName(SHEET_ABSENSI);
-  const rowsOnline = sheetOnline ? bacaSheet(sheetOnline, 17) : [];
+  // Lebar baca mengikuti posisi kolom "Alamat" yang dibuat Geocode.gs.
+  // Dulu dipatok 17; kalau tetap dipatok, kolom Alamat tidak akan pernah
+  // ikut terbaca dan riwayat selamanya menampilkan angka.
+  let _lebarOnline = 17;
+  if (sheetOnline && typeof indeksKolomAlamat === 'function') {
+    try { _lebarOnline = Math.max(17, indeksKolomAlamat(sheetOnline)); } catch (e) { /* pakai 17 */ }
+  }
+  const _idxAlamatOnline = _lebarOnline > 17 ? _lebarOnline - 1 : -1;
+  const rowsOnline = sheetOnline ? bacaSheet(sheetOnline, _lebarOnline) : [];
 
   for (let i = 1; i < rowsOnline.length; i++) {
     const row = rowsOnline[i];
@@ -1344,7 +1364,8 @@ function handleGetDbAbsen(data) {
       waktu: formatTimeOnly_Backend(waktu),
       status: status || 'Verified',
       catatan: row[6] || '-',
-      lokasi: row[5] || '-'
+      lokasi: row[5] || '-',
+      alamat: (_idxAlamatOnline >= 0 ? String(row[_idxAlamatOnline] || '').trim() : '')
     };
     bucket.onlineRecords.push(record);
 
@@ -2950,6 +2971,12 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
 function handleGetHistory(data) {
   const sheetAbsen = SS.getSheetByName(SHEET_ABSENSI);
   const rowsAbsen = sheetAbsen.getDataRange().getValues();
+  // getDataRange() sudah menarik semua kolom, jadi di sini cukup mencari
+  // POSISI kolom Alamat — tanpa membaca ulang sheet.
+  let _idxAlamatHistory = -1;
+  if (typeof indeksKolomAlamat === 'function') {
+    try { _idxAlamatHistory = indeksKolomAlamat(sheetAbsen) - 1; } catch (e) { /* biarkan -1 */ }
+  }
   const sheetUser = SS.getSheetByName(SHEET_USERS);
   const rowsUser = sheetUser.getDataRange().getValues();
   const periodeAktif = getPeriodeAbsenAktif_();
@@ -3012,6 +3039,7 @@ function handleGetHistory(data) {
         divisi: userData.divisi,       // POSISI BAGIAN
         tipe: rowsAbsen[i][4],
         lokasi: rowsAbsen[i][5],
+        alamat: (_idxAlamatHistory >= 0 ? String(rowsAbsen[i][_idxAlamatHistory] || '').trim() : ''),
         catatan: rowsAbsen[i][6],
         foto: rowsAbsen[i][7],
         tglMulai: rowsAbsen[i][8],

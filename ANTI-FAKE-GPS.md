@@ -194,6 +194,9 @@ besar daripada menambah heuristik baru.
 | `src/App.js` | Import, rute `gps_audit`, menu di AdminPanel, kirim `gpsBukti`. |
 | `scripts/test-antifakegps.js` | **Baru.** 15 kasus uji. |
 
+Lihat juga `NAMA-LOKASI.md` — koordinat ditampilkan sebagai nama alamat, dan
+sheet `GpsAudit` ikut menyimpan alamat setiap percobaan.
+
 **Deploy:** salin `AntiFakeGps.gs` sebagai file baru di editor Apps Script,
 perbarui `Code.gs`, lalu Deploy → New deployment. Sheet `GpsAudit` dan kolom
 audit dibuat otomatis saat absen pertama masuk.

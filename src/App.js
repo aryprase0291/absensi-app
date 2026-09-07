@@ -45,7 +45,7 @@ const ACTION_AMAN_DIULANG = [
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
   'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config', 'get_team_history',
   'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period',
-  'get_rekap_admin', 'get_koreksi_list', 'get_gps_audit'
+  'get_rekap_admin', 'get_koreksi_list', 'get_gps_audit', 'get_alamat'
 ];
 
 const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
@@ -3832,6 +3832,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   // FORM DATA
   const [location, setLocation] = useState(null);
   const [gpsValidation, setGpsValidation] = useState({ isValid: true, isMock: false, warning: '', accuracy: null, bukti: null });
+  // Nama tempat hasil reverse geocoding di server. 'mencari' -> masih
+  // menunggu, '' -> sudah dicoba tapi tidak dapat (koordinat jadi cadangan).
+  const [alamat, setAlamat] = useState('');
+  const [alamatStatus, setAlamatStatus] = useState('idle');
   const [catatan, setCatatan] = useState('');
   const [intervalData, setIntervalData] = useState({ tglMulai: '', tglSelesai: '', jamMulai: '', jamSelesai: '' });
   
@@ -3914,6 +3918,39 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
     initForm();
     return () => { isMounted = false; };
   }, [isEditMode, editItem, isGpsRequired, type]);
+
+  // --- NAMA LOKASI ---
+  // Reverse geocoding dikerjakan server (Geocode.gs) karena di sanalah
+  // hasilnya bisa di-cache lintas karyawan — satu titik hanya pernah
+  // memakai kuota sekali, bukan sekali per orang per absen.
+  //
+  // Sengaja TIDAK memblokir tombol kirim. Nama lokasi itu untuk dibaca
+  // manusia; yang menentukan sah tidaknya absen tetap koordinat dan
+  // geofence di server. Kalau layanan alamat mati, absen harus tetap jalan.
+  useEffect(() => {
+    if (!location) return;
+    let hidup = true;
+    setAlamatStatus('mencari');
+    (async () => {
+      try {
+        const res = await fetchApi(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'get_alamat', lokasi: `${location.lat}, ${location.lng}` })
+        });
+        const d = await res.json();
+        if (!hidup) return;
+        if (d.result === 'success' && d.tersedia) {
+          setAlamat(d.alamat);
+          setAlamatStatus('ada');
+        } else {
+          setAlamatStatus('kosong');
+        }
+      } catch (e) {
+        if (hidup) setAlamatStatus('kosong');
+      }
+    })();
+    return () => { hidup = false; };
+  }, [location]);
 
   // Clean up camera & face tracker on unmount
   useEffect(() => {
@@ -4433,10 +4470,29 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
               </div>
               {location && (
                 <div className="mt-2 text-center">
-                  <p className="text-[10px] text-slate-400 font-mono tabular-nums">
-                    {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                    {gpsValidation.accuracy !== null && ` (Akurasi: ±${Math.round(gpsValidation.accuracy)}m)`}
-                  </p>
+                  {/* Nama tempat lebih dulu; koordinat hanya muncul sebagai
+                      cadangan kalau alamat tidak berhasil didapat. */}
+                  {alamatStatus === 'mencari' && (
+                    <p className="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Mencari nama lokasi…
+                    </p>
+                  )}
+                  {alamatStatus === 'ada' && (
+                    <p className="text-[12px] font-semibold leading-snug text-slate-700 px-2">
+                      <MapPin className="inline w-3.5 h-3.5 -mt-0.5 mr-1 text-slate-400" strokeWidth={2} />
+                      {alamat}
+                    </p>
+                  )}
+                  {alamatStatus === 'kosong' && (
+                    <p className="text-[10px] text-slate-400 font-mono tabular-nums">
+                      {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                    </p>
+                  )}
+                  {gpsValidation.accuracy !== null && (
+                    <p className="mt-0.5 text-[10px] text-slate-400 tabular-nums">
+                      Akurasi ±{Math.round(gpsValidation.accuracy)} m
+                    </p>
+                  )}
                   {gpsValidation.isMock && (
                     <p className="mt-1 text-[11px] font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
                       ⚠️ {gpsValidation.warning || 'Mock Location / Fake GPS terdeteksi. Matikan aplikasi Fake GPS.'}
@@ -8607,9 +8663,16 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                     <div className="divide-y divide-indigo-100/80">
                       {itemDipilih.onlineRecords.map((record, index) => (
                         <div key={`${record.tipe}-${record.waktu}-${index}`} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-[11px] font-medium text-indigo-700">{record.tipe === 'Hadir' ? 'Masuk' : 'Pulang'}</p>
-                            {record.catatan && record.catatan !== '-' && <p className="mt-0.5 max-w-[190px] truncate text-[10px] text-indigo-600/80">{record.catatan}</p>}
+                            {/* Nama tempat, dengan koordinat sebagai cadangan
+                                untuk baris lama yang alamatnya belum terisi. */}
+                            {(record.alamat || (record.lokasi && record.lokasi !== '-')) && (
+                              <p className="mt-0.5 max-w-[200px] truncate text-[10px] text-indigo-600/80" title={record.alamat || record.lokasi}>
+                                {record.alamat || record.lokasi}
+                              </p>
+                            )}
+                            {record.catatan && record.catatan !== '-' && <p className="mt-0.5 max-w-[200px] truncate text-[10px] text-indigo-600/70">{record.catatan}</p>}
                           </div>
                           <span className="font-mono text-[15px] font-semibold tabular-nums text-indigo-950">{formatTimeOnly(record.waktu)}</span>
                         </div>

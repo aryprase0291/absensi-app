@@ -240,6 +240,13 @@ export default function GpsAuditScreen({ user, setView, fetchApi }) {
                 </div>
               </div>
 
+              {k.alamat && k.alamat !== '-' && (
+                <p className="mt-2 flex items-start gap-1.5 text-[12px] font-medium leading-snug text-slate-700">
+                  <MapPin size={13} className="mt-0.5 shrink-0 text-slate-400" />
+                  {k.alamat}
+                </p>
+              )}
+
               {k.alasan && k.alasan !== '-' && (
                 <ul className="mt-2.5 space-y-1">
                   {String(k.alasan).split(' | ').map((a, j) => (
@@ -355,7 +362,9 @@ export default function GpsAuditScreen({ user, setView, fetchApi }) {
 
               {l.koordinatDominan && (
                 <div className="mt-2.5 flex items-center gap-3 border-t border-slate-100 pt-2 text-[11.5px]">
-                  <span className="truncate text-slate-500">{l.koordinatDominan}</span>
+                  <span className="truncate text-slate-500" title={l.koordinatDominan}>
+                    {l.alamatDominan || l.koordinatDominan}
+                  </span>
                   <a
                     href={linkPeta(l.koordinatDominan.split(',')[0], l.koordinatDominan.split(',')[1])}
                     target="_blank"
