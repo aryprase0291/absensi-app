@@ -152,14 +152,51 @@ kode pos yang menempel, respons kosong/null, dan parsing koordinat.
 |---|---|
 | `apps-script/Geocode.gs` | **Baru.** Reverse geocoding, cache 3 lapis, format alamat, backfill. |
 | `apps-script/Code.gs` | Tulis kolom Alamat saat absen, endpoint `get_alamat`, kirim alamat di `get_history` & `get_db_absen`. |
+| `apps-script/Auth.gs` | Daftarkan `get_alamat` (semua user) di `ACTION_ROLES`. **Wajib** — tanpa ini action ditolak. |
 | `apps-script/AntiFakeGps.gs` | Kolom Alamat di sheet GpsAudit dan di laporan analisa. |
 | `src/App.js` | State + efek ambil alamat, tampilan form, detail riwayat. |
 | `src/screens/GpsAuditScreen.js` | Alamat pada kejadian dan analisa riwayat. |
 | `scripts/test-geocode.js` | **Baru.** 16 kasus uji. |
+| `scripts/test-router-auth.js` | **Baru.** Menjaga rute dan tabel izin tetap sinkron. |
 
 **Deploy:** salin `Geocode.gs` sebagai file baru di editor Apps Script, perbarui
-`Code.gs` dan `AntiFakeGps.gs`, lalu Deploy → New deployment. Sheet `GeoCache`
+`Code.gs`, `Auth.gs`, dan `AntiFakeGps.gs`.
+
+Lalu **Deploy → Kelola deployment → ikon pensil → Versi: Versi baru → Deploy.**
+
+> Jangan pakai *Deployment baru*. Itu membuat URL `/exec` yang berbeda, dan
+> aplikasi masih menembak URL lama di `src/config/constants.js` — jadi seolah-olah
+> tidak ada yang berubah.
+
+Frontend ikut lewat push ke git (Vercel build dari sumber; folder `build/`
+di-gitignore jadi hasil build lokal tidak berpengaruh). Sheet `GeoCache`
 dan kolom `Alamat` dibuat otomatis saat absen pertama masuk.
 
 Saat pertama kali dijalankan, Apps Script akan meminta izin tambahan untuk
 layanan Maps — setujui sekali di dialog otorisasi.
+
+---
+
+## Kenapa fitur ini sempat tidak jalan (7 Sep 2026)
+
+Menambah action di aplikasi ini butuh **dua** langkah yang letaknya berjauhan:
+
+1. Rute di `Code.gs` → `doPost`
+2. Izin di `Auth.gs` → `ACTION_ROLES`
+
+Langkah 2 terlewat. Yang bikin sulit ketahuan: lupa langkah ini **tidak
+menimbulkan error apa pun** — `authorizeRequest` menjawab `"Action tidak
+dikenal."`, client menganggapnya "alamat tidak tersedia", lalu jatuh ke
+koordinat. Persis seperti kalau fiturnya memang belum di-deploy.
+
+Sekarang dijaga oleh:
+
+```bash
+node scripts/test-router-auth.js
+```
+
+Membandingkan semua action yang dirutekan di `Code.gs` dengan tabel izin di
+`Auth.gs`. **Jalankan setiap kali menambah action baru.**
+
+Client juga sekarang menulis `console.warn('[alamat] server menolak: ...')`
+supaya penyebabnya kelihatan di DevTools, bukan hilang diam-diam.

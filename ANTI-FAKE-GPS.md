@@ -189,6 +189,7 @@ besar daripada menambah heuristik baru.
 |---|---|
 | `apps-script/AntiFakeGps.gs` | **Baru.** Mesin skor, audit historis, endpoint. |
 | `apps-script/Code.gs` | Gerbang integritas di `handleAbsen`, 2 action baru di router. |
+| `apps-script/Auth.gs` | Daftarkan `get_gps_audit` & `run_gps_audit_historis` (admin/hrd) di `ACTION_ROLES`. **Wajib.** |
 | `src/utils/antiFakeGps.js` | Dua sampel + jitter, sidik perangkat, paket bukti. |
 | `src/screens/GpsAuditScreen.js` | **Baru.** Panel monitoring. |
 | `src/App.js` | Import, rute `gps_audit`, menu di AdminPanel, kirim `gpsBukti`. |
@@ -198,5 +199,7 @@ Lihat juga `NAMA-LOKASI.md` — koordinat ditampilkan sebagai nama alamat, dan
 sheet `GpsAudit` ikut menyimpan alamat setiap percobaan.
 
 **Deploy:** salin `AntiFakeGps.gs` sebagai file baru di editor Apps Script,
-perbarui `Code.gs`, lalu Deploy → New deployment. Sheet `GpsAudit` dan kolom
+perbarui `Code.gs` dan `Auth.gs`, lalu **Deploy → Kelola deployment → ikon
+pensil → Versi: Versi baru → Deploy**. Jangan pakai *Deployment baru* — itu
+membuat URL `/exec` berbeda dari yang dipakai aplikasi. Sheet `GpsAudit` dan kolom
 audit dibuat otomatis saat absen pertama masuk.

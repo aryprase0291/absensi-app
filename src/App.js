@@ -3943,9 +3943,17 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           setAlamat(d.alamat);
           setAlamatStatus('ada');
         } else {
+          // Dibedakan supaya bisa didiagnosa. Sebelum ini semua kegagalan
+          // terlihat sama di layar (koordinat muncul), sehingga "backend
+          // belum di-deploy" tidak bisa dibedakan dari "titik ini memang
+          // tidak punya alamat".
+          if (d.result !== 'success') {
+            console.warn('[alamat] server menolak:', d.code || '-', d.message || '');
+          }
           setAlamatStatus('kosong');
         }
       } catch (e) {
+        console.warn('[alamat] gagal menghubungi server:', e && e.message);
         if (hidup) setAlamatStatus('kosong');
       }
     })();

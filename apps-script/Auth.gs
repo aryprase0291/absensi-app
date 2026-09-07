@@ -172,6 +172,9 @@ const ACTION_ROLES = {
   'delete_shift_schedule': '*',
   'edit_shift_schedule': '*',
   'request_approval_email': '*',
+  // Reverse geocoding untuk form absen (Geocode.gs). Setiap karyawan yang
+  // sedang mengisi form perlu ini, jadi '*' — sama seperti 'absen'.
+  'get_alamat': '*',
 
   // --- Penyetuju (sesuai App.js: canApprove) ---
   // Kepala divisi/supervisor diberi jalur yang sama seperti manager.
@@ -186,6 +189,9 @@ const ACTION_ROLES = {
   'update_remark_status': ['admin', 'hrd'],
   'update_status_absen': ['admin', 'hrd'],
   'get_analysis_data': ['admin', 'hrd'],
+  // Panel Monitoring Integritas GPS (AntiFakeGps.gs).
+  'get_gps_audit': ['admin', 'hrd'],
+  'run_gps_audit_historis': ['admin', 'hrd'],
 
   // --- Admin saja ---
   'get_approval_team_config': ['admin'],
