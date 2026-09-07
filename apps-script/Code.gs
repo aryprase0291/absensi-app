@@ -165,6 +165,8 @@ function doPost(e) {
     if (action === 'get_user_list_admin') return handleGetUserListAdmin(data); // Ambil list user lengkap
     if (action === 'get_approval_team_config') return handleGetApprovalTeamConfig(data);
     if (action === 'save_approval_team_config') return handleSaveApprovalTeamConfig(data);
+    if (action === 'get_gps_audit') return handleGetGpsAudit(data);
+    if (action === 'run_gps_audit_historis') return handleRunGpsAuditHistoris(data);
     if (action === 'get_geofence_config') return handleGetGeofenceConfig(data);
     if (action === 'save_geofence_config') return handleSaveGeofenceConfig(data);
     if (action === 'reset_password_user') return handleResetPasswordUser(data); // Reset password
@@ -228,11 +230,43 @@ function handleAbsen(data) {
   // per karyawan. Validasi dilakukan di server agar koordinat tidak dapat
   // dilewati hanya dengan memodifikasi request dari browser.
   const geofenceCheck = validasiGeofence(data);
+
+  // --- GERBANG INTEGRITAS GPS (lihat AntiFakeGps.gs) ---------------
+  // Dijalankan SEBELUM keputusan apa pun supaya percobaan yang gagal
+  // geofence pun tetap meninggalkan jejak forensik. Dibungkus typeof
+  // agar Code.gs tetap jalan bila AntiFakeGps.gs belum ter-deploy.
+  const analisaGps = (typeof analisaIntegritasGps === 'function')
+    ? analisaIntegritasGps(data, geofenceCheck)
+    : { skor: 0, level: 'AMAN', blokir: false, alasan: [], detail: {} };
+  const catatGps = function (keputusan, uuidRef) {
+    if (typeof catatAuditGps === 'function') {
+      try { catatAuditGps(data, analisaGps, keputusan, uuidRef); } catch (e) { /* audit tidak boleh menggagalkan absen */ }
+    }
+  };
+
   if (!geofenceCheck.ok) {
+    catatGps('DITOLAK-GEOFENCE', null);
     return responseJSON({
       result: 'error',
       code: geofenceCheck.code || 'GEOFENCE_DENIED',
       message: geofenceCheck.message
+    });
+  }
+
+  // Penolakan Fake GPS. Alasannya disebut konkret: karyawan yang memang
+  // sinyalnya jelek jadi tahu harus berbuat apa, dan yang memakai Fake
+  // GPS tahu bahwa percobaannya terlihat dan tercatat.
+  if (analisaGps.blokir) {
+    catatGps('DITOLAK-FAKEGPS', null);
+    return responseJSON({
+      result: 'error',
+      code: 'FAKE_GPS_DETECTED',
+      message: 'ABSEN DITOLAK — lokasi tidak dapat diverifikasi.\n\nAlasan: '
+        + analisaGps.alasan.join('; ')
+        + '\n\nMatikan aplikasi Fake GPS / Mock Location, aktifkan GPS asli, lalu coba lagi. '
+        + 'Jika Anda yakin ini keliru, hubungi HRD — percobaan ini sudah tercatat.',
+      gpsSkor: analisaGps.skor,
+      gpsAlasan: analisaGps.alasan
     });
   }
 
@@ -412,6 +446,22 @@ function handleAbsen(data) {
     statusAwal, approverAwal, timeStampAwal,
     lampiranUrl 
   ]);
+
+  // --- KOLOM AUDIT GPS DI SHEET ABSENSI ---
+  // Sengaja TIDAK ditulis lewat appendRow di atas. Sheet Absensi sudah
+  // memakai kolom Q (Catatan Admin, index 16) dan V (ID Akun, index 21),
+  // jadi menambah elemen ke appendRow akan menimpa kolom yang sudah ada.
+  // tulisKolomAuditAbsensi() mencari kolom berdasarkan NAMA HEADER dan
+  // membuatnya di ujung sheet bila belum ada — aman berapa pun lebar
+  // sheet sekarang maupun nanti.
+  if (typeof tulisKolomAuditAbsensi === 'function') {
+    try { tulisKolomAuditAbsensi(sheet, data, analisaGps); } catch (e) { console.warn('Kolom audit GPS gagal ditulis: ' + e.message); }
+  }
+
+  // Semua absen ber-GPS dicatat ke sheet GpsAudit, bukan hanya yang
+  // mencurigakan: tanpa baseline yang normal, HRD tidak punya pembanding
+  // saat menilai satu kasus.
+  catatGps(analisaGps.level === 'AMAN' ? 'DITERIMA' : 'DITERIMA-DITANDAI', uuid);
 
   // --- KIRIM EMAIL ---
   if (allowedTypes.includes(data.tipe)) {

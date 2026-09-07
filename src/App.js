@@ -8,6 +8,7 @@ import { SCRIPT_URL, TIMEOUT_DURATION, BOARD_ABSENSI_URL } from './config/consta
 import { FRONTEND_VERSION } from './config/updateManifest';
 import BackButton from './components/BackButton';
 import RekapExcelScreen from './screens/RekapExcelScreen';
+import GpsAuditScreen from './screens/GpsAuditScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
@@ -44,7 +45,7 @@ const ACTION_AMAN_DIULANG = [
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
   'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config', 'get_team_history',
   'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period',
-  'get_rekap_admin', 'get_koreksi_list'
+  'get_rekap_admin', 'get_koreksi_list', 'get_gps_audit'
 ];
 
 const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
@@ -447,6 +448,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
                view === 'approval' ? 'Approval Pengajuan' :
                view === 'db_absen' ? 'Data Mesin Fingerprint' :
                view === 'analysis' ? 'Analisa Kehadiran' :
+               view === 'gps_audit' ? 'Monitoring Integritas GPS' :
                view === 'input_shift' ? 'Jadwal Running Shift' :
                view === 'remark' ? 'Respon / Lapor HRD' :
                view === 'ganti_password' ? 'Ubah Kata Sandi' : 'Menu Aplikasi'}
@@ -462,7 +464,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
@@ -3829,7 +3831,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   
   // FORM DATA
   const [location, setLocation] = useState(null);
-  const [gpsValidation, setGpsValidation] = useState({ isValid: true, isMock: false, warning: '', accuracy: null });
+  const [gpsValidation, setGpsValidation] = useState({ isValid: true, isMock: false, warning: '', accuracy: null, bukti: null });
   const [catatan, setCatatan] = useState('');
   const [intervalData, setIntervalData] = useState({ tglMulai: '', tglSelesai: '', jamMulai: '', jamSelesai: '' });
   
@@ -3891,10 +3893,14 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       // GPS Logic with Anti-Fake GPS verification
       if (!isEditMode && isGpsRequired && 'geolocation' in navigator) {
         try {
-          const { position, accuracy, isMockSuspicious, warning } = await getVerifiedGeolocation({ timeout: 10000 });
+          // getVerifiedGeolocation kini mengambil DUA sampel berjeda untuk
+          // mengukur jitter. Ini menambah ~1,2 detik pada pembukaan form,
+          // dan itu memang harganya: jitter nol adalah satu-satunya sinyal
+          // kuat yang bisa didapat dari dalam browser.
+          const { position, accuracy, isMockSuspicious, warning, bukti } = await getVerifiedGeolocation({ timeout: 10000 });
           if (isMounted) {
             setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-            setGpsValidation({ isValid: !isMockSuspicious, isMock: isMockSuspicious, warning: warning || '', accuracy });
+            setGpsValidation({ isValid: !isMockSuspicious, isMock: isMockSuspicious, warning: warning || '', accuracy, bukti: bukti || null });
           }
         } catch (err) {
           if (isMounted) {
@@ -4045,6 +4051,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           fileName: isUploading ? fileName : '', fileMime: isUploading ? fileMime : '',
           isMockGps: gpsValidation.isMock,
           gpsAccuracy: gpsValidation.accuracy,
+          // Bukti mentah diteruskan apa adanya. Server memeriksanya ulang
+          // bersama riwayat absensi karyawan — keputusan menolak absen ada
+          // di server, bukan di sini, karena kode ini bisa diubah pengguna.
+          gpsBukti: gpsValidation.bukti || null,
           ...intervalData,
           jamMulai: finalJamMulai,
           jamSelesai: finalJamSelesai
@@ -6325,6 +6335,12 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                                 <UsersRound className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'approval_team' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
                                 <span className="flex-1 leading-tight">Tim approval</span>
                                 {activeTab === 'approval_team' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+
+                            <button onClick={() => setView('gps_audit')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-700 hover:bg-amber-50/50 hover:text-amber-800 transition-colors">
+                                <Shield className="w-[17px] h-[17px] shrink-0 text-amber-600" strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight font-medium">Monitoring Integritas GPS</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                             </button>
 
                             <button onClick={() => setView('rekap_admin')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-700 hover:bg-emerald-50/50 hover:text-emerald-800 transition-colors">
