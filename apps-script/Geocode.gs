@@ -267,6 +267,43 @@ function alamatDariLokasi(lokasi) {
 // menebak index adalah cara tercepat merusak data yang sudah ada.
 // ---------------------------------------------------------------------
 
+// Index kolom Alamat, dihitung sekali saja per eksekusi.
+let _geoIdxAlamatMemo = null;
+
+/**
+ * Mengambil isi kolom Alamat dari SATU baris sheet Absensi.
+ *
+ * KENAPA BERBENTUK BEGINI (8 Sep 2026)
+ * Versi sebelumnya memakai variabel bantu yang dideklarasikan di AWAL
+ * fungsi pemanggil lalu dipakai puluhan baris di bawahnya. Saat Code.gs
+ * digabungkan manual ke Kode.gs di editor Apps Script, tiga baris
+ * deklarasinya ikut hilang sementara baris pemakaiannya tertinggal.
+ * Hasilnya `ReferenceError: _idxAlamatHistory is not defined`,
+ * handleGetHistory gagal seluruhnya, dan layar Laporan & Cetak Data
+ * kosong tanpa satu pun pesan error di layar.
+ *
+ * Sekarang seluruh kebutuhannya muat dalam satu pemanggilan tanpa
+ * variabel bantu, jadi tidak ada lagi pasangan baris yang bisa terpisah.
+ */
+function nilaiAlamatBaris(sheet, baris) {
+  try {
+    if (_geoIdxAlamatMemo === null) _geoIdxAlamatMemo = indeksKolomAlamat(sheet) - 1;
+    if (_geoIdxAlamatMemo < 0 || !baris) return '';
+    return String(baris[_geoIdxAlamatMemo] || '').trim();
+  } catch (e) {
+    return '';
+  }
+}
+
+/** Lebar baca sheet Absensi yang menjamin kolom Alamat ikut terbaca. */
+function lebarBacaAbsensi(sheet, minimal) {
+  try {
+    return Math.max(minimal || 1, indeksKolomAlamat(sheet));
+  } catch (e) {
+    return minimal || 1;
+  }
+}
+
 function indeksKolomAlamat(sheet) {
   const target = sheet || SS.getSheetByName(SHEET_ABSENSI);
   if (!target) return -1;

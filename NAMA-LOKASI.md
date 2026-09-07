@@ -256,3 +256,47 @@ jadi nilai forensiknya tidak berkurang sedikit pun.
 
 Diuji dengan `node scripts/test-stempel-foto.js` — 10 kasus pada lebar foto
 480/720/1080 px, memastikan tidak ada teks yang hilang maupun meluber.
+
+---
+
+## Laporan & Cetak Data mendadak kosong (8 Sep 2026)
+
+Gejalanya: layar **Laporan & Cetak Data** menampilkan "Tidak ada data sesuai
+filter" untuk periode yang jelas-jelas berisi data (49 Hadir + 41 Pulang pada
+1–8 Sep di sheet).
+
+Penyebabnya bukan di repo ini. Saat `Code.gs` digabungkan **manual** ke
+`Kode.gs` di editor Apps Script, tiga baris deklarasi ini ikut hilang —
+
+```js
+let _idxAlamatHistory = -1;
+if (typeof indeksKolomAlamat === 'function') { ... }
+```
+
+— sementara baris yang MEMAKAI `_idxAlamatHistory` tetap tertinggal di dalam
+`handleGetHistory`. Hasilnya `ReferenceError` setiap kali riwayat diminta.
+
+Yang membuatnya sulit dilacak: `doPost` membungkus semuanya dengan try/catch,
+jadi Apps Script tetap mencatat eksekusi sebagai **"Selesai"** (tidak ada
+eksekusi gagal sama sekali di log), dan client hanya menjalankan
+`if (data.result === 'success')` tanpa cabang else — errornya hilang tanpa
+jejak, menyisakan tabel kosong.
+
+**Dua perbaikan:**
+
+1. Akses kolom Alamat sekarang berupa **satu pemanggilan mandiri**
+   (`nilaiAlamatBaris()` dan `lebarBacaAbsensi()` di `Geocode.gs`). Tidak ada
+   lagi pasangan "deklarasi di atas, pemakaian jauh di bawah" yang bisa
+   terpisah saat digabung manual.
+
+2. Gerbang baru `node scripts/test-apps-script-lint.js` memeriksa SELURUH
+   berkas `.gs` sebagai satu ruang lingkup (seperti runtime Apps Script) dan
+   menolak identifier yang dipakai tapi tidak pernah dideklarasikan. Diuji
+   dengan menyisipkan kembali bug aslinya — gerbang menangkapnya beserta
+   nomor barisnya.
+
+**Pelajaran yang lebih besar:** repo dan project Apps Script tidak identik
+(`Kode.gs` punya blok Telegram, ada `Geofence.gs` yang tidak ada di repo), jadi
+penggabungan manual akan terus terjadi dan akan terus berisiko. `handleGetHistory`
+dan `handleGetDbAbsen` tidak mengandung kode Telegram sama sekali — keduanya aman
+disalin utuh dari repo, tidak perlu digabung baris per baris.

@@ -1330,12 +1330,9 @@ function handleGetDbAbsen(data) {
   // Lebar baca mengikuti posisi kolom "Alamat" yang dibuat Geocode.gs.
   // Dulu dipatok 17; kalau tetap dipatok, kolom Alamat tidak akan pernah
   // ikut terbaca dan riwayat selamanya menampilkan angka.
-  let _lebarOnline = 17;
-  if (sheetOnline && typeof indeksKolomAlamat === 'function') {
-    try { _lebarOnline = Math.max(17, indeksKolomAlamat(sheetOnline)); } catch (e) { /* pakai 17 */ }
-  }
-  const _idxAlamatOnline = _lebarOnline > 17 ? _lebarOnline - 1 : -1;
-  const rowsOnline = sheetOnline ? bacaSheet(sheetOnline, _lebarOnline) : [];
+  const rowsOnline = sheetOnline
+    ? bacaSheet(sheetOnline, (typeof lebarBacaAbsensi === 'function' ? lebarBacaAbsensi(sheetOnline, 17) : 17))
+    : [];
 
   for (let i = 1; i < rowsOnline.length; i++) {
     const row = rowsOnline[i];
@@ -1365,7 +1362,7 @@ function handleGetDbAbsen(data) {
       status: status || 'Verified',
       catatan: row[6] || '-',
       lokasi: row[5] || '-',
-      alamat: (_idxAlamatOnline >= 0 ? String(row[_idxAlamatOnline] || '').trim() : '')
+      alamat: (typeof nilaiAlamatBaris === 'function' ? nilaiAlamatBaris(sheetOnline, row) : '')
     };
     bucket.onlineRecords.push(record);
 
@@ -2720,8 +2717,20 @@ function processApprovalLogic(uuid, decision, approverName, alasanAdmin) {
       }
 
       // --- LOGIKA POTONG CUTI (JIKA ADA) ---
+      // CATATAN: potongCutiUser() tidak ada di repo ini. Sebelumnya baris
+      // ini bisa melempar ReferenceError dan menggagalkan seluruh proses
+      // approval. Sekarang dijaga typeof — kalau fungsinya memang tidak ada,
+      // approval tetap berhasil dan pelewatannya tercatat di log.
+      //
+      // Perlu diperiksa terpisah: perbandingannya 'CUTI' (huruf besar)
+      // sedangkan kolom Tipe berisi 'Cuti', jadi cabang ini praktis TIDAK
+      // PERNAH jalan — kuota cuti kemungkinan tidak pernah dipotong.
       if (decision === 'approve' && (tipeAbsen === 'CUTI' || tipeAbsen === 'CUTI TAHUNAN')) {
-         potongCutiUser(userId, rows[i][8], rows[i][9]);
+         if (typeof potongCutiUser === 'function') {
+           potongCutiUser(userId, rows[i][8], rows[i][9]);
+         } else {
+           console.warn('potongCutiUser tidak tersedia — pemotongan kuota cuti dilewati untuk ' + uuid);
+         }
       }
 
       return { result: 'success', message: `Berhasil ${decision}` };
@@ -2971,12 +2980,6 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
 function handleGetHistory(data) {
   const sheetAbsen = SS.getSheetByName(SHEET_ABSENSI);
   const rowsAbsen = sheetAbsen.getDataRange().getValues();
-  // getDataRange() sudah menarik semua kolom, jadi di sini cukup mencari
-  // POSISI kolom Alamat — tanpa membaca ulang sheet.
-  let _idxAlamatHistory = -1;
-  if (typeof indeksKolomAlamat === 'function') {
-    try { _idxAlamatHistory = indeksKolomAlamat(sheetAbsen) - 1; } catch (e) { /* biarkan -1 */ }
-  }
   const sheetUser = SS.getSheetByName(SHEET_USERS);
   const rowsUser = sheetUser.getDataRange().getValues();
   const periodeAktif = getPeriodeAbsenAktif_();
@@ -3039,7 +3042,7 @@ function handleGetHistory(data) {
         divisi: userData.divisi,       // POSISI BAGIAN
         tipe: rowsAbsen[i][4],
         lokasi: rowsAbsen[i][5],
-        alamat: (_idxAlamatHistory >= 0 ? String(rowsAbsen[i][_idxAlamatHistory] || '').trim() : ''),
+        alamat: (typeof nilaiAlamatBaris === 'function' ? nilaiAlamatBaris(sheetAbsen, rowsAbsen[i]) : ''),
         catatan: rowsAbsen[i][6],
         foto: rowsAbsen[i][7],
         tglMulai: rowsAbsen[i][8],
@@ -3361,7 +3364,7 @@ function handleTambahAnnouncement(data) {
  */
 function checkFormulaUpdates() {
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DB_ABSEN); [cite_start]// Menggunakan konstanta SHEET_DB_ABSEN [cite: 2]
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_DB_ABSEN);
     if (!sheet) return;
 
     // 1. Ambil Data Kolom A sampai S (Area Formula)
