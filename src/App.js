@@ -3794,6 +3794,70 @@ const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd }) 
 };
 
 // --- 3. ATTENDANCE FORM (FIXED: DATE RANGE + OPTIONAL TIME TOGGLE) ---
+// ============================================================
+// STEMPEL LOKASI PADA FOTO ABSEN
+//
+// Dulu stempel foto menuliskan koordinat mentah apa adanya
+// (`${location.lat}, ${location.lng}`), sehingga muncul angka
+// sepanjang "-7.247680086678265, 112.73673079382687" — tidak terbaca
+// siapa pun, dan itulah yang tetap terlihat di foto meski tampilan
+// form sudah menampilkan nama alamat.
+//
+// Nama jalan jauh lebih panjang daripada koordinat, jadi teks harus
+// dibungkus dan dikecilkan supaya tidak terpotong di tepi kiri foto.
+// ============================================================
+function pecahBarisTeks(ctx, teks, maxWidth) {
+  const kata = String(teks).split(/\s+/).filter(Boolean);
+  const baris = [];
+  let sekarang = '';
+  kata.forEach((k) => {
+    const coba = sekarang ? sekarang + ' ' + k : k;
+    // `!sekarang` menjaga satu kata yang lebih lebar dari kanvas tetap
+    // ditulis, bukan menghasilkan baris kosong tanpa akhir.
+    if (ctx.measureText(coba).width <= maxWidth || !sekarang) sekarang = coba;
+    else { baris.push(sekarang); sekarang = k; }
+  });
+  if (sekarang) baris.push(sekarang);
+  return baris;
+}
+
+// Pemotong pengaman. Satu kata yang lebih lebar dari foto (nama jalan
+// tanpa spasi) tidak bisa dibungkus, jadi harus dipotong — kalau tidak,
+// teksnya meluber keluar bingkai dan bagian depannya hilang sama sekali.
+function potongAgarMuat(ctx, teks, maxWidth) {
+  if (ctx.measureText(teks).width <= maxWidth) return teks;
+  let potong = teks;
+  while (potong.length > 1 && ctx.measureText(potong + '…').width > maxWidth) {
+    potong = potong.slice(0, -1);
+  }
+  return potong + '…';
+}
+
+function gambarStempelKanan(ctx, teks, xKanan, yBawah, fontSizeAwal, maxWidth, maksBaris) {
+  const batas = maksBaris || 2;
+  let fontSize = fontSizeAwal;
+  let baris = [];
+  // Kecilkan huruf bertahap sampai muat dalam batas baris DAN tidak ada
+  // baris yang melebihi lebar foto. Lebih baik huruf sedikit lebih kecil
+  // daripada nama jalan terpotong.
+  for (let percobaan = 0; percobaan < 6; percobaan++) {
+    ctx.font = `bold ${Math.round(fontSize)}px sans-serif`;
+    baris = pecahBarisTeks(ctx, teks, maxWidth);
+    const adaYangLuber = baris.some((b) => ctx.measureText(b).width > maxWidth);
+    if (baris.length <= batas && !adaYangLuber) break;
+    fontSize *= 0.85;
+  }
+  ctx.font = `bold ${Math.round(fontSize)}px sans-serif`;
+  baris = baris.slice(0, batas).map((b) => potongAgarMuat(ctx, b, maxWidth));
+  const tinggiBaris = Math.round(fontSize) * 1.2;
+  baris.forEach((b, i) => {
+    const y = yBawah - (baris.length - 1 - i) * tinggiBaris;
+    ctx.strokeText(b, xKanan, y);
+    ctx.fillText(b, xKanan, y);
+  });
+  return baris.length * tinggiBaris;
+}
+
 function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterData }) {
   const type = localStorage.getItem('absenType') || 'Hadir';
   const isEditMode = !!editItem;
@@ -4034,10 +4098,17 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           const fontSize = Math.floor(canvas.width / 25); ctx.font = `bold ${fontSize}px sans-serif`;
           ctx.textAlign = "right"; ctx.textBaseline = "bottom"; const paddingX = 20; const paddingY = 20;
           const now = getServerNow(); const timestampText = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour12: false })}`;
-          let gpsText = location ? `${location.lat}, ${location.lng}` : "No GPS";
+          // Nama tempat lebih dulu. Koordinat hanya dipakai kalau alamat
+          // belum sempat didapat saat tombol jepret ditekan — pengambilan
+          // foto sengaja TIDAK ditahan menunggu jaringan.
+          // Koordinat aslinya tetap tersimpan penuh di kolom Lokasi dan
+          // sheet GpsAudit, jadi nilai forensiknya tidak hilang.
+          const lokasiText = (alamatStatus === 'ada' && alamat)
+            ? alamat
+            : (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : "No GPS");
           ctx.lineWidth = 3; ctx.strokeStyle = 'black'; ctx.fillStyle = "white";
           ctx.strokeText(timestampText, canvas.width - paddingX, canvas.height - paddingY); ctx.fillText(timestampText, canvas.width - paddingX, canvas.height - paddingY);
-          ctx.strokeText(gpsText, canvas.width - paddingX, canvas.height - paddingY - (fontSize * 1.2)); ctx.fillText(gpsText, canvas.width - paddingX, canvas.height - paddingY - (fontSize * 1.2));
+          gambarStempelKanan(ctx, lokasiText, canvas.width - paddingX, canvas.height - paddingY - (fontSize * 1.2), fontSize, canvas.width - (paddingX * 2), 2);
           setPhoto(canvas.toDataURL('image/jpeg', 0.8)); 
           if (trackerRef.current) {
             trackerRef.current.stop();

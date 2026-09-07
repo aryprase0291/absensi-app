@@ -100,6 +100,7 @@ pertama tanpa provinsi, kode pos, dan "Indonesia".
 | Tempat | Perilaku |
 |---|---|
 | **Form absen** (Hadir, Pulang, Dinas, Standby, Lembur, Off) | Nama tempat muncul menggantikan angka, dengan indikator "Mencari nama lokasi…". Akurasi GPS tetap ditampilkan. |
+| **Stempel di dalam foto absen** | Nama alamat dibakar ke foto menggantikan koordinat. Kalau alamat belum siap saat tombol jepret ditekan, koordinat dipakai sebagai cadangan (6 desimal, bukan 15). |
 | **Detail riwayat harian** | Setiap catatan online menampilkan alamat; baris lama yang belum terisi jatuh ke koordinat. |
 | **Monitoring Integritas GPS** | Kejadian mencurigakan menampilkan alamat — untuk percobaan yang **ditolak** ini paling berharga: HRD membaca "Jl. X, Sidoarjo", bukan sederet angka. |
 | **Sheet Absensi** | Kolom `Alamat` |
@@ -158,6 +159,7 @@ kode pos yang menempel, respons kosong/null, dan parsing koordinat.
 | `src/screens/GpsAuditScreen.js` | Alamat pada kejadian dan analisa riwayat. |
 | `scripts/test-geocode.js` | **Baru.** 16 kasus uji. |
 | `scripts/test-router-auth.js` | **Baru.** Menjaga rute dan tabel izin tetap sinkron. |
+| `scripts/test-stempel-foto.js` | **Baru.** 10 kasus uji pembungkusan teks stempel foto. |
 
 **Deploy:** salin `Geocode.gs` sebagai file baru di editor Apps Script, perbarui
 `Code.gs`, `Auth.gs`, dan `AntiFakeGps.gs`.
@@ -200,3 +202,37 @@ Membandingkan semua action yang dirutekan di `Code.gs` dengan tabel izin di
 
 Client juga sekarang menulis `console.warn('[alamat] server menolak: ...')`
 supaya penyebabnya kelihatan di DevTools, bukan hilang diam-diam.
+
+---
+
+## Stempel di dalam foto (8 Sep 2026)
+
+Ini terlewat pada perubahan pertama. Tampilan form sudah menampilkan nama
+alamat, tapi foto absen **tetap** menunjukkan koordinat — karena stempel foto
+adalah kode yang sama sekali terpisah: sebuah canvas yang membakar teks ke
+gambar sebelum diunggah, dan barisnya masih berbunyi
+
+```js
+let gpsText = location ? `${location.lat}, ${location.lng}` : "No GPS";
+```
+
+Itulah asal angka `-7.247680086678265, 112.73673079382687` pada foto.
+
+Sekarang stempel memakai nama alamat. Dua hal yang harus ditangani karena
+teks alamat jauh lebih panjang dari koordinat:
+
+- **Pembungkusan baris.** Alamat dipecah maksimal 2 baris; kalau masih tidak
+  muat, ukuran huruf dikecilkan bertahap (maksimal 6 kali, tiap kali 15%).
+- **Pemotong pengaman.** Satu kata yang lebih lebar dari foto tidak bisa
+  dibungkus sama sekali, jadi dipotong dengan `…`. Tanpa ini teksnya meluber
+  keluar bingkai dan justru bagian depan alamat yang hilang.
+
+Pengambilan foto **tidak ditahan** menunggu alamat. Kalau tombol jepret ditekan
+sebelum alamat tiba, koordinat dipakai sebagai cadangan — tapi kini diformat 6
+desimal, bukan 15 digit penuh seperti sebelumnya.
+
+Koordinat aslinya tetap tersimpan penuh di kolom Lokasi dan sheet `GpsAudit`,
+jadi nilai forensiknya tidak berkurang sedikit pun.
+
+Diuji dengan `node scripts/test-stempel-foto.js` — 10 kasus pada lebar foto
+480/720/1080 px, memastikan tidak ada teks yang hilang maupun meluber.
