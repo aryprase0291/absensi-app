@@ -10,6 +10,7 @@ import BackButton from './components/BackButton';
 import RekapExcelScreen from './screens/RekapExcelScreen';
 import GpsAuditScreen from './screens/GpsAuditScreen';
 import GpsDashboardScreen from './screens/GpsDashboardScreen';
+import GpsGateScreen from './screens/GpsGateScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
@@ -17,6 +18,7 @@ import ImportNotifier from './components/ImportNotifier';
 import ProcessingModal from './components/ProcessingModal';
 import { getVerifiedGeolocation } from './utils/antiFakeGps';
 import { mulaiPelacakGps, kirimTitikGps } from './utils/gpsTracker';
+import { periksaGpsWajib, izinSudahDiberikan, tandaiIzinPernahOk, lupakanIzin, GPS_STATUS } from './utils/gpsWajib';
 import { startFaceLivenessTracker } from './utils/faceLiveness';
 
 // ============================================================
@@ -503,6 +505,111 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
   }, [user]);
 
     // ----------------------------------------------------------------
+    // GERBANG GPS WAJIB (lihat utils/gpsWajib.js)
+    //
+    // Menu tidak boleh terbuka sebelum lokasi perangkat benar-benar
+    // terbaca. Gerbangnya digambar sebagai LAPISAN DI ATAS isi aplikasi,
+    // bukan menggantikannya: kalau pemeriksaan ulang di tengah sesi
+    // gagal sesaat, layar form yang sedang diisi karyawan tetap hidup di
+    // belakang beserta foto dan catatannya. Mengganti isi aplikasi akan
+    // melepas komponennya dan membuang isian itu diam-diam.
+    // ----------------------------------------------------------------
+const [gpsGate, setGpsGate] = useState({ status: GPS_STATUS.MEMERIKSA, pesan: '', lolos: false, memeriksa: true });
+const [gpsGatePercobaan, setGpsGatePercobaan] = useState(0);
+const gpsOkTerakhirRef = useRef(0);
+
+const periksaGerbangGps = useCallback(async (opsi) => {
+  const diam = !!(opsi && opsi.diam);
+  // Mode diam: menu sudah terbuka, pemeriksaan berjalan di belakang layar.
+  // Jangan menampilkan "Memeriksa Lokasi…" — itu justru yang membuat
+  // karyawan merasa ditanyai ulang padahal izinnya sudah lama diberikan.
+  if (!diam) setGpsGate((g) => ({ ...g, memeriksa: true }));
+
+  const hasil = await periksaGpsWajib({ diam });
+
+  if (hasil.status === GPS_STATUS.OK) {
+    gpsOkTerakhirRef.current = Date.now();
+    // Dicatat supaya pembukaan aplikasi BERIKUTNYA tidak memunculkan
+    // gerbang sama sekali — termasuk di Safari iOS yang tidak punya
+    // Permissions API untuk ditanyai.
+    tandaiIzinPernahOk();
+    setGpsGate({ status: GPS_STATUS.OK, pesan: '', lolos: true, memeriksa: false });
+    setGpsGatePercobaan(0);
+    return hasil;
+  }
+
+  // Izin dicabut: ingatan harus ikut dibuang, kalau tidak aplikasi akan
+  // terus mencoba membuka menu lebih dulu dan baru menabrak gerbang.
+  if (hasil.status === GPS_STATUS.DITOLAK) lupakanIzin();
+
+  setGpsGatePercobaan((n) => n + 1);
+  setGpsGate({ status: hasil.status, pesan: hasil.pesan, lolos: false, memeriksa: false });
+  return hasil;
+}, []);
+
+useEffect(() => {
+  if (!user || !user.id) {
+    setGpsGate({ status: GPS_STATUS.MEMERIKSA, pesan: '', lolos: false, memeriksa: true });
+    setGpsGatePercobaan(0);
+    gpsOkTerakhirRef.current = 0;
+    return;
+  }
+  let batal = false;
+  (async () => {
+    // Karyawan yang izin lokasinya SUDAH diberikan langsung masuk ke menu.
+    // Posisinya tetap dibaca — hanya saja di latar belakang, tanpa layar
+    // pemeriksaan. Gerbang baru muncul kalau pembacaan itu benar-benar
+    // gagal (izin dicabut, atau layanan lokasi perangkat dimatikan).
+    const sudahIzin = await izinSudahDiberikan();
+    if (batal) return;
+    if (sudahIzin) {
+      gpsOkTerakhirRef.current = Date.now();
+      setGpsGate({ status: GPS_STATUS.OK, pesan: '', lolos: true, memeriksa: false });
+    }
+
+    const hasil = await periksaGerbangGps({ diam: sudahIzin });
+    if (batal || !hasil || hasil.status !== GPS_STATUS.OK) return;
+    // Titik pertama dikirim dari posisi yang BARU SAJA dibaca gerbang —
+    // tanpa membaca GPS untuk kedua kalinya. Inilah yang membuat setiap
+    // karyawan langsung muncul di Dashboard GPS begitu membuka aplikasi,
+    // bukan menunggu siklus pelacak lima menit kemudian.
+    kirimTitikGps({ fetchApi, scriptUrl: SCRIPT_URL, user, sumber: 'awal', posisi: hasil.posisi });
+  })();
+  return () => { batal = true; };
+}, [user, periksaGerbangGps]);
+
+    // Pemeriksaan ulang saat aplikasi kembali dibuka.
+    //
+    // Sengaja DIBATASI 15 menit sekali. Memeriksa setiap kali layar
+    // kembali menyala terdengar lebih ketat, tapi hasilnya kebalikannya:
+    // pembacaan GPS di dalam ruangan sesekali gagal karena timeout, dan
+    // karyawan yang sekadar membalas pesan lalu kembali akan terlempar ke
+    // gerbang tanpa melakukan kesalahan apa pun.
+useEffect(() => {
+  if (!user || !user.id) return;
+  const saatKembali = () => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (!gpsOkTerakhirRef.current) return;
+    if (Date.now() - gpsOkTerakhirRef.current < 15 * 60 * 1000) return;
+    // Diam: karyawan sedang memakai aplikasi, jangan disela layar
+    // pemeriksaan kalau pada akhirnya posisinya memang terbaca.
+    periksaGerbangGps({ diam: true });
+  };
+  document.addEventListener('visibilitychange', saatKembali);
+  return () => document.removeEventListener('visibilitychange', saatKembali);
+}, [user, periksaGerbangGps]);
+
+    // Admin tidak boleh bisa terkunci dari sistemnya sendiri: setelah tiga
+    // kali gagal, jalan keluar darurat dibuka HANYA untuk role admin.
+    // Karyawan biasa tidak pernah melihat tombol ini.
+const bolehGpsDarurat = String((user && user.role) || '').toLowerCase() === 'admin' && gpsGatePercobaan >= 3;
+
+const lanjutTanpaGps = useCallback(() => {
+  setGpsGate({ status: GPS_STATUS.OK, pesan: '', lolos: true, memeriksa: false });
+  gpsOkTerakhirRef.current = Date.now();
+}, []);
+
+    // ----------------------------------------------------------------
     // PELACAKAN POSISI (lihat utils/gpsTracker.js dan apps-script/GpsTracking.gs)
     //
     // Dipasang di sini, bukan di dalam Dashboard, karena pelacakan harus
@@ -512,6 +619,10 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
     // ----------------------------------------------------------------
 useEffect(() => {
   if (!user || !user.id) { setGpsTrackStatus(null); return; }
+  // Menunggu gerbang lolos lebih dulu. Menjalankan pelacak saat gerbang
+  // masih menahan hanya menghasilkan ping gagal beruntun — GPS-nya memang
+  // belum bisa dibaca, itu justru sebabnya gerbang muncul.
+  if (!gpsGate.lolos) return;
   const hentikan = mulaiPelacakGps({
     fetchApi,
     scriptUrl: SCRIPT_URL,
@@ -519,7 +630,7 @@ useEffect(() => {
     onStatus: setGpsTrackStatus
   });
   return () => { try { hentikan(); } catch (e) { /* abaikan */ } };
-}, [user]);
+}, [user, gpsGate.lolos]);
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
 return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button>{updateGagalBerulang ? (<><p className="text-[11px] text-amber-600 font-semibold mt-4 leading-relaxed">Sudah beberapa kali dimuat ulang tetapi versinya tetap sama. Kemungkinan besar file aplikasi versi baru belum diunggah ke server — bukan kesalahan HP Anda.</p><button onClick={lanjutTanpaUpdate} className="w-full mt-3 border border-slate-300 text-slate-600 font-bold py-3 rounded-xl active:scale-95 transition-all">Lanjutkan dengan versi ini</button><p className="text-[10px] text-slate-400 mt-3">Absensi tetap dapat dipakai. Laporkan pesan ini ke Admin.</p></>) : (<p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p>)}</div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
@@ -556,7 +667,18 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
+      <GpsGateScreen
+        status={gpsGate.status}
+        pesan={gpsGate.pesan}
+        memeriksa={gpsGate.memeriksa}
+        namaUser={user.nama}
+        bolehDarurat={bolehGpsDarurat}
+        onPeriksaUlang={() => periksaGerbangGps()}
+        onKeluar={handleLogout}
+        onLanjutDarurat={lanjutTanpaGps}
+      />
+    )}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya

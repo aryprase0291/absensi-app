@@ -115,6 +115,66 @@ mengecualikan seseorang.
 
 ---
 
+## 6. GERBANG GPS WAJIB (1.0.16)
+
+Setelah login, aplikasi **menahan seluruh menu** sampai lokasi perangkat
+benar-benar terbaca. Ini yang membuat posisi semua karyawan pasti
+tercatat, bukan hanya karyawan yang kebetulan mengizinkan lokasi.
+
+**Alurnya**
+
+1. Karyawan login seperti biasa.
+2. Layar "Memeriksa Lokasi…" muncul, aplikasi membaca GPS.
+3. Berhasil → menu terbuka, dan titik pertama **langsung dikirim** dari
+   pembacaan itu juga (tanpa membaca GPS dua kali), sehingga karyawan
+   segera muncul di Dashboard GPS.
+4. Gagal → layar gerbang menahan, disertai panduan langkah yang berbeda
+   untuk iPhone, Android, dan komputer.
+
+**Dua percobaan, bukan satu.** Percobaan pertama memakai GPS presisi
+tinggi; kalau gagal karena timeout atau sinyal, percobaan kedua memakai
+lokasi jaringan (WiFi/seluler) yang hampir selalu berhasil di dalam
+ruangan. Tanpa langkah kedua ini, karyawan jujur akan terkunci di lobi
+kantornya sendiri — kegagalan yang jauh lebih mahal daripada akurasi
+yang berkurang. Izin yang **ditolak** tidak pernah dicoba ulang, supaya
+tidak muncul dua dialog beruntun.
+
+**Sekali izinkan, tidak ditanya lagi.** Gerbang hanya muncul pada
+karyawan yang izin lokasinya belum ada. Begitu izin diberikan sekali,
+pembukaan aplikasi berikutnya langsung masuk ke menu — posisinya tetap
+dibaca, hanya di latar belakang tanpa layar pemeriksaan. Sumber
+kebenarannya Permissions API; Safari iOS tidak mendukungnya untuk
+geolocation, jadi di sana dipakai catatan lokal "perangkat ini pernah
+berhasil" yang berlaku 60 hari. Kalau izin dicabut atau layanan lokasi
+dimatikan, pembacaan latar belakang itu gagal dan gerbang muncul lagi —
+catatan lokalnya ikut dibuang saat izin terdeteksi `denied`.
+
+**Tidak ada tombol lewati untuk karyawan.** Jalan keluar hanya terbuka
+pada dua keadaan yang mustahil diperbaiki karyawan sendiri:
+
+- halaman diakses lewat `http://` (browser mematikan Geolocation);
+- browser sama sekali tidak punya fitur lokasi.
+
+Ditambah satu pengaman: **role `admin`** mendapat tombol darurat setelah
+tiga kali gagal, supaya pemilik sistem tidak pernah terkunci dari
+sistemnya sendiri. Karyawan biasa tidak pernah melihat tombol itu.
+
+> **WAJIB DIPERIKSA SEBELUM RILIS:** aplikasi harus disajikan lewat
+> **https://**. Pada `http://`, Geolocation dimatikan browser dan
+> SELURUH karyawan akan berhenti di gerbang.
+
+**Pemeriksaan ulang** dilakukan saat aplikasi kembali dibuka, tetapi
+paling cepat 15 menit sekali — karyawan yang sekadar membalas pesan lalu
+kembali tidak boleh terlempar ke gerbang tanpa kesalahan. Gerbang
+digambar sebagai lapisan di atas isi aplikasi, jadi form absen yang
+sedang diisi (beserta fotonya) tidak hilang bila pemeriksaan ulang gagal
+sesaat.
+
+Uji otomatis: `CI=true npx react-scripts test --testPathPattern gpsWajib`
+(14 uji: kasus dalam gedung, izin ditolak, dan ingatan izin).
+
+---
+
 ## 6. BATASAN YANG HARUS DIKOMUNIKASIKAN
 
 1. **Pelacakan hanya berjalan saat aplikasi dibuka.** Web tidak
@@ -137,7 +197,7 @@ mengecualikan seseorang.
 
 ---
 
-## 7. PRIVASI
+## 8. PRIVASI
 
 - Indikator "Lokasi dibagikan ke Admin" di layar karyawan **dihapus pada
   8 Sep 2026** atas permintaan (menutupi baris data terbawah di HP).
@@ -155,7 +215,7 @@ mengecualikan seseorang.
 
 ---
 
-## 8. CACHE HOSTING — WAJIB DIATUR SEKALI
+## 7. CACHE HOSTING — WAJIB DIATUR SEKALI
 
 Gejala "layar putih" dan "layar Update Tersedia berulang" di Safari iOS /
 Chrome Android hampir selalu satu penyakit yang sama: **HP menyimpan
