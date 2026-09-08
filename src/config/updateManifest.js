@@ -7,8 +7,9 @@ export const FRONTEND_UPDATE_HISTORY = [
     "releasedAt": "2026-09-08",
     "required": true,
     "notes": [
-      "Pelacakan posisi karyawan selama aplikasi terbuka, dengan indikator jelas saat lokasi dibagikan.",
-      "Dashboard GPS berpeta untuk admin: posisi terkini, jejak harian, dan laporan ke Google Sheet."
+      "Pelacakan posisi karyawan selama aplikasi terbuka, dengan pemberitahuan saat lokasi dibagikan.",
+      "Dashboard GPS berpeta untuk admin: posisi terkini, jejak harian, dan laporan ke Google Sheet.",
+      "Perbaikan layar putih dan layar update berulang di Safari iOS serta Chrome Android."
     ]
   },
   {

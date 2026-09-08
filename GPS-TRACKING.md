@@ -139,8 +139,12 @@ mengecualikan seseorang.
 
 ## 7. PRIVASI
 
-- Karyawan melihat indikator **"Lokasi dibagikan ke Admin"** selama
-  pelacakan aktif. Pelacakan diam-diam bukan pilihan yang diambil di sini.
+- Indikator "Lokasi dibagikan ke Admin" di layar karyawan **dihapus pada
+  8 Sep 2026** atas permintaan (menutupi baris data terbawah di HP).
+  Konsekuensinya: aplikasi tidak lagi memberi tahu karyawan bahwa
+  lokasinya direkam. Sampaikan kebijakan ini lewat Info HRD atau surat
+  pemberitahuan — di banyak wilayah, memberi tahu karyawan bukan sekadar
+  etika tapi kewajiban hukum.
 - Aksesnya **admin saja** — HRD sekalipun tidak dapat membuka dashboard
   ini, berbeda dengan Monitoring Integritas GPS yang boleh dilihat HRD.
 - Retensi: jalankan `PANGKAS_JEJAK_GPS(60)` dari editor Apps Script untuk
@@ -151,7 +155,71 @@ mengecualikan seseorang.
 
 ---
 
-## 8. ACTION BARU
+## 8. CACHE HOSTING — WAJIB DIATUR SEKALI
+
+Gejala "layar putih" dan "layar Update Tersedia berulang" di Safari iOS /
+Chrome Android hampir selalu satu penyakit yang sama: **HP menyimpan
+`index.html` lama.**
+
+Berkas di `/static/` namanya mengandung hash isi, jadi aman disimpan
+selamanya. `index.html` namanya selalu sama tetapi isinya berganti tiap
+rilis — dialah yang menunjuk bundle mana yang dipakai. Kalau ia
+tersimpan di HP:
+
+- index.html lama menunjuk `/static/js/main.<hash-lama>.js` yang sudah
+  diganti di server → **404 → layar putih**;
+- bundle lama melapor versi lama ke server yang sudah baru → **layar
+  "Update Tersedia" yang tidak pernah selesai**.
+
+**Apache / cPanel** — sudah ditangani: `public/.htaccess` ikut tersalin
+ke `build/` setiap kali `npm run build`. Pastikan berkas tersembunyi ini
+**ikut terunggah** (di FileZilla: Server → Force showing hidden files).
+
+**Nginx** — tambahkan di server block:
+
+```nginx
+location = /index.html {
+  add_header Cache-Control "no-store, no-cache, must-revalidate";
+}
+location /static/ {
+  add_header Cache-Control "public, max-age=31536000, immutable";
+}
+```
+
+**Netlify / Vercel / Cloudflare Pages** — sudah benar secara bawaan.
+
+### Saat mengunggah build baru
+
+Jangan menghapus isi `/static` yang lama lebih dulu. Unggah menimpa saja.
+HP yang masih memegang index.html lama tetap menemukan berkasnya,
+sehingga bisa masuk ke aplikasi lalu ikut jalur update secara normal —
+bukan langsung menabrak layar putih.
+
+### Jaring pengaman di aplikasi (1.0.16)
+
+Kalau tetap ada yang lolos, `public/index.html` kini berisi skrip kecil
+non-React yang berjalan lebih dulu daripada bundle:
+
+- berkas `/static` gagal diunduh → cache dibersihkan, halaman dimuat
+  ulang sekali secara otomatis;
+- bundle termuat tetapi layar tetap kosong 8 detik → perlakuan sama;
+- kalau percobaan kedua masih gagal → tampil kartu "Aplikasi gagal
+  dimuat" beserta tombol Muat Ulang, bukan layar putih tanpa penjelasan.
+
+Layar "Update Tersedia" juga tidak lagi menjadi jalan buntu: setelah dua
+kali gagal, muncul tombol **Lanjutkan dengan versi ini** supaya karyawan
+tetap bisa absen sementara build baru diunggah.
+
+### Membebaskan HP yang sudah terlanjur macet
+
+- **Safari iOS**: Pengaturan → Safari → Hapus Riwayat dan Data Situs;
+  atau buka sekali lewat Tab Pribadi.
+- **Chrome Android**: ⋮ → Setelan → Privasi → Hapus data penjelajahan →
+  centang "Gambar dan file dalam cache".
+
+---
+
+## 9. ACTION BARU
 
 | Action | Role | Fungsi |
 |---|---|---|

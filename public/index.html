@@ -9,6 +9,16 @@
       name="description"
       content="Sistem Absensi dan Manajemen Kehadiran Karyawan JPT Group"
     />
+    <!-- HTML tidak boleh di-cache. Berkas /static/* punya hash di namanya
+         sehingga aman disimpan selamanya, tetapi index.html HARUS selalu
+         diambil ulang: isinya yang menunjuk ke bundle mana yang dipakai.
+         index.html lama + bundle baru = layar putih, karena berkas yang
+         ditunjuknya sudah tidak ada di server.
+         Meta ini tidak dihormati semua browser — atur juga header
+         Cache-Control: no-store untuk index.html di hosting Anda. -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     <title>Absensi Online - JPT Group</title>
@@ -16,5 +26,92 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+
+    <!-- =================================================================
+         JARING PENGAMAN LAYAR PUTIH
+         Sengaja ditulis di sini, bukan di dalam React, dan sengaja memakai
+         JavaScript gaya lama tanpa transpilasi: kode ini harus tetap
+         berjalan justru ketika bundle utama GAGAL dimuat — persis saat
+         React belum ada sama sekali.
+         Dua penyebab yang ditangani:
+           1. index.html lama (dari cache HP) menunjuk /static/js/main.<hash>.js
+              yang sudah tidak ada di server -> berkas 404, layar putih.
+           2. Bundle termuat tapi meledak saat dijalankan -> <div id="root">
+              tetap kosong selamanya.
+         Keduanya berakhir sama di mata karyawan: aplikasi tidak bisa dibuka.
+         ================================================================= -->
+    <script>
+      (function () {
+        var SUDAH = 'pemulihan_muat';
+
+        function sudahMencoba() {
+          try { return sessionStorage.getItem(SUDAH) === '1'; } catch (e) { return false; }
+        }
+        function tandaiMencoba() {
+          try { sessionStorage.setItem(SUDAH, '1'); } catch (e) {}
+        }
+        function bersihkanCache(lanjut) {
+          if (typeof caches === 'undefined' || !caches.keys) { lanjut(); return; }
+          try {
+            caches.keys().then(function (k) {
+              return Promise.all(k.map(function (n) { return caches.delete(n); }));
+            })['catch'](function () {})
+              .then(lanjut, lanjut);
+          } catch (e) { lanjut(); }
+        }
+        function muatUlangBersih() {
+          tandaiMencoba();
+          bersihkanCache(function () {
+            window.location.replace(window.location.pathname + '?pulih=' + Date.now());
+          });
+        }
+        function tampilkanPesan() {
+          var akar = document.getElementById('root');
+          if (!akar || akar.innerHTML.length > 0) return;
+          akar.innerHTML =
+            '<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:380px;' +
+            'margin:18vh auto;padding:24px;text-align:center;color:#334155">' +
+            '<div style="font-size:40px;line-height:1">&#9888;&#65039;</div>' +
+            '<h1 style="font-size:18px;font-weight:800;margin:12px 0 6px;color:#0f172a">Aplikasi gagal dimuat</h1>' +
+            '<p style="font-size:13px;line-height:1.6;margin:0 0 16px">Sebagian berkas aplikasi tidak berhasil diunduh. ' +
+            'Coba muat ulang; jika tetap sama, tutup seluruh tab aplikasi ini lalu buka kembali, ' +
+            'atau laporkan ke Admin.</p>' +
+            '<button id="tbl-pulih" style="width:100%;padding:14px;border:0;border-radius:12px;background:#2563eb;' +
+            'color:#fff;font-weight:700;font-size:14px">Muat Ulang</button></div>';
+          var tbl = document.getElementById('tbl-pulih');
+          if (tbl) {
+            tbl.onclick = function () {
+              try { sessionStorage.removeItem(SUDAH); } catch (e) {}
+              muatUlangBersih();
+            };
+          }
+        }
+
+        // 1. Berkas /static gagal diunduh (404 karena index.html basi).
+        window.addEventListener('error', function (ev) {
+          var el = ev && ev.target;
+          if (!el || el === window) return;
+          var alamat = el.src || el.href || '';
+          if (alamat.indexOf('/static/') === -1) return;
+          if (sudahMencoba()) { tampilkanPesan(); return; }
+          muatUlangBersih();
+        }, true);
+
+        // 2. Bundle termuat tapi tidak menghasilkan apa pun.
+        //    8 detik: cukup longgar untuk 3G lambat, cukup cepat supaya
+        //    karyawan tidak menatap layar putih tanpa penjelasan.
+        window.addEventListener('load', function () {
+          setTimeout(function () {
+            var akar = document.getElementById('root');
+            if (akar && akar.innerHTML.length === 0) {
+              if (sudahMencoba()) tampilkanPesan();
+              else muatUlangBersih();
+            } else {
+              try { sessionStorage.removeItem(SUDAH); } catch (e) {}
+            }
+          }, 8000);
+        });
+      })();
+    </script>
   </body>
 </html>

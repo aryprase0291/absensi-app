@@ -87,6 +87,10 @@ export async function kirimTitikGps({ fetchApi, scriptUrl, user, sumber = 'perio
 
     const res = await fetchApi(scriptUrl, {
       method: 'POST',
+      // senyap: ini permintaan latar belakang. Kalau sesinya sudah habis,
+      // berhenti diam-diam — jangan memunculkan alert atau me-reload
+      // halaman di tengah karyawan memakai aplikasi.
+      senyap: true,
       body: JSON.stringify({
         action: 'track_gps_ping',
         userId: user.id,
@@ -203,6 +207,7 @@ export function mulaiPelacakGps({ fetchApi, scriptUrl, user, onStatus }) {
     try {
       const res = await fetchApi(scriptUrl, {
         method: 'POST',
+        senyap: true,
         body: JSON.stringify({ action: 'get_gps_tracking_status', userId: user.id })
       });
       const data = await res.json();

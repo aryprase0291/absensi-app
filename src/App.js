@@ -134,7 +134,13 @@ const fetchApi = async (url, opts = {}, percobaan = 1) => {
     });
   }
 
-  if (data && data.code === 'AUTH_REQUIRED') {
+  // opts.senyap = permintaan latar belakang (pelacak GPS). Sesi habis pada
+  // request semacam itu TIDAK boleh memunculkan alert atau me-reload
+  // halaman: user mungkin sedang mengisi form absen, dan halaman yang
+  // tiba-tiba dimuat ulang akan membuang isian beserta fotonya.
+  // Pemanggilnya cukup berhenti diam-diam; sesi tetap akan divalidasi
+  // pada aksi berikutnya yang benar-benar dilakukan user.
+  if (data && data.code === 'AUTH_REQUIRED' && !opts.senyap) {
     sessionStorage.clear();
     alert('Sesi Anda sudah berakhir. Silakan login ulang.');
     window.location.reload();
@@ -283,6 +289,11 @@ function AppAbsensiInner() {
   // updates/frontend/releases. Jangan menulis angka versi langsung di sini.
   const CLIENT_VERSION = FRONTEND_VERSION;
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  // Dibaca sekali saat aplikasi dibuka: berapa kali user sudah menekan
+  // "Update Sekarang" tanpa versinya berubah.
+  const [updateGagalBerulang] = useState(() => {
+    try { return Number(localStorage.getItem('update_percobaan') || 0) >= 2; } catch (e) { return false; }
+  });
   const [newVersion, setNewVersion] = useState('');
 
     //----LOGIKA CEK UPDATE----
@@ -290,7 +301,15 @@ function AppAbsensiInner() {
     // dijalankan saat link/shortcut mobile dibuka agar bundle lama terdeteksi
     // sebelum user melanjutkan memakai aplikasi.
 const cekVersi = useCallback((versiServer) => {
-  if (!versiServer || versiServer === CLIENT_VERSION) return;
+  if (!versiServer || versiServer === CLIENT_VERSION) {
+    // Versi sudah cocok: penghitung percobaan tidak boleh tertinggal,
+    // kalau tidak update berikutnya langsung dianggap "sudah 2x gagal".
+    try { localStorage.removeItem('update_percobaan'); localStorage.removeItem('update_lewati'); } catch (e) { /* abaikan */ }
+    return;
+  }
+  // User sudah memilih melanjutkan dengan versi ini — jangan dikunci lagi
+  // setiap kali aplikasi dibuka.
+  try { if (localStorage.getItem('update_lewati') === String(versiServer)) return; } catch (e) { /* abaikan */ }
   const angka = (v) => String(v).split('.').map((n) => Number(n) || 0);
   const client = angka(CLIENT_VERSION);
   const server = angka(versiServer);
@@ -328,11 +347,56 @@ useEffect(() => {
 }, [cekVersi]);
 
     //----FUNGSI EKSEKUSI UPDATE (MEMBERSIHKAN CACHE)----
-const performUpdate = () => { localStorage.clear(); sessionStorage.clear(); if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())); window.location.href = window.location.href.split('?')[0] + '?v=' + newVersion + '&t=' + Date.now(); };
+const performUpdate = async () => {
+  // Percobaan dihitung SEBELUM localStorage dibersihkan, lalu ditulis
+  // ulang sesudahnya. Tanpa penghitung ini, bundle yang memang belum
+  // terunggah membuat layar ini jadi jalan buntu: user menekan Update,
+  // halaman dimuat ulang, bundle yang sama muncul lagi, selamanya.
+  let percobaan = 0;
+  try { percobaan = Number(localStorage.getItem('update_percobaan') || 0) + 1; } catch (e) { percobaan = 1; }
 
-    //----INDIKATOR PELACAKAN POSISI----
-    // Ditampilkan ke karyawan selama lokasinya dibagikan. Pelacakan diam-diam
-    // bukan pilihan: karyawan berhak tahu, dan di banyak wilayah itu syarat hukum.
+  try { localStorage.clear(); } catch (e) { /* mode privat iOS: abaikan */ }
+  try { sessionStorage.clear(); } catch (e) { /* abaikan */ }
+  try { localStorage.setItem('update_percobaan', String(percobaan)); } catch (e) { /* abaikan */ }
+
+  if ('serviceWorker' in navigator) {
+    try {
+      const rs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(rs.map((r) => r.unregister()));
+    } catch (e) { /* abaikan */ }
+  }
+
+  // INI YANG DULU HILANG. Safari iOS dan Chrome Android menyimpan HTML dan
+  // bundle di Cache Storage, dan localStorage.clear() sama sekali tidak
+  // menyentuhnya. Selama isinya masih ada, halaman yang dimuat ulang
+  // menerima bundle LAMA lagi — layar "Update Tersedia" muncul terus, dan
+  // kalau index.html lama menunjuk berkas /static yang sudah tidak ada di
+  // server, yang terlihat justru layar putih.
+  if (typeof caches !== 'undefined' && caches.keys) {
+    try {
+      const kunci = await caches.keys();
+      await Promise.all(kunci.map((k) => caches.delete(k)));
+    } catch (e) { /* abaikan */ }
+  }
+
+  // replace(), bukan href: supaya tombol "kembali" tidak mengembalikan
+  // user ke halaman versi lama yang baru saja ditinggalkan.
+  window.location.replace(window.location.pathname + '?v=' + newVersion + '&t=' + Date.now());
+};
+
+// Dipanggil dari layar update setelah dua percobaan gagal. Aplikasi lama
+// tetap bisa dipakai — absensi jauh lebih penting daripada memaksa nomor
+// versi cocok, dan backend memang masih melayani klien versi sebelumnya.
+const lanjutTanpaUpdate = () => {
+  try { localStorage.setItem('update_lewati', newVersion); } catch (e) { /* abaikan */ }
+  setUpdateAvailable(false);
+};
+
+    //----STATUS PELACAKAN POSISI----
+    // Disimpan untuk keperluan debug/diagnosa, tidak digambar di layar.
+    // Indikator melayangnya dihapus atas permintaan (8 Sep 2026) karena
+    // menutupi baris data paling bawah di layar HP.
+    // eslint-disable-next-line no-unused-vars
 const [gpsTrackStatus, setGpsTrackStatus] = useState(null);
 
     //----FUNGSI LOGOUT / KELUAR APLIKASI----
@@ -458,7 +522,7 @@ useEffect(() => {
 }, [user]);
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
-return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button><p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p></div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
+return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button>{updateGagalBerulang ? (<><p className="text-[11px] text-amber-600 font-semibold mt-4 leading-relaxed">Sudah beberapa kali dimuat ulang tetapi versinya tetap sama. Kemungkinan besar file aplikasi versi baru belum diunggah ke server — bukan kesalahan HP Anda.</p><button onClick={lanjutTanpaUpdate} className="w-full mt-3 border border-slate-300 text-slate-600 font-bold py-3 rounded-xl active:scale-95 transition-all">Lanjutkan dengan versi ini</button><p className="text-[10px] text-slate-400 mt-3">Absensi tetap dapat dipakai. Laporkan pesan ini ke Admin.</p></>) : (<p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p>)}</div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
        punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
        hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
     {view !== 'login' && view !== 'dashboard' && view !== 'form' && view !== 'ganti_password' && view !== 'rekap_admin' && (
@@ -492,14 +556,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && gpsTrackStatus && (gpsTrackStatus.aktif || gpsTrackStatus.izinDitolak) && (
-      <div className="fixed bottom-3 left-3 z-40 pointer-events-none">
-        <div className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold shadow-sm border backdrop-blur ${gpsTrackStatus.izinDitolak ? 'bg-amber-50/90 border-amber-200 text-amber-700' : 'bg-emerald-50/90 border-emerald-200 text-emerald-700'}`}>
-          <LocateFixed className={`w-3 h-3 ${gpsTrackStatus.izinDitolak ? '' : 'animate-pulse'}`} strokeWidth={2.4} />
-          {gpsTrackStatus.izinDitolak ? 'Izin lokasi mati' : 'Lokasi dibagikan ke Admin'}
-        </div>
-      </div>
-    )}</div></div>);}
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya

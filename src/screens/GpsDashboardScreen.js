@@ -853,8 +853,10 @@ export default function GpsDashboardScreen({ user, setView, fetchApi }) {
             <p className="text-[11px] leading-relaxed text-amber-800">
               <b>Yang perlu diketahui sebelum mengubah:</b> pelacakan hanya berjalan selama karyawan
               membuka aplikasi ini dan mengizinkan akses lokasi — browser tidak dapat melacak saat
-              aplikasi ditutup. Karyawan melihat indikator "Lokasi dibagikan ke Admin" selama
-              pelacakan aktif. Karyawan baru otomatis <b>aktif</b>; matikan di sini untuk mengecualikan.
+              aplikasi ditutup. Karyawan baru otomatis <b>aktif</b>; matikan di sini untuk mengecualikan.
+              Indikator "lokasi dibagikan" di layar karyawan sudah dihapus atas permintaan, jadi
+              pemberitahuan ke karyawan kini menjadi tanggung jawab perusahaan — sampaikan lewat
+              Info HRD atau surat kebijakan.
             </p>
           </div>
 
