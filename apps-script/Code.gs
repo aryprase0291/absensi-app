@@ -63,7 +63,11 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.15"; // UBAH ANGKA INI SETIAP KALI ANDA UPDATE SCRIPT/DEPLOY BARU
+const APP_VERSION = "1.0.16";
+// 1.0.16 — pelacakan posisi karyawan (GpsTracking.gs) + Dashboard GPS
+//          khusus admin. Backend lama tetap melayani klien 1.0.15:
+//          action ping GPS akan dijawab "Action tidak dikenal" dan
+//          klien sengaja mengabaikannya tanpa mengganggu absensi. // UBAH ANGKA INI SETIAP KALI ANDA UPDATE SCRIPT/DEPLOY BARU
 // 1.0.14 — jalur buka-aplikasi dipangkas dari 3 request jadi 1: stats dan
 //          pengumuman ikut di respons login, dan statistik mesin diambil
 //          dari indeks dbabsen yang di-cache (StatsIndex.gs).
@@ -167,6 +171,14 @@ function doPost(e) {
     if (action === 'save_approval_team_config') return handleSaveApprovalTeamConfig(data);
     if (action === 'get_alamat') return handleGetAlamat(data);
     if (action === 'get_gps_audit') return handleGetGpsAudit(data);
+    // --- PELACAKAN POSISI KARYAWAN (lihat GpsTracking.gs) ---
+    if (action === 'track_gps_ping') return handleTrackGpsPing(data);
+    if (action === 'get_gps_tracking_status') return handleGetGpsTrackingStatus(data);
+    if (action === 'get_gps_live') return handleGetGpsLive(data);
+    if (action === 'get_gps_trail') return handleGetGpsTrail(data);
+    if (action === 'get_gps_tracking_admin') return handleGetGpsTrackingAdmin(data);
+    if (action === 'save_gps_tracking_config') return handleSaveGpsTrackingConfig(data);
+    if (action === 'buat_laporan_gps') return handleBuatLaporanGps(data);
     if (action === 'run_gps_audit_historis') return handleRunGpsAuditHistoris(data);
     if (action === 'get_geofence_config') return handleGetGeofenceConfig(data);
     if (action === 'save_geofence_config') return handleSaveGeofenceConfig(data);

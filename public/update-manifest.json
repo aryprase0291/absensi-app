@@ -1,7 +1,17 @@
 {
   "frontend": {
-    "currentVersion": "1.0.15",
+    "currentVersion": "1.0.16",
     "history": [
+      {
+        "file": "1.0.16.json",
+        "version": "1.0.16",
+        "releasedAt": "2026-09-08",
+        "required": true,
+        "notes": [
+          "Pelacakan posisi karyawan selama aplikasi terbuka, dengan indikator jelas saat lokasi dibagikan.",
+          "Dashboard GPS berpeta untuk admin: posisi terkini, jejak harian, dan laporan ke Google Sheet."
+        ]
+      },
       {
         "file": "1.0.15.json",
         "version": "1.0.15",
@@ -23,8 +33,18 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.15",
+    "currentVersion": "1.0.16",
     "history": [
+      {
+        "file": "1.0.16.json",
+        "version": "1.0.16",
+        "releasedAt": "2026-09-08",
+        "required": true,
+        "notes": [
+          "Sheet GpsTracking, GpsPosisiTerakhir, GpsTrackingConfig, dan LaporanGps untuk pemantauan posisi karyawan.",
+          "Endpoint pelacakan baru dengan gerbang role: pengiriman posisi untuk semua karyawan, pemantauan khusus admin."
+        ]
+      },
       {
         "file": "1.0.15.json",
         "version": "1.0.15",

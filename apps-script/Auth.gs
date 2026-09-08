@@ -176,6 +176,13 @@ const ACTION_ROLES = {
   // sedang mengisi form perlu ini, jadi '*' — sama seperti 'absen'.
   'get_alamat': '*',
 
+  // Pengiriman posisi berkala dari aplikasi karyawan (GpsTracking.gs).
+  // Wajib '*': setiap karyawan mengirim posisinya SENDIRI — userId
+  // ditimpa dari token di bawah, jadi tidak ada yang bisa mengirim
+  // posisi atas nama orang lain.
+  'track_gps_ping': '*',
+  'get_gps_tracking_status': '*',
+
   // --- Penyetuju (sesuai App.js: canApprove) ---
   // Kepala divisi/supervisor diberi jalur yang sama seperti manager.
   'get_approval_list': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
@@ -192,6 +199,16 @@ const ACTION_ROLES = {
   // Panel Monitoring Integritas GPS (AntiFakeGps.gs).
   'get_gps_audit': ['admin', 'hrd'],
   'run_gps_audit_historis': ['admin', 'hrd'],
+
+  // --- Dashboard GPS: ADMIN SAJA ---
+  // Sengaja tanpa 'hrd'. Memantau posisi orang sepanjang hari kerja jauh
+  // lebih sensitif daripada meninjau titik absen, jadi lingkarannya
+  // dibuat sesempit mungkin sesuai permintaan.
+  'get_gps_live': ['admin'],
+  'get_gps_trail': ['admin'],
+  'get_gps_tracking_admin': ['admin'],
+  'save_gps_tracking_config': ['admin'],
+  'buat_laporan_gps': ['admin'],
 
   // --- Admin saja ---
   'get_approval_team_config': ['admin'],
