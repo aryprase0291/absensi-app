@@ -5,6 +5,8 @@
   "notes": [
     "Presensi Masuk & Pulang kini terkunci pada KAMERA DEPAN; kamera belakang ditolak beserta pesan penjelasannya.",
     "Verifikasi wajah penuh sebelum foto dapat diambil: wajah harus utuh (dahi sampai dagu), menghadap lurus, satu orang, dan tidak tertutup.",
-    "Pemeriksaan ulang wajah pada foto yang benar-benar dijepret, sehingga kamera tidak bisa dialihkan sesaat sebelum menjepret."
+    "Pemeriksaan ulang wajah pada foto yang benar-benar dijepret, sehingga kamera tidak bisa dialihkan sesaat sebelum menjepret.",
+    "Pembaruan aplikasi kini dipaksa: HP yang masih memakai versi lama otomatis mendeteksi versi baru di server, membersihkan cache, dan memuat ulang sendiri.",
+    "Sisa Service Worker dan Cache Storage dari rilis lama dibersihkan saat aplikasi dibuka, sehingga cukup me-refresh halaman untuk mendapatkan perubahan terbaru."
   ]
 }

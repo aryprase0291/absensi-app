@@ -43,6 +43,17 @@
   </FilesMatch>
 </IfModule>
 
+# Sebagian hosting cPanel menyalakan mod_expires dengan aturan bawaan untuk
+# HTML. Kalau itu terjadi, header di atas bisa tertimpa dan HP karyawan
+# menyimpan index.html lama -> aplikasi tidak ikut ter-update walau sudah
+# di-refresh. Blok ini memastikan HTML & JSON tidak pernah kedaluwarsa
+# secara diam-diam.
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType application/json "access plus 0 seconds"
+</IfModule>
+
 <IfModule mod_mime.c>
   AddType application/javascript .js
   AddType text/css .css

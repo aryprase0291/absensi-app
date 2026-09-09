@@ -21,6 +21,7 @@ import { mulaiPelacakGps, kirimTitikGps } from './utils/gpsTracker';
 import { periksaGpsWajib, izinSudahDiberikan, tandaiIzinPernahOk, lupakanIzin, GPS_STATUS } from './utils/gpsWajib';
 import { startFaceLivenessTracker, periksaWajahPenuh } from './utils/faceLiveness';
 import { bukaKameraDepan, hentikanStream } from './utils/kameraDepan';
+import { ambilVersiFrontendServer, bandingkanVersi, pantauPembaruan } from './utils/pembaruan';
 
 // ============================================================
 // HELPER API — token login + penanganan respons HTML dari Google
@@ -295,9 +296,12 @@ function AppAbsensiInner() {
   // Dibaca sekali saat aplikasi dibuka: berapa kali user sudah menekan
   // "Update Sekarang" tanpa versinya berubah.
   const [updateGagalBerulang] = useState(() => {
-    try { return Number(localStorage.getItem('update_percobaan') || 0) >= 2; } catch (e) { return false; }
+    try { return Number(localStorage.getItem('update_percobaan') || 0) >= 3; } catch (e) { return false; }
   });
   const [newVersion, setNewVersion] = useState('');
+  // Sisa detik sebelum aplikasi memuat ulang sendiri. null = belum berjalan
+  // (mis. karyawan sedang mengisi form absen, jadi update ditunda).
+  const [updateHitungMundur, setUpdateHitungMundur] = useState(null);
 
     //----LOGIKA CEK UPDATE----
     // Login membawa versi server di respons yang sama. check_version juga
@@ -330,6 +334,38 @@ const cekVersi = useCallback((versiServer) => {
   setNewVersion(versiServer);
   setUpdateAvailable(true);
 }, [CLIENT_VERSION]);
+
+    //----CEK VERSI FRONTEND (BERKAS DI SERVER YANG SAMA DENGAN BUNDLE)----
+    // update-manifest.json ikut ter-upload bersama bundle, jadi isinya
+    // selalu mencerminkan versi yang benar-benar ada di server saat ini —
+    // tidak bergantung pada deploy Apps Script. Inilah yang membuat
+    // "cukup refresh" berlaku untuk semua HP karyawan.
+const cekVersiFrontend = useCallback(async () => {
+  try {
+    const { versi } = await ambilVersiFrontendServer();
+    if (bandingkanVersi(versi, CLIENT_VERSION) <= 0) {
+      // Sudah paling baru: penghitung percobaan tidak boleh tertinggal.
+      try { localStorage.removeItem('update_percobaan'); localStorage.removeItem('update_lewati'); } catch (e) { /* abaikan */ }
+      return;
+    }
+    // Escape hatch hanya berlaku setelah beberapa kali muat ulang gagal
+    // (berarti berkas versi baru memang belum terunggah, bukan cache HP).
+    try {
+      const percobaan = Number(localStorage.getItem('update_percobaan') || 0);
+      if (percobaan >= 3 && localStorage.getItem('update_lewati') === String(versi)) return;
+    } catch (e) { /* abaikan */ }
+    setNewVersion(versi);
+    setUpdateAvailable(true);
+  } catch (e) {
+    // Manifest tidak terbaca (jaringan mati / berkas belum ada):
+    // jangan mengunci aplikasi tanpa bukti versi.
+  }
+}, [CLIENT_VERSION]);
+
+useEffect(() => {
+  cekVersiFrontend();
+  return pantauPembaruan(cekVersiFrontend);
+}, [cekVersiFrontend]);
 
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
 useEffect(() => { 
@@ -387,7 +423,24 @@ const performUpdate = async () => {
   window.location.replace(window.location.pathname + '?v=' + newVersion + '&t=' + Date.now());
 };
 
-// Dipanggil dari layar update setelah dua percobaan gagal. Aplikasi lama
+// Muat ulang otomatis. Ditunda selama karyawan berada di layar form absen
+// supaya foto & titik GPS yang sudah diisi tidak hilang; begitu keluar dari
+// form, hitung mundur langsung berjalan dan update tidak bisa dihindari.
+const bolehMuatUlangOtomatis = updateAvailable && !updateGagalBerulang && view !== 'form';
+useEffect(() => {
+  if (!bolehMuatUlangOtomatis) { setUpdateHitungMundur(null); return undefined; }
+  let sisa = 5;
+  setUpdateHitungMundur(sisa);
+  const timer = setInterval(() => {
+    sisa -= 1;
+    setUpdateHitungMundur(sisa);
+    if (sisa <= 0) { clearInterval(timer); performUpdate(); }
+  }, 1000);
+  return () => clearInterval(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [bolehMuatUlangOtomatis]);
+
+// Dipanggil dari layar update setelah beberapa percobaan gagal. Aplikasi lama
 // tetap bisa dipakai — absensi jauh lebih penting daripada memaksa nomor
 // versi cocok, dan backend memang masih melayani klien versi sebelumnya.
 const lanjutTanpaUpdate = () => {
@@ -634,7 +687,7 @@ useEffect(() => {
 }, [user, gpsGate.lolos]);
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
-return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-6">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Mohon update ke <strong>versi {newVersion}</strong> untuk melanjutkan.</p><button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button>{updateGagalBerulang ? (<><p className="text-[11px] text-amber-600 font-semibold mt-4 leading-relaxed">Sudah beberapa kali dimuat ulang tetapi versinya tetap sama. Kemungkinan besar file aplikasi versi baru belum diunggah ke server — bukan kesalahan HP Anda.</p><button onClick={lanjutTanpaUpdate} className="w-full mt-3 border border-slate-300 text-slate-600 font-bold py-3 rounded-xl active:scale-95 transition-all">Lanjutkan dengan versi ini</button><p className="text-[10px] text-slate-400 mt-3">Absensi tetap dapat dipakai. Laporkan pesan ini ke Admin.</p></>) : (<p className="text-[10px] text-slate-400 mt-4">*Aplikasi akan dimuat ulang secara otomatis.</p>)}</div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
+return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-2">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Aplikasi akan diperbarui ke <strong>versi {newVersion}</strong>.</p>{!updateGagalBerulang&&(<p className="text-[12px] font-semibold mb-5">{view === 'form' ? (<span className="text-amber-600">Menunggu Anda menyelesaikan form absen. Update berjalan otomatis setelah keluar dari form.</span>) : (<span className="text-blue-600">Memuat ulang otomatis dalam {updateHitungMundur === null ? 5 : updateHitungMundur} detik…</span>)}</p>)}{updateGagalBerulang&&(<div className="mb-5" />)}<button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button>{updateGagalBerulang ? (<><p className="text-[11px] text-amber-600 font-semibold mt-4 leading-relaxed">Sudah beberapa kali dimuat ulang tetapi versinya tetap sama. Kemungkinan besar file aplikasi versi baru belum diunggah ke server — bukan kesalahan HP Anda.</p><button onClick={lanjutTanpaUpdate} className="w-full mt-3 border border-slate-300 text-slate-600 font-bold py-3 rounded-xl active:scale-95 transition-all">Lanjutkan dengan versi ini</button><p className="text-[10px] text-slate-400 mt-3">Absensi tetap dapat dipakai. Laporkan pesan ini ke Admin.</p></>) : (<p className="text-[10px] text-slate-400 mt-4">*Cache aplikasi dibersihkan lalu halaman dimuat ulang otomatis.</p>)}</div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
        punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
        hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
     {view !== 'login' && view !== 'dashboard' && view !== 'form' && view !== 'ganti_password' && view !== 'rekap_admin' && (
