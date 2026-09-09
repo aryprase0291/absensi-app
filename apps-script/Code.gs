@@ -63,7 +63,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.16";
+const APP_VERSION = "1.0.17";
 // 1.0.16 — pelacakan posisi karyawan (GpsTracking.gs) + Dashboard GPS
 //          khusus admin. Backend lama tetap melayani klien 1.0.15:
 //          action ping GPS akan dijawab "Action tidak dikenal" dan

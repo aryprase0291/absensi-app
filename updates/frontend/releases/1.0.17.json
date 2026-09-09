@@ -1,0 +1,10 @@
+{
+  "version": "1.0.17",
+  "releasedAt": "2026-09-09",
+  "required": true,
+  "notes": [
+    "Presensi Masuk & Pulang kini terkunci pada KAMERA DEPAN; kamera belakang ditolak beserta pesan penjelasannya.",
+    "Verifikasi wajah penuh sebelum foto dapat diambil: wajah harus utuh (dahi sampai dagu), menghadap lurus, satu orang, dan tidak tertutup.",
+    "Pemeriksaan ulang wajah pada foto yang benar-benar dijepret, sehingga kamera tidak bisa dialihkan sesaat sebelum menjepret."
+  ]
+}

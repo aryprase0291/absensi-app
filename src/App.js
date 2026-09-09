@@ -19,7 +19,8 @@ import ProcessingModal from './components/ProcessingModal';
 import { getVerifiedGeolocation } from './utils/antiFakeGps';
 import { mulaiPelacakGps, kirimTitikGps } from './utils/gpsTracker';
 import { periksaGpsWajib, izinSudahDiberikan, tandaiIzinPernahOk, lupakanIzin, GPS_STATUS } from './utils/gpsWajib';
-import { startFaceLivenessTracker } from './utils/faceLiveness';
+import { startFaceLivenessTracker, periksaWajahPenuh } from './utils/faceLiveness';
+import { bukaKameraDepan, hentikanStream } from './utils/kameraDepan';
 
 // ============================================================
 // HELPER API — token login + penanganan respons HTML dari Google
@@ -4136,6 +4137,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const isIntervalType = !['Hadir', 'Pulang'].includes(type);
   const isShiftWorker = user.role === 'karyawan_shift'; 
   const isClockIn = type === 'Hadir';
+  // Presensi masuk & pulang: WAJIB kamera depan + wajah penuh terverifikasi.
+  const wajibWajah = ['Hadir', 'Pulang'].includes(type);
 
   const [selectedShift, setSelectedShift] = useState('');
   const availableShifts = masterData?.shifts || [];
@@ -4154,6 +4157,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const [fileName, setFileName] = useState('');
   const [fileMime, setFileMime] = useState('');
   const [livenessStatus, setLivenessStatus] = useState({ status: 'idle', isLive: false, faceCount: 0, message: '', badgeColor: '' });
+  const [kameraInfo, setKameraInfo] = useState({ facing: '', label: '', dikenali: false, ok: false });
+  const [errorKamera, setErrorKamera] = useState('');
+  const [fotoTerverifikasi, setFotoTerverifikasi] = useState(false);
+  const [sedangVerifikasi, setSedangVerifikasi] = useState(false);
   
   // FORM DATA
   const [location, setLocation] = useState(null);
@@ -4331,74 +4338,105 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       }
   };
 
-  const startCamera = async () => { 
-      if (trackerRef.current) {
-        trackerRef.current.stop();
-        trackerRef.current = null;
-      }
-      if (videoRef.current && videoRef.current.srcObject) { 
-          videoRef.current.srcObject.getTracks().forEach(t => t.stop()); 
+  const startCamera = async () => {
+      if (trackerRef.current) { trackerRef.current.stop(); trackerRef.current = null; }
+      if (videoRef.current && videoRef.current.srcObject) {
+          hentikanStream(videoRef.current.srcObject);
+          videoRef.current.srcObject = null;
       }
       setCameraActive(false);
+      setErrorKamera('');
       setLivenessStatus({ status: 'idle', isLive: false, faceCount: 0, message: '', badgeColor: '' });
-      try { 
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } } 
-          });
-          if (videoRef.current) { 
-            videoRef.current.srcObject = stream; 
-            setCameraActive(true); 
-            // Inisialisasi liveness tracker untuk kamera depan pada Hadir / Pulang
-            if (facingMode === 'user' && ['Hadir', 'Pulang'].includes(type)) {
+      try {
+          let stream;
+          if (wajibWajah) {
+            // Hadir / Pulang: kamera depan DIKUNCI. bukaKameraDepan() menolak
+            // stream yang ternyata berasal dari kamera belakang.
+            const hasil = await bukaKameraDepan({ width: 640, height: 480 });
+            stream = hasil.stream;
+            setKameraInfo({ facing: hasil.facing || 'user', label: hasil.label, dikenali: hasil.dikenali, ok: true });
+          } else {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } }
+            });
+            setKameraInfo({ facing: facingMode, label: '', dikenali: true, ok: true });
+          }
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            setCameraActive(true);
+            if (wajibWajah) {
               trackerRef.current = startFaceLivenessTracker(videoRef.current, setLivenessStatus);
             }
-          } 
-      } catch (err) { alert("Gagal akses kamera."); } 
+          } else {
+            hentikanStream(stream);
+          }
+      } catch (err) {
+          setKameraInfo({ facing: '', label: '', dikenali: false, ok: false });
+          const pesan = (err && err.message) ? err.message : 'Gagal akses kamera.';
+          setErrorKamera(pesan);
+          if (!wajibWajah) alert(pesan);
+      }
   };
-  useEffect(() => { if (cameraActive) { startCamera(); } }, [facingMode]);
-  
-  const toggleCamera = () => { 
+  // Ganti kamera hanya berlaku untuk jenis non-presensi (Dinas / Sakit).
+  useEffect(() => { if (cameraActive && !wajibWajah) { startCamera(); } }, [facingMode]);
+
+  const toggleCamera = () => {
+    if (wajibWajah) return; // kamera depan terkunci untuk Hadir / Pulang
     if (trackerRef.current) {
       trackerRef.current.stop();
       trackerRef.current = null;
     }
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user'); 
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
-  const takePhoto = () => { 
-      // Verifikasi liveness sebelum capture untuk Hadir / Pulang jika memakai kamera depan
-      if (['Hadir', 'Pulang'].includes(type) && facingMode === 'user' && !livenessStatus.isLive) {
-        alert(livenessStatus.message || 'Wajah belum terverifikasi aktif. Posisikan wajah Anda pada area panduan dan lakukan gerakan mikro / kedipan wajar.');
+  const takePhoto = async () => {
+      if (sedangVerifikasi) return;
+      // Gerbang 1: status realtime harus "wajah penuh + aktif".
+      if (wajibWajah && !livenessStatus.isLive) {
+        alert(livenessStatus.message || 'Wajah belum terverifikasi. Posisikan seluruh wajah menghadap kamera depan.');
         return;
       }
       const video = videoRef.current; const canvas = canvasRef.current;
-      if (video && canvas) { 
-          canvas.width = video.videoWidth; canvas.height = video.videoHeight; 
-          const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0);
-          const now = getServerNow(); const timestampText = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour12: false })}`;
-          // Simpan gambar POLOS dulu. Waktu jepret ikut disimpan supaya
-          // penggambaran ulang nanti tetap memakai jam saat foto diambil,
-          // bukan jam saat alamat tiba.
-          const pakaiAlamat = !!(alamatStatus === 'ada' && alamat);
-          fotoMentahRef.current = {
-            dataUrl: canvas.toDataURL('image/jpeg', 0.92),
-            timestampText,
-            pakaiAlamat
-          };
-          // Nama tempat kalau sudah ada; kalau belum, koordinat dipakai
-          // sementara dan akan diganti otomatis begitu alamat tiba.
-          const lokasiText = pakaiAlamat
-            ? alamat
-            : (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : "No GPS");
-          gambarStempelFoto(ctx, canvas.width, canvas.height, timestampText, lokasiText);
-          setPhoto(canvas.toDataURL('image/jpeg', 0.8)); 
-          if (trackerRef.current) {
-            trackerRef.current.stop();
-            trackerRef.current = null;
-          }
-          if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
-          setCameraActive(false);
-      } 
+      if (!video || !canvas) return;
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0);
+
+      // Gerbang 2: periksa ulang WAJAH PENUH pada frame yang benar-benar
+      // dijepret, supaya kamera tidak bisa dialihkan sedetik sebelum jepret.
+      if (wajibWajah) {
+        setSedangVerifikasi(true);
+        let cek;
+        try { cek = await periksaWajahPenuh(canvas); } finally { setSedangVerifikasi(false); }
+        if (!cek || !cek.ok) {
+          alert((cek && cek.pesan) || 'Wajah tidak terverifikasi pada foto. Ulangi dengan wajah penuh menghadap kamera.');
+          return;
+        }
+      }
+
+      const now = getServerNow(); const timestampText = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour12: false })}`;
+      // Simpan gambar POLOS dulu. Waktu jepret ikut disimpan supaya
+      // penggambaran ulang nanti tetap memakai jam saat foto diambil,
+      // bukan jam saat alamat tiba.
+      const pakaiAlamat = !!(alamatStatus === 'ada' && alamat);
+      fotoMentahRef.current = {
+        dataUrl: canvas.toDataURL('image/jpeg', 0.92),
+        timestampText,
+        pakaiAlamat
+      };
+      // Nama tempat kalau sudah ada; kalau belum, koordinat dipakai
+      // sementara dan akan diganti otomatis begitu alamat tiba.
+      const lokasiText = pakaiAlamat
+        ? alamat
+        : (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : "No GPS");
+      gambarStempelFoto(ctx, canvas.width, canvas.height, timestampText, lokasiText);
+      setPhoto(canvas.toDataURL('image/jpeg', 0.8));
+      setFotoTerverifikasi(true);
+      if (trackerRef.current) {
+        trackerRef.current.stop();
+        trackerRef.current = null;
+      }
+      if (video.srcObject) { hentikanStream(video.srcObject); video.srcObject = null; }
+      setCameraActive(false);
   };
 
   const handleSubmit = async () => {
@@ -4419,6 +4457,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
     }
     if (isShiftWorker && isClockIn && !isEditMode && !selectedShift) { alert('Pilih Shift!'); return; }
     if (isPhotoRequired && !isEditMode && !photo) { alert('Foto Wajib.'); return; }
+    if (wajibWajah && !isEditMode && !fotoTerverifikasi) {
+        alert('Foto presensi harus diambil langsung dari kamera depan dengan wajah penuh terverifikasi. Silakan ambil ulang foto.');
+        return;
+    }
     if (isGpsRequired && !isEditMode) {
       if (!location) { alert('Lokasi belum ditemukan.'); return; }
       if (gpsValidation.isMock) {
@@ -4731,7 +4773,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
             <SeksiForm
               ikon={Camera}
               judul="Foto kehadiran"
-              catatan="Wajib — diambil langsung dari kamera"
+              catatan={wajibWajah ? "Wajib — kamera depan, wajah penuh terlihat" : "Wajib — diambil langsung dari kamera"}
               warnaIkon={tema.chip}
               padat
               aksi={photo
@@ -4756,7 +4798,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                 {cameraActive && !photo && (
                   <>
                     {/* Viewfinder Oval Face Guide & Liveness Indicator */}
-                    {facingMode === 'user' && ['Hadir', 'Pulang'].includes(type) ? (
+                    {wajibWajah ? (
                       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none p-4">
                         <div className={`w-48 h-64 sm:w-56 sm:h-72 rounded-[50%] border-4 transition-all duration-300 ${
                           livenessStatus.isLive 
@@ -4778,7 +4820,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                     )}
 
                     <div className="absolute inset-x-0 bottom-0 pt-10 pb-4 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center gap-8">
-                      {['Hadir', 'Pulang'].includes(type) ? (
+                      {wajibWajah ? (
                         <span className="w-10"></span>
                       ) : (
                         <button onClick={toggleCamera} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-sm border border-white/25 flex items-center justify-center text-white active:scale-90 transition-transform" title="Ganti kamera">
@@ -4786,16 +4828,17 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                         </button>
                       )}
                       <button
-                        onClick={takePhoto} 
-                        className={`w-[62px] h-[62px] rounded-full backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform ${
-                          (['Hadir', 'Pulang'].includes(type) && facingMode === 'user' && !livenessStatus.isLive)
+                        onClick={takePhoto}
+                        disabled={wajibWajah && (!livenessStatus.isLive || sedangVerifikasi)}
+                        className={`w-[62px] h-[62px] rounded-full backdrop-blur-sm flex items-center justify-center active:scale-90 transition-transform disabled:cursor-not-allowed ${
+                          (wajibWajah && (!livenessStatus.isLive || sedangVerifikasi))
                             ? 'bg-amber-500/30'
                             : 'bg-white/25'
                         }`} 
                         title="Ambil foto"
                       >
                         <span className={`w-[50px] h-[50px] rounded-full border-[3px] transition-colors ${
-                          (['Hadir', 'Pulang'].includes(type) && facingMode === 'user' && !livenessStatus.isLive)
+                          (wajibWajah && (!livenessStatus.isLive || sedangVerifikasi))
                             ? 'bg-amber-100 border-amber-400'
                             : 'bg-white border-white/60'
                         }`}></span>
@@ -4806,9 +4849,27 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                 )}
               </div>
 
+              {!photo && errorKamera && (
+                <div className="mt-2.5 rounded-xl bg-rose-50 border border-rose-200 p-3">
+                  <p className="text-[11.5px] font-semibold text-rose-700 leading-relaxed">{errorKamera}</p>
+                  <button
+                    onClick={startCamera}
+                    className="mt-2 w-full py-2 rounded-lg bg-rose-600 text-white text-[12px] font-semibold active:scale-[0.99]"
+                  >
+                    Coba lagi
+                  </button>
+                </div>
+              )}
+
+              {wajibWajah && cameraActive && !photo && !kameraInfo.dikenali && (
+                <p className="mt-2 text-[10.5px] text-slate-500 leading-relaxed">
+                  Jenis kamera tidak dilaporkan perangkat ini — verifikasi wajah penuh tetap wajib lolos sebelum foto dapat diambil.
+                </p>
+              )}
+
               {photo && (
                 <button
-                  onClick={() => { /* Wajib dikosongkan: tanpa ini efek penggambaran ulang stempel bisa memunculkan kembali foto yang baru saja dibuang. */ fotoMentahRef.current = null; setPhoto(null); startCamera(); }}
+                  onClick={() => { /* Wajib dikosongkan: tanpa ini efek penggambaran ulang stempel bisa memunculkan kembali foto yang baru saja dibuang. */ fotoMentahRef.current = null; setPhoto(null); setFotoTerverifikasi(false); startCamera(); }}
                   className="mt-2.5 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[12.5px] font-semibold text-slate-700 transition-colors active:scale-[0.99]"
                 >
                   <RotateCcw className="w-3.5 h-3.5" strokeWidth={2.2} /> Ambil ulang

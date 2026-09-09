@@ -7,6 +7,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
+    "@vladmandic/face-api": "^1.7.15",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.555.0",

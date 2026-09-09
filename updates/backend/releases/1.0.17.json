@@ -1,0 +1,8 @@
+{
+  "version": "1.0.17",
+  "releasedAt": "2026-09-09",
+  "required": true,
+  "notes": [
+    "Penyelarasan versi dengan frontend 1.0.17 (penguncian kamera depan dan verifikasi wajah penuh). Tidak ada perubahan struktur data."
+  ]
+}
