@@ -4,13 +4,16 @@ export const FRONTEND_UPDATE_HISTORY = [
   {
     "file": "1.0.18.json",
     "version": "1.0.18",
-    "releasedAt": "2026-09-09",
+    "releasedAt": "2026-09-10",
     "required": true,
     "notes": [
       "Sesi kini bertahan 60 menit sejak aktivitas terakhir (sebelumnya 5 menit), sehingga aplikasi yang hanya dibiarkan terbuka tidak lagi keluar sendiri di tengah jam kerja.",
       "Pelacakan posisi tetap berjalan selama aplikasi standby: layar ditahan agar tidak mati sendiri selama pelacakan aktif, dan siklus pengiriman tidak lagi dilewati saat aplikasi berada di latar belakang.",
       "Titik posisi yang gagal terkirim karena sinyal hilang kini disimpan di perangkat dan disusulkan otomatis begitu jaringan kembali, sehingga jejak perjalanan tidak berlubang.",
-      "Pesan sesi berakhir menyebutkan durasi yang benar-benar berlaku (sebelumnya selalu tertulis 10 menit)."
+      "Pesan sesi berakhir menyebutkan durasi yang benar-benar berlaku (sebelumnya selalu tertulis 10 menit).",
+      "Perbaikan salah tuduh “Mock GPS”: dua pembacaan GPS yang sebenarnya berasal dari satu fix yang sama (timestamp identik) tidak lagi dianggap sebagai koordinat beku.",
+      "Pengambilan sampel lokasi kini memakai watchPosition dan hanya menghitung fix dengan timestamp berbeda, dengan batas waktu 3,5 detik agar form absen tidak menggantung.",
+      "Badge merah “Mock GPS” hanya muncul untuk sinyal keras (flag Mock Location dari sistem, mode otomasi, koordinat 0,0, akurasi 0 m, presisi koordinat terlalu rendah)."
     ]
   },
   {

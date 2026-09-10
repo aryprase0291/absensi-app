@@ -18,8 +18,46 @@
 // 6. Sidik jari perangkat, untuk mendeteksi absen berpindah-pindah HP
 // =======================================================
 
-const JEDA_SAMPEL_MS = 1200;   // jeda antar pembacaan GPS
-const JITTER_NOL_TOLERANSI = 0; // GPS asli praktis tidak pernah 0,0 m
+// ---------------------------------------------------------------------
+// PENGAMBILAN SAMPEL — DIPERBAIKI 10 Sep 2026 (SALAH TUDUH MOCK GPS)
+//
+// Versi lama membaca posisi dua kali berjarak 1,2 detik, lalu mencap
+// "Mock GPS" bila kedua koordinatnya sama persis. Asumsinya: "GPS asli
+// selalu bergetar". Asumsi itu SALAH pada perangkat modern, dan sudah
+// terbukti menuduh karyawan yang tidak memakai Fake GPS sama sekali:
+//
+//   1. Chip GNSS menghasilkan fix ±1 kali per detik. Meminta posisi 1,2
+//      detik kemudian sering mengembalikan OBJEK FIX YANG SAMA — bukan
+//      pembacaan kedua. `maximumAge: 0` tidak menolong: ia hanya
+//      melarang cache lama, tidak memaksa chip menghitung ulang.
+//   2. Android Fused Location dan CoreLocation iOS MENAHAN posisi saat
+//      perangkat terdeteksi diam ("static hold"), justru supaya titiknya
+//      tidak melompat. Karyawan yang berdiri diam saat absen adalah
+//      kasus yang paling mungkin menghasilkan jitter 0,000 m.
+//   3. Makin bagus lock GPS-nya, makin stabil koordinatnya. Sinyal yang
+//      paling jujur justru yang paling mudah salah tuduh.
+//
+// Perbaikannya ada dua lapis:
+//   - Sampel hanya dihitung sebagai sampel BERBEDA bila `timestamp`-nya
+//     berbeda. Timestamp yang sama = fix yang sama dipakai ulang, dan
+//     jitternya "tidak diketahui" (null), bukan nol.
+//   - Jitter nol tidak lagi menjadi VONIS di sisi klien. Ia tetap
+//     dikirim sebagai bukti ke server (bobotnya diturunkan di
+//     AntiFakeGps.gs), tetapi tidak lagi menyalakan badge merah sendirian.
+//     Yang menyalakan badge hanya sinyal keras: flag Mock Location dari
+//     sistem, lingkungan otomasi, koordinat 0,0, akurasi 0, presisi rendah.
+// ---------------------------------------------------------------------
+
+const SAMPEL_TARGET = 3;          // fix BERBEDA yang diincar sebelum berhenti
+// Dua batas waktu, karena dua keadaan yang berbeda:
+//   BUDGET : batas keras. Perangkat yang menahan posisinya (static hold)
+//            tidak akan pernah memberi fix kedua — menunggunya lebih lama
+//            hanya membuat form absen terasa menggantung tanpa hasil.
+//   GRACE  : setelah fix KEDUA didapat, jitter sudah bisa dihitung.
+//            Fix ketiga hanya memperkuat, jadi ditunggu sebentar saja.
+const SAMPEL_BUDGET_MS = 3500;
+const SAMPEL_GRACE_MS = 1200;
+const JITTER_NOL_TOLERANSI = 0;   // ambang "identik"; kini hanya jadi bukti
 
 // -------------------------------------------------------
 // SIDIK JARI PERANGKAT
@@ -183,17 +221,107 @@ export function validateGpsPosition(position) {
 }
 
 /**
- * Mengambil koordinat dengan DUA pembacaan berjeda.
+ * Mengumpulkan beberapa fix GPS yang BENAR-BENAR BERBEDA.
  *
- * Kenapa dua: GPS asli selalu bergetar — sensor, satelit, dan filter
- * Kalman membuat dua pembacaan berturut hampir mustahil identik sampai
- * digit terakhir. Aplikasi Fake GPS mengunci satu titik dan mengembalikan
- * angka yang sama persis setiap kali. Jitter 0,000 m pada dua pembacaan
- * adalah sinyal paling kuat yang bisa didapat dari dalam browser.
+ * Pembeda satu-satunya yang bisa dipercaya adalah `position.timestamp`.
+ * Dua pemanggilan yang mengembalikan timestamp sama berarti browser
+ * menyerahkan fix yang sama untuk kedua kalinya — itu bukan bukti apa
+ * pun tentang kejujuran lokasinya, dan tidak boleh dihitung sebagai
+ * "koordinat identik".
  *
- * Pembacaan kedua bersifat best-effort: kalau gagal atau timeout, absen
- * tetap jalan dengan jitter null (tidak dihukum). Prinsipnya, sinyal yang
- * hilang tidak boleh berubah menjadi tuduhan.
+ * `watchPosition` dipakai, bukan getCurrentPosition berulang, karena ia
+ * mengirim fix begitu chip menghasilkannya — tidak perlu menebak berapa
+ * lama harus menunggu. Sebagian browser hanya memanggil balik saat
+ * posisi berubah; kalau itu terjadi, sampelnya memang cuma satu dan
+ * jitter dilaporkan null (tidak diketahui), bukan nol.
+ *
+ * SELALU resolve. Kegagalan mengumpulkan sampel tambahan bukan
+ * kecurangan — sinyal yang hilang tidak boleh berubah jadi tuduhan.
+ *
+ * @returns {Promise<{sampel: Array, fixTerulang: number}>}
+ */
+function kumpulkanSampelBerbeda(pertama, opsi, batas) {
+  const budgetMs = Number((batas && batas.budgetMs) || SAMPEL_BUDGET_MS);
+  const graceMs = Number((batas && batas.graceMs) || SAMPEL_GRACE_MS);
+  return new Promise((resolve) => {
+    const sampel = [pertama];
+    let fixTerulang = 0;
+    let selesai = false;
+    let idPantau = null;
+    let idBatas = null;
+    let idGrace = null;
+
+    const tutup = () => {
+      if (selesai) return;
+      selesai = true;
+      if (idPantau !== null) {
+        try { navigator.geolocation.clearWatch(idPantau); } catch (e) { /* abaikan */ }
+      }
+      if (idBatas) clearTimeout(idBatas);
+      if (idGrace) clearTimeout(idGrace);
+      resolve({ sampel, fixTerulang });
+    };
+
+    const terima = (pos) => {
+      if (selesai || !pos || !pos.coords) return;
+      const terakhir = sampel[sampel.length - 1];
+      // Fix yang sama dikirim ulang: dicatat sebagai statistik, tidak
+      // pernah sebagai sampel baru.
+      if (terakhir && Number(pos.timestamp) === Number(terakhir.timestamp)) {
+        fixTerulang += 1;
+        return;
+      }
+      sampel.push(pos);
+      if (sampel.length >= SAMPEL_TARGET) { tutup(); return; }
+      // Fix kedua sudah cukup untuk menghitung jitter. Beri kesempatan
+      // singkat untuk fix ketiga, lalu berhenti — jangan menahan karyawan
+      // di layar form hanya demi sampel tambahan.
+      if (sampel.length === 2 && !idGrace) idGrace = setTimeout(tutup, graceMs);
+    };
+
+    idBatas = setTimeout(tutup, budgetMs);
+
+    try {
+      if (typeof navigator.geolocation.watchPosition !== 'function') { tutup(); return; }
+      idPantau = navigator.geolocation.watchPosition(terima, () => {
+        // Gagal di tengah jalan: pakai apa pun yang sudah terkumpul.
+        tutup();
+      }, { ...opsi, timeout: budgetMs, maximumAge: 0 });
+    } catch (e) {
+      tutup();
+    }
+  });
+}
+
+/**
+ * Jitter = pergeseran terbesar antar dua fix BERTURUTAN yang berbeda.
+ * null bila fix berbedanya kurang dari dua — keadaan "tidak diketahui",
+ * yang di server tidak dihukum sama sekali.
+ */
+function hitungJitter(sampel) {
+  if (!sampel || sampel.length < 2) return null;
+  let maks = 0;
+  for (let i = 1; i < sampel.length; i++) {
+    const d = jarakMeter(
+      sampel[i - 1].coords.latitude, sampel[i - 1].coords.longitude,
+      sampel[i].coords.latitude, sampel[i].coords.longitude
+    );
+    if (d > maks) maks = d;
+  }
+  return Number(maks.toFixed(3));
+}
+
+/**
+ * Mengambil koordinat beserta paket buktinya.
+ *
+ * Fix pertama dibaca lewat getCurrentPosition supaya pesan kesalahannya
+ * tetap spesifik (izin ditolak / sinyal tidak ada / timeout). Sampel
+ * berikutnya dikumpulkan lewat watchPosition, dan seluruh prosesnya
+ * dibatasi SAMPEL_BUDGET_MS agar form absen tidak menggantung.
+ *
+ * PENTING: jitter nol TIDAK LAGI menjadikan `isMockSuspicious` true.
+ * Lihat catatan panjang di kepala berkas — aturan lama menuduh karyawan
+ * yang perangkatnya justru mengunci posisi dengan baik.
  */
 export function getVerifiedGeolocation(options = {}) {
   return new Promise(async (resolve, reject) => {
@@ -201,11 +329,15 @@ export function getVerifiedGeolocation(options = {}) {
       return reject(new Error('Perangkat atau browser tidak mendukung Geolocation GPS.'));
     }
 
+    // Dua batas waktu pengambilan sampel bisa ditimpa (dipakai uji
+    // otomatis supaya tidak perlu menunggu detik sungguhan); keduanya
+    // tidak boleh ikut diteruskan ke Geolocation API.
+    const { sampelBudgetMs, sampelGraceMs, ...opsiGeo } = options;
     const opsiDasar = {
       enableHighAccuracy: true,
       timeout: 10000,
       maximumAge: 0, // wajib 0: cache lama membuat jitter selalu 0
-      ...options
+      ...opsiGeo
     };
 
     let pos1;
@@ -219,33 +351,36 @@ export function getVerifiedGeolocation(options = {}) {
       return reject(new Error(msg));
     }
 
-    // --- Pembacaan kedua untuk mengukur jitter ---
-    let pos2 = null;
-    let jitterMeter = null;
-    let jitterAkurasi = null;
+    // --- Kumpulkan fix tambahan yang benar-benar berbeda --------------
+    let sampel = [pos1];
+    let fixTerulang = 0;
     try {
-      await new Promise(r => setTimeout(r, JEDA_SAMPEL_MS));
-      pos2 = await bacaPosisi({ ...opsiDasar, timeout: 6000 });
-      jitterMeter = Number(jarakMeter(
-        pos1.coords.latitude, pos1.coords.longitude,
-        pos2.coords.latitude, pos2.coords.longitude
-      ).toFixed(3));
-      jitterAkurasi = Number((pos2.coords.accuracy - pos1.coords.accuracy).toFixed(2));
+      const hasil = await kumpulkanSampelBerbeda(pos1, opsiDasar, {
+        budgetMs: sampelBudgetMs, graceMs: sampelGraceMs
+      });
+      sampel = hasil.sampel;
+      fixTerulang = hasil.fixTerulang;
     } catch (e) {
-      // Pembacaan kedua gagal — bukan indikasi kecurangan, jangan dihukum.
-      jitterMeter = null;
+      // Pengumpulan sampel gagal — bukan indikasi kecurangan.
     }
 
-    // Pakai pembacaan terbaru yang berhasil sebagai koordinat resmi.
-    const posFinal = pos2 || pos1;
+    const jitterMeter = hitungJitter(sampel);
+    const jitterAkurasi = sampel.length >= 2
+      ? Number(((sampel[sampel.length - 1].coords.accuracy || 0) - (sampel[0].coords.accuracy || 0)).toFixed(2))
+      : null;
+
+    // Fix terbaru yang berhasil dipakai sebagai koordinat resmi.
+    const posFinal = sampel[sampel.length - 1];
     const validasi = validateGpsPosition(posFinal);
 
     const alasan = validasi.reasons.slice();
-    let mencurigakan = validasi.isSuspicious;
 
-    if (jitterMeter !== null && jitterMeter <= JITTER_NOL_TOLERANSI) {
-      alasan.push('Koordinat identik pada dua pembacaan berturut (GPS asli selalu bergetar)');
-      mencurigakan = true;
+    // Jitter nol dicatat sebagai BUKTI, bukan vonis. Ia ikut dikirim ke
+    // server dan diberi bobot ringan di sana; badge merah di layar
+    // karyawan hanya menyala untuk sinyal keras di validateGpsPosition.
+    const jitterNol = jitterMeter !== null && jitterMeter <= JITTER_NOL_TOLERANSI;
+    if (jitterNol) {
+      alasan.push('Koordinat sama pada ' + sampel.length + ' fix berbeda (dicatat sebagai bukti, bukan tuduhan)');
     }
 
     const perangkat = ambilSidikPerangkat();
@@ -254,18 +389,24 @@ export function getVerifiedGeolocation(options = {}) {
       lat: posFinal.coords.latitude,
       lng: posFinal.coords.longitude,
       accuracy: validasi.accuracy,
-      isMockSuspicious: mencurigakan,
-      warning: mencurigakan ? alasan.join('. ') : validasi.warning,
+      isMockSuspicious: validasi.isSuspicious,
+      warning: validasi.warning,
       position: posFinal,
 
       // Paket bukti yang dikirim apa adanya ke server untuk diperiksa
       // ulang bersama riwayat absensi.
       bukti: {
-        sampel: pos2 ? 2 : 1,
+        // Dipertahankan namanya demi kompatibilitas dengan sheet GpsAudit
+        // dan klien lama; isinya kini JUMLAH FIX BERBEDA, bukan jumlah
+        // pemanggilan getCurrentPosition.
+        sampel: sampel.length,
+        sampelBerbeda: sampel.length,
+        fixTerulang,
         jitterMeter,
+        jitterNol,
         jitterAkurasi,
-        akurasi1: Math.round(pos1.coords.accuracy || 0),
-        akurasi2: pos2 ? Math.round(pos2.coords.accuracy || 0) : null,
+        akurasi1: Math.round(sampel[0].coords.accuracy || 0),
+        akurasi2: sampel.length >= 2 ? Math.round(sampel[sampel.length - 1].coords.accuracy || 0) : null,
         driftWaktuMs: validasi.driftWaktuMs,
         mockFlag: !!(posFinal.coords.isMock || posFinal.isMock || posFinal.mocked),
         otomasi: deteksiOtomasi(),

@@ -47,6 +47,19 @@ const GPS_AMBANG = {
   BARIS_DIBACA: 1500,      // baris terakhir sheet yang dipindai
 
   JITTER_MIN_M: 0.5,       // pergeseran minimum antar-sampel GPS asli
+  // Bobot jitter nol. DITURUNKAN 45 -> 20 pada 10 Sep 2026 setelah
+  // terbukti menuduh karyawan yang tidak memakai Fake GPS: chip GNSS
+  // modern menahan posisi saat perangkat diam, dan browser sering
+  // mengembalikan fix yang sama untuk dua permintaan beruntun. Dengan
+  // 20, sinyal ini masuk level WASPADA (tercatat) tetapi TIDAK PERNAH
+  // cukup untuk menyeret seseorang ke TINJAU sendirian.
+  JITTER_NOL_POIN: 20,
+  // Jitter nol SENDIRIAN cuma bukti lemah. Tetapi bila ia muncul pada
+  // akun yang riwayatnya SUDAH menunjukkan pola pin Fake GPS (koordinat
+  // identik terus-menerus, tidak dipakai karyawan lain), dua bukti itu
+  // saling menguatkan dan pantas memblokir. Bonus ini yang menjaga kasus
+  // asli tetap tertangkap setelah bobot tunggalnya diturunkan.
+  JITTER_NOL_KUATKAN_POIN: 30,
   DRIFT_WAKTU_MS: 45000
 };
 
@@ -227,11 +240,25 @@ function analisaIntegritasGps(data, geofenceInfo) {
   // --- D. JITTER ANTAR-SAMPEL ---------------------------------------
   // GPS asli selalu bergetar beberapa sentimeter sampai beberapa meter
   // antar pembacaan. Pin Fake GPS mengembalikan angka yang sama persis.
+  //
+  // SYARAT BARU (10 Sep 2026): jitter hanya dinilai bila klien benar-benar
+  // mendapat DUA FIX BERBEDA — dibedakan dari `position.timestamp`, bukan
+  // dari jumlah pemanggilan getCurrentPosition. Klien lama (< 1.0.18)
+  // tidak mengirim `sampelBerbeda`; kirimannya tetap diterima dengan bobot
+  // yang sama, karena tidak ada cara membedakannya secara surut.
+  let jitterNol = false;
+  let polaIdentikDominan = false;
   if (bukti.jitterMeter !== undefined && bukti.jitterMeter !== null && isFinite(Number(bukti.jitterMeter))) {
     const jitter = Number(bukti.jitterMeter);
     hasil.detail.jitter = jitter;
-    if (bukti.sampel >= 2 && jitter === 0) {
-      tambah(45, 'Koordinat sama persis pada 2 pembacaan berturut — GPS asli selalu bergetar sedikit');
+    const fixBerbeda = bukti.sampelBerbeda === undefined
+      ? Number(bukti.sampel || 0)
+      : Number(bukti.sampelBerbeda || 0);
+    if (fixBerbeda >= 2 && jitter === 0) {
+      jitterNol = true;
+      tambah(GPS_AMBANG.JITTER_NOL_POIN,
+        'Koordinat sama persis pada ' + fixBerbeda + ' fix GPS berbeda — layak dilihat, ' +
+        'tetapi perangkat yang benar-benar diam juga bisa menghasilkan ini');
     }
   }
 
@@ -276,6 +303,7 @@ function analisaIntegritasGps(data, geofenceInfo) {
 
     if (pemakaiLain === 0) {
       if (rasio >= GPS_AMBANG.IDENTIK_RASIO) {
+        polaIdentikDominan = true;
         // Bobot 50 = tepat di ambang TINJAU. Disengaja: pola ini sendirian
         // sudah layak dilihat HRD, tapi TIDAK PERNAH cukup untuk memblokir
         // sendirian — lokasi WiFi bisa menghasilkan pola yang sama, dan
@@ -289,6 +317,16 @@ function analisaIntegritasGps(data, geofenceInfo) {
     }
     // pemakaiLain > 0: tidak diberi poin. Titik yang sama dipakai banyak
     // orang = lokasi jaringan kantor, wajar dan tidak dihukum.
+  }
+
+  // E2b. DUA BUKTI YANG SALING MENGUATKAN.
+  // Riwayat ada di server dan tidak bisa disentuh dari browser; jitter
+  // datang dari perangkat. Ketika keduanya menunjuk arah yang sama —
+  // titik yang tidak pernah berubah di riwayat DAN tidak bergetar saat
+  // dibaca — itu bukan lagi "perangkat yang kebetulan diam".
+  if (jitterNol && polaIdentikDominan) {
+    tambah(GPS_AMBANG.JITTER_NOL_KUATKAN_POIN,
+      'Jitter nol terjadi pada akun yang riwayatnya sudah menunjukkan pola pin Fake GPS — dua bukti saling menguatkan');
   }
 
   // E3. Waktu perangkat dimundurkan/dimajukan.

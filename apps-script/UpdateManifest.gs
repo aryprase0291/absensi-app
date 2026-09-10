@@ -3,12 +3,14 @@ var BACKEND_UPDATE_HISTORY = [
   {
     "file": "1.0.18.json",
     "version": "1.0.18",
-    "releasedAt": "2026-09-09",
+    "releasedAt": "2026-09-10",
     "required": true,
     "notes": [
       "Endpoint track_gps_antrian: menerima titik susulan dari perangkat yang sempat kehilangan sinyal, dalam satu kiriman berisi maksimal 50 titik.",
       "Titik susulan dicatat memakai waktu aslinya di perangkat, sehingga jarak tempuh dan menit di luar area tetap akurat.",
-      "Baris posisi terakhir tidak dapat mundur karena titik lama: peta admin hanya diperbarui bila titik yang masuk memang lebih baru."
+      "Baris posisi terakhir tidak dapat mundur karena titik lama: peta admin hanya diperbarui bila titik yang masuk memang lebih baru.",
+      "Bobot sinyal “jitter nol” diturunkan 45 → 20 (WASPADA) karena terbukti menandai karyawan yang perangkatnya hanya diam.",
+      "Jitter nol yang muncul bersama riwayat berpola pin Fake GPS mendapat tambahan 30 poin, sehingga kasus manipulasi yang sebenarnya tetap terblokir."
     ]
   },
   {

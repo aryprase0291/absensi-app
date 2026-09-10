@@ -4288,10 +4288,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       // GPS Logic with Anti-Fake GPS verification
       if (!isEditMode && isGpsRequired && 'geolocation' in navigator) {
         try {
-          // getVerifiedGeolocation kini mengambil DUA sampel berjeda untuk
-          // mengukur jitter. Ini menambah ~1,2 detik pada pembukaan form,
-          // dan itu memang harganya: jitter nol adalah satu-satunya sinyal
-          // kuat yang bisa didapat dari dalam browser.
+          // getVerifiedGeolocation mengumpulkan sampai 3 fix GPS yang
+          // BERBEDA (dibedakan dari timestamp-nya), maksimal 5 detik.
+          // Jitter yang dihasilkan dikirim sebagai bukti ke server, tetapi
+          // TIDAK lagi menyalakan badge "Mock GPS" sendirian — lihat
+          // catatan panjang di utils/antiFakeGps.js soal salah tuduh.
           const { position, accuracy, isMockSuspicious, warning, bukti } = await getVerifiedGeolocation({ timeout: 10000 });
           if (isMounted) {
             setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });

@@ -135,22 +135,36 @@ uji('Perpindahan mustahil (Surabaya -> Jakarta dalam 10 menit)',
 
 console.log('\n=== HARUS DITANDAI, TAPI TIDAK DIBLOKIR ===');
 
-uji('Koordinat beku: dua pembacaan sama persis',
+// Sejak 10 Sep 2026 bobotnya 20 (WASPADA), bukan 45. Alasannya ada di
+// ANTI-FAKE-GPS.md: chip GNSS modern menahan posisi saat perangkat diam,
+// jadi jitter nol pada karyawan dengan riwayat wajar BUKAN bukti kuat.
+uji('Koordinat beku pada riwayat wajar: dicatat WASPADA, tidak dituduh',
   riwayatWajar('U1', 'Budi', 10),
   { userId: 'U1', tipe: 'Hadir', lokasi: '-7.2901234, 112.7356789', gpsAccuracy: 15,
-    gpsBukti: Object.assign({}, buktiSehat, { jitterMeter: 0 }) },
-  { blokir: false, skorMin: 40 });
+    gpsBukti: Object.assign({}, buktiSehat, { jitterMeter: 0, sampelBerbeda: 2 }) },
+  { blokir: false, skorMin: 20, level: 'WASPADA' });
 
 uji('Pola INDRA LESTARI: koordinat identik 25x, tak ada karyawan lain di titik itu',
   riwayatIdentik('U9', 'INDRA LESTARI', 25, '-7.290039699999999, 112.73560859999999'),
   { userId: 'U9', tipe: 'Hadir', lokasi: '-7.290039699999999, 112.73560859999999', gpsAccuracy: 30, gpsBukti: buktiSehat },
   { blokir: false, skorMin: 40, level: 'TINJAU' });
 
+// Bobot tunggal jitter turun, TAPI kasus asli ini harus tetap tertangkap:
+// riwayat (server, tak bisa dipalsukan) + jitter nol saling menguatkan.
 uji('Pola identik DITAMBAH koordinat beku -> cukup untuk ditolak',
   riwayatIdentik('U9', 'INDRA LESTARI', 25, '-7.290039699999999, 112.73560859999999'),
   { userId: 'U9', tipe: 'Hadir', lokasi: '-7.290039699999999, 112.73560859999999', gpsAccuracy: 250,
-    gpsBukti: Object.assign({}, buktiSehat, { jitterMeter: 0 }) },
+    gpsBukti: Object.assign({}, buktiSehat, { jitterMeter: 0, sampelBerbeda: 2 }) },
   { blokir: true });
+
+// Klien 1.0.18 ke atas melaporkan berapa fix BERBEDA yang benar-benar
+// didapat. Satu fix = jitter tidak terukur = tidak boleh dihukum, walau
+// klien terlanjur mengirim angka 0.
+uji('Hanya satu fix berbeda: jitter tidak dinilai sama sekali',
+  riwayatWajar('U1', 'Budi', 10),
+  { userId: 'U1', tipe: 'Hadir', lokasi: '-7.2901234, 112.7356789', gpsAccuracy: 15,
+    gpsBukti: Object.assign({}, buktiSehat, { jitterMeter: 0, sampelBerbeda: 1 }) },
+  { blokir: false, level: 'AMAN' });
 
 console.log('\n=== TIDAK BOLEH KENA (anti tuduhan palsu) ===');
 

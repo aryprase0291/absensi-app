@@ -69,6 +69,24 @@ function formatDate(d, zona, pola) {
     .replace('ss', p(d.getSeconds()));
 }
 
+// Jam yang bisa dibekukan.
+//
+// Penghitung "titik hari ini" membandingkan tanggal titik dengan tanggal
+// SEKARANG. Uji yang memakai jam sungguhan karena itu gagal setiap kali
+// dijalankan lewat tengah malam — titik "45 menit yang lalu" jatuh di
+// tanggal kemarin. Membekukan jam membuat hasilnya sama kapan pun uji
+// dijalankan.
+function buatDateTetap(waktuTetap) {
+  class DateTetap extends Date {
+    constructor(...args) {
+      if (args.length === 0) super(waktuTetap);
+      else super(...args);
+    }
+    static now() { return waktuTetap; }
+  }
+  return DateTetap;
+}
+
 function muatModul(opsi) {
   opsi = opsi || {};
   const sheets = {
@@ -107,7 +125,8 @@ function muatModul(opsi) {
     _ambilGeofenceUser: opsi.geofence || (() => ({ required: false, areas: [] })),
     _ambilKonfigurasiGeofence: () => opsi.petaGeofence || {},
     alamatDariKoordinat: () => (opsi.alamat === undefined ? 'Jl. Uji No. 1, Surabaya' : opsi.alamat),
-    Math, Date, Number, String, Object, Array, isFinite, isNaN, JSON, parseInt, parseFloat
+    Math, Number, String, Object, Array, isFinite, isNaN, JSON, parseInt, parseFloat,
+    Date: opsi.waktuSekarang ? buatDateTetap(opsi.waktuSekarang) : Date
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(SUMBER, 'utf8'), ctx);
@@ -334,11 +353,16 @@ console.log('\n=== PELACAKAN POSISI KARYAWAN ===\n');
 const antrian = (ctx, titik, isi) =>
   ctx.handleTrackGpsAntrian(Object.assign({ userId: 'U1', nama: 'Ari Prasetyo', titik: titik }, isi || {}));
 
-const menitLalu = (n) => Date.now() - n * 60000;
+// Semua uji antrian memakai jam beku pada 9 Sep 2026 pukul 12.00 WIB.
+// Lihat buatDateTetap() di atas: tanpa ini, uji akan gagal setiap kali
+// kebetulan dijalankan sesaat setelah tengah malam.
+const JAM_BEKU = new Date('2026-09-09T12:00:00+07:00').getTime();
+const modulAntrian = (o) => muatModul(Object.assign({ waktuSekarang: JAM_BEKU }, o || {}));
+const menitLalu = (n) => JAM_BEKU - n * 60000;
 
 // A. Kiriman pertama tanpa riwayat apa pun
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   const t = menitLalu(30);
   const hasil = antrian(ctx, [{ waktu: t, lat: -7.2575, lng: 112.7521, akurasi: 12, baterai: 70 }]);
   cek('antrian: kiriman pertama diterima', hasil.result === 'success' && hasil.diterima === 1, JSON.stringify(hasil));
@@ -353,7 +377,7 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // B. Diam di tempat: aturan penipisan tetap berlaku di dalam kiriman
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   const titik = [];
   for (let i = 5; i >= 1; i--) {
     titik.push({ waktu: menitLalu(i * 5), lat: -7.2575 + i / 1000000, lng: 112.7521, akurasi: 10 });
@@ -365,7 +389,7 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // C. Berpindah jauh: setiap titik meninggalkan jejak
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   const titik = [
     { waktu: menitLalu(20), lat: -7.2575, lng: 112.7521, akurasi: 10 },
     { waktu: menitLalu(15), lat: -7.2605, lng: 112.7551, akurasi: 10 },
@@ -378,7 +402,7 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // D. Titik lama TIDAK boleh memundurkan posisi terakhir
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   ping(ctx, { lat: -7.2700, lng: 112.7700, akurasi: 10, sumber: 'awal' });
   const barisSebelum = ctx._sheets.GpsPosisiTerakhir._data[1].slice();
 
@@ -400,7 +424,7 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // E. Titik yang memang lebih baru boleh memperbarui posisi terakhir
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   ping(ctx, { lat: -7.2700, lng: 112.7700, akurasi: 10, sumber: 'awal' });
   mundurkanWaktu(ctx, 30);
 
@@ -413,7 +437,7 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // F. Titik yang tidak masuk akal disaring
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   const hasil = antrian(ctx, [
     { waktu: Date.now() + 60 * 60000, lat: -7.2575, lng: 112.7521, akurasi: 10 },   // jam HP maju sejam
     { waktu: Date.now() - 13 * 3600000, lat: -7.2575, lng: 112.7521, akurasi: 10 }, // lebih tua dari 12 jam
@@ -427,7 +451,7 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // G. Urutan acak tetap dicatat kronologis
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   antrian(ctx, [
     { waktu: menitLalu(5), lat: -7.2645, lng: 112.7601, akurasi: 10 },
     { waktu: menitLalu(20), lat: -7.2575, lng: 112.7521, akurasi: 10 },
@@ -441,12 +465,12 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // H. Kiriman kosong dan karyawan yang dikecualikan
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   const kosong = antrian(ctx, []);
   cek('antrian: kiriman kosong bukan error', kosong.result === 'success' && kosong.diterima === 0);
   cek('antrian: kiriman kosong tidak membuat sheet', !ctx._sheets.GpsTracking);
 
-  const ctx2 = muatModul({ konfig: [['U1', 'Ari Prasetyo', 'Tidak', 300, new Date(), 'admin']] });
+  const ctx2 = modulAntrian({ konfig: [['U1', 'Ari Prasetyo', 'Tidak', 300, new Date(), 'admin']] });
   const mati = antrian(ctx2, [{ waktu: menitLalu(5), lat: -7.2575, lng: 112.7521, akurasi: 10 }]);
   cek('antrian: karyawan yang dikecualikan tidak dicatat',
     mati.result === 'success' && mati.dilacak === false && jumlahJejak(ctx2) === 0);
@@ -454,7 +478,7 @@ const menitLalu = (n) => Date.now() - n * 60000;
 
 // I. Batas 50 titik per kiriman
 {
-  const ctx = muatModul();
+  const ctx = modulAntrian();
   const banyak = [];
   for (let i = 70; i >= 1; i--) banyak.push({ waktu: menitLalu(i), lat: -7.2575 + i / 1000, lng: 112.7521, akurasi: 10 });
   const hasil = antrian(ctx, banyak);
