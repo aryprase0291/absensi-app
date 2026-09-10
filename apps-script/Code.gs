@@ -63,7 +63,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.17";
+const APP_VERSION = "1.0.18";
 // 1.0.16 — pelacakan posisi karyawan (GpsTracking.gs) + Dashboard GPS
 //          khusus admin. Backend lama tetap melayani klien 1.0.15:
 //          action ping GPS akan dijawab "Action tidak dikenal" dan
@@ -173,6 +173,7 @@ function doPost(e) {
     if (action === 'get_gps_audit') return handleGetGpsAudit(data);
     // --- PELACAKAN POSISI KARYAWAN (lihat GpsTracking.gs) ---
     if (action === 'track_gps_ping') return handleTrackGpsPing(data);
+    if (action === 'track_gps_antrian') return handleTrackGpsAntrian(data);
     if (action === 'get_gps_tracking_status') return handleGetGpsTrackingStatus(data);
     if (action === 'get_gps_live') return handleGetGpsLive(data);
     if (action === 'get_gps_trail') return handleGetGpsTrail(data);

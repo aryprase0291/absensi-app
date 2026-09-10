@@ -12,7 +12,8 @@ sebagai keluhan HRD, bukan sebagai fitur.
 
 | Kebutuhan | Cara pemenuhannya |
 |---|---|
-| GPS untuk karyawan yang punya akses absen | Aplikasi mengirim posisi tiap 5 menit selama dibuka, plus otomatis saat absen |
+| GPS untuk karyawan yang punya akses absen | Aplikasi mengirim posisi tiap 5 menit selama sesi hidup, plus otomatis saat absen |
+| Tetap terkirim saat aplikasi tidak disentuh | Mode standby 1.0.18: sesi 60 menit, layar ditahan menyala, antrian titik offline |
 | Menu dashboard untuk memantau | Menu **Dashboard GPS Karyawan** di Panel Administrator |
 | Hanya admin yang bisa akses | Gerbang role di `Auth.gs` (`['admin']`, tanpa HRD) + pemeriksaan kedua di handler |
 | Posisi terakhir tercatat | Sheet `GpsPosisiTerakhir` — satu baris per karyawan, selalu diperbarui |
@@ -23,14 +24,30 @@ sebagai keluhan HRD, bukan sebagai fitur.
 
 ## 2. BERKAS YANG DITAMBAH / DIUBAH
 
-**Baru**
+**Baru (1.0.18)**
+
+- `src/utils/wakeLock.js` — penahan layar selama pelacakan aktif
+- `src/utils/antrianGps.js` — antrian titik yang gagal terkirim (+ 13 uji)
+- `handleTrackGpsAntrian` di `apps-script/GpsTracking.gs` — penerima susulan titik
+
+**Baru (1.0.16)**
 
 - `apps-script/GpsTracking.gs` — seluruh mesin pelacakan sisi server
 - `src/utils/gpsTracker.js` — pengirim posisi berkala di sisi aplikasi
 - `src/screens/GpsDashboardScreen.js` — layar dashboard admin (4 tab)
-- `scripts/test-gps-tracking.js` — 43 uji otomatis untuk aturan pencatatan
+- `scripts/test-gps-tracking.js` — uji otomatis aturan pencatatan (67 uji per 1.0.18, termasuk 24 uji antrian susulan)
 
-**Diubah**
+**Diubah (1.0.18)**
+
+- `src/utils/gpsTracker.js` — siklus tidak lagi dilewati saat aplikasi di
+  latar, wake lock dinyalakan, titik gagal masuk antrian dan disusulkan
+- `src/config/constants.js` — `TIMEOUT_MINUTES` 5 → 60, `TIMEOUT_LABEL`,
+  saklar `GPS_WAKE_LOCK_AKTIF`
+- `src/App.js` — pesan akhir sesi memakai durasi yang sebenarnya
+- `apps-script/Code.gs` — route `track_gps_antrian`, `APP_VERSION` → 1.0.18
+- `apps-script/Auth.gs` — izin `'*'` untuk `track_gps_antrian`
+
+**Diubah (1.0.16)**
 
 - `apps-script/Code.gs` — 7 action baru di router, `APP_VERSION` → 1.0.16
 - `apps-script/Auth.gs` — izin role untuk action baru
@@ -65,8 +82,8 @@ Karyawan yang duduk di meja seharian menghasilkan ±16 baris. Karyawan
 yang berkendara menghasilkan jejak rapat. Posisi terakhirnya tetap
 diperbarui setiap ping pada keduanya.
 
-Aturan ini dikunci oleh `scripts/test-gps-tracking.js`. Jalankan setiap
-kali angkanya disetel:
+Aturan ini dikunci oleh `scripts/test-gps-tracking.js` (67 uji, termasuk
+titik susulan dari antrian). Jalankan setiap kali angkanya disetel:
 
 ```
 node scripts/test-gps-tracking.js
@@ -86,9 +103,15 @@ node scripts/test-gps-tracking.js
 4. **Deploy ulang**: Deploy → Kelola deployment → edit → Versi baru.
 5. `npm run build`, lalu unggah hasil `build/` seperti biasa.
 
-Urutannya penting: klien 1.0.16 yang menembak backend lama akan menerima
+Urutannya penting: klien yang menembak backend lama akan menerima
 "Action tidak dikenal" dan **sengaja diam** — absensi tetap normal, hanya
 pelacakannya yang belum hidup.
+
+**Untuk 1.0.18 tidak ada sheet baru.** Yang perlu disalin ulang ke editor
+Apps Script hanya `GpsTracking.gs` (fungsi `handleTrackGpsAntrian`),
+`Code.gs`, dan `Auth.gs`, lalu deploy versi baru. Selama backend belum
+di-deploy, titik antrian menumpuk di HP karyawan dan kedaluwarsa sendiri
+setelah 12 jam — tidak ada yang rusak, hanya susulannya yang belum masuk.
 
 ---
 
@@ -175,18 +198,20 @@ Uji otomatis: `CI=true npx react-scripts test --testPathPattern gpsWajib`
 
 ---
 
-## 6. BATASAN YANG HARUS DIKOMUNIKASIKAN
+## 7. BATASAN YANG HARUS DIKOMUNIKASIKAN
 
-1. **Pelacakan hanya berjalan saat aplikasi dibuka.** Web tidak
-   mengizinkan pekerjaan latar belakang untuk lokasi. Aplikasi ditutup =
-   tidak ada titik baru. Ini berlaku untuk semua aplikasi berbasis web,
-   bukan kekurangan implementasi ini.
+1. **Pelacakan hanya berjalan saat aplikasi masih TERBUKA.** Web tidak
+   mengizinkan pekerjaan latar belakang untuk lokasi — Service Worker
+   sekalipun tidak boleh membaca GPS. Aplikasi ditutup (tab disapu dari
+   daftar aplikasi) = tidak ada titik baru. Yang berhasil dijangkau
+   1.0.18 adalah keadaan di antaranya: aplikasi terbuka tapi tidak
+   disentuh. Lihat bagian **STANDBY** di bawah.
 2. **Auto-logout ikut menghentikan pelacakan.** Aplikasi keluar sendiri
-   setelah tidak ada aktivitas (bawaan **5 menit**, lihat
-   `TIMEOUT_DURATION` di `src/config/constants.js`). Untuk karyawan
-   lapangan, perpanjang lewat `REACT_APP_TIMEOUT_MINUTES` di `.env.local`
-   — misalnya 120 menit. **Jangan** mematikan auto-logout sepenuhnya:
-   HP yang tertinggal di meja akan menjadi sesi terbuka bagi siapa pun.
+   setelah tidak ada aktivitas (**60 menit** sejak 1.0.18, sebelumnya 5;
+   lihat `TIMEOUT_DURATION` di `src/config/constants.js`). Setelan per
+   lingkungan tetap lewat `REACT_APP_TIMEOUT_MINUTES` di `.env.local`.
+   **Jangan** mematikan auto-logout sepenuhnya: HP yang tertinggal di
+   meja akan menjadi sesi terbuka bagi siapa pun.
 3. **Izin lokasi ada di tangan karyawan.** Kalau ditolak, indikator di
    aplikasi berubah menjadi "Izin lokasi mati" dan pelacakan berhenti.
    Ini terlihat oleh admin sebagai karyawan yang tidak pernah `ONLINE`.
@@ -197,7 +222,102 @@ Uji otomatis: `CI=true npx react-scripts test --testPathPattern gpsWajib`
 
 ---
 
-## 8. PRIVASI
+## 8. STANDBY — PELACAKAN SAAT APLIKASI TIDAK DISENTUH (1.0.18)
+
+Sampai 1.0.17, pelacakan praktis mati justru pada karyawan yang paling
+ingin dipantau. Tiga hal terjadi berurutan pada karyawan lapangan yang
+menaruh HP di saku:
+
+1. layar mati → pembacaan GPS berhenti sama sekali;
+2. tab tersembunyi → siklus pengiriman **sengaja dilewati** oleh kode lama;
+3. lima menit tanpa sentuhan → auto-logout → pelacakan berakhir.
+
+1.0.18 menyerang ketiganya.
+
+### Sesi 60 menit
+
+`TIMEOUT_MINUTES` naik dari 5 menjadi **60**, dihitung sejak **aktivitas
+terakhir** (bukan sejak login) — setiap sentuhan, klik, atau gulir
+menyetel ulang hitungannya. Selama jendela itu aplikasi dianggap
+"standby": tidak ada yang perlu dilakukan karyawan, sesinya tetap hidup,
+dan pelacakan terus berjalan.
+
+Kalimat pada layar keluar sesi kini disusun dari `TIMEOUT_LABEL`. Teks
+lama menyebut "10 menit" padahal ambangnya 5 menit — karyawan yang
+protes "baru ditinggal sebentar" ternyata benar.
+
+### Layar ditahan (Screen Wake Lock)
+
+Selama pelacakan aktif, `src/utils/wakeLock.js` menahan layar supaya
+tidak mati sendiri, sehingga halaman tetap "terlihat" bagi browser dan
+geolocation terus bekerja. Lock diminta ulang setiap kali aplikasi
+kembali terlihat, karena browser melepasnya sendiri saat karyawan
+berpindah aplikasi.
+
+- Hanya untuk karyawan yang memang **dilacak**. Yang pelacakannya
+  dimatikan admin tidak ikut ditahan layarnya.
+- Tidak ada di Safari < iOS 16.4 dan sebagian WebView. Absennya tidak
+  merusak apa pun — pelacakan tetap jalan, hanya lebih mudah terputus.
+- **Biaya jujurnya: baterai lebih boros dan layar tidak mati sendiri.**
+  Matikan lewat `REACT_APP_GPS_WAKE_LOCK=0` di `.env.local` bila suatu
+  saat dianggap terlalu mahal.
+
+### Antrian titik offline
+
+Titik yang sudah terbaca tapi gagal terkirim (gudang tanpa sinyal,
+basement, jalan antar-kota) tidak lagi hilang. Ia disimpan di
+`localStorage` dan disusulkan begitu jaringan hidup.
+
+| Aturan | Nilai | Alasan |
+|---|---|---|
+| Maksimal titik disimpan | 200 (tertua dibuang) | localStorage ±5 MB dipakai bersama penanda versi & ingatan izin GPS |
+| Umur maksimal | 12 jam | posisi kemarin tidak menjelaskan apa pun hari ini |
+| Titik per kiriman | 50 | satu panggilan Apps Script memakan 1–34 detik |
+| Pemilik | disaring per `userId` | HP bersama tidak boleh menyusulkan titik orang lain |
+
+Antrian dicoba ulang pada tiga kesempatan: setelah ping berkala berhasil
+(bukti jaringan hidup), saat event `online` browser, dan sekali di awal
+sesi — titik dari sesi kemarin yang belum terkirim ikut tersusul.
+
+Titik hanya dibuang dari antrian setelah server benar-benar menjawab
+sukses. Backend lama (< 1.0.18) menjawab "Action tidak dikenal", dan
+titiknya sengaja **dibiarkan** sampai kedaluwarsa sendiri — deploy
+backend bisa saja menyusul beberapa menit kemudian.
+
+### Yang dijaga di sisi server
+
+`handleTrackGpsAntrian` bukan pemanggilan berulang `handleTrackGpsPing`:
+
+- **Waktu asli dari HP dipakai**, bukan waktu tiba di server. Kalau
+  tidak, jejak perjalanan sepagi penuh akan tercatat pada menit yang
+  sama dan laporan jarak tempuh ikut salah.
+- **Baris posisi terakhir tidak boleh mundur.** Titik lama yang
+  disusulkan hanya menambah jejak dan penghitung harian; marker di peta
+  admin baru bergerak bila titik yang masuk memang lebih baru.
+- **Aturan penipisan jejak tetap berlaku** (≥ 50 m, heartbeat 30 menit,
+  perubahan status area), dihitung di dalam kiriman itu sendiri.
+- **Alamat tidak dicari per titik** — 50 titik × geocoding akan
+  menghabiskan kuota harian satu karyawan sendirian. Alamat tetap dicari
+  untuk titik terbaru saat baris posisi terakhir diperbarui.
+- Jam HP yang salah setel disaring: titik di masa depan (> 5 menit) dan
+  yang lebih tua dari 12 jam ditolak.
+
+Sumber pada sheet `GpsTracking` ditulis **`antrian`**, bukan `periodik`:
+admin yang membaca jejak berhak tahu titik itu disusulkan.
+
+### Yang MASIH tidak bisa dilakukan
+
+Aplikasi yang benar-benar **ditutup** (tab disapu, browser dimatikan,
+HP di-restart) tidak menghasilkan titik apa pun. Tidak ada cara di web
+untuk mengubah itu. Kalau perusahaan membutuhkan pelacakan penuh 24 jam
+tanpa aplikasi terbuka, yang dibutuhkan adalah aplikasi Android/iOS
+native — bukan tambalan pada aplikasi web ini.
+
+Uji otomatis antrian: `CI=true npx react-scripts test --testPathPattern antrianGps`
+(13 uji: batas, kedaluwarsa, pemisahan antar karyawan, localStorage mode privat).
+
+
+## 9. PRIVASI
 
 - Indikator "Lokasi dibagikan ke Admin" di layar karyawan **dihapus pada
   8 Sep 2026** atas permintaan (menutupi baris data terbawah di HP).
@@ -215,7 +335,7 @@ Uji otomatis: `CI=true npx react-scripts test --testPathPattern gpsWajib`
 
 ---
 
-## 7. CACHE HOSTING — WAJIB DIATUR SEKALI
+## 10. CACHE HOSTING — WAJIB DIATUR SEKALI
 
 Gejala "layar putih" dan "layar Update Tersedia berulang" di Safari iOS /
 Chrome Android hampir selalu satu penyakit yang sama: **HP menyimpan
@@ -279,11 +399,12 @@ tetap bisa absen sementara build baru diunggah.
 
 ---
 
-## 9. ACTION BARU
+## 11. ACTION BARU
 
 | Action | Role | Fungsi |
 |---|---|---|
 | `track_gps_ping` | semua yang login | Mengirim satu titik posisi (userId diambil dari token) |
+| `track_gps_antrian` | semua yang login | Menyusulkan titik yang tertinggal saat sinyal hilang (maks. 50 per kiriman) |
 | `get_gps_tracking_status` | semua yang login | Apakah akun ini dilacak & seberapa sering |
 | `get_gps_live` | admin | Posisi terakhir seluruh karyawan + area kantor |
 | `get_gps_trail` | admin | Jejak satu karyawan pada satu tanggal |

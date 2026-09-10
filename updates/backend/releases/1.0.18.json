@@ -1,0 +1,10 @@
+{
+  "version": "1.0.18",
+  "releasedAt": "2026-09-09",
+  "required": true,
+  "notes": [
+    "Endpoint track_gps_antrian: menerima titik susulan dari perangkat yang sempat kehilangan sinyal, dalam satu kiriman berisi maksimal 50 titik.",
+    "Titik susulan dicatat memakai waktu aslinya di perangkat, sehingga jarak tempuh dan menit di luar area tetap akurat.",
+    "Baris posisi terakhir tidak dapat mundur karena titik lama: peta admin hanya diperbarui bila titik yang masuk memang lebih baru."
+  ]
+}

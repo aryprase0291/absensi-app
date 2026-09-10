@@ -322,6 +322,145 @@ console.log('\n=== PELACAKAN POSISI KARYAWAN ===\n');
   cek('laporan menyertakan tautan sheet', String(laporan.sheetUrl).indexOf('docs.google.com') !== -1);
 }
 
+// =====================================================================
+// ANTRIAN TITIK SUSULAN (1.0.18)
+//
+// Titik yang gagal terkirim saat sinyal hilang disusulkan belakangan.
+// Dua hal yang diuji di sini tidak bisa diuji lewat handleTrackGpsPing:
+// waktu yang dipakai adalah waktu di HP, dan titik lama TIDAK BOLEH
+// menggeser mundur baris posisi terakhir yang dibaca peta admin.
+// =====================================================================
+
+const antrian = (ctx, titik, isi) =>
+  ctx.handleTrackGpsAntrian(Object.assign({ userId: 'U1', nama: 'Ari Prasetyo', titik: titik }, isi || {}));
+
+const menitLalu = (n) => Date.now() - n * 60000;
+
+// A. Kiriman pertama tanpa riwayat apa pun
+{
+  const ctx = muatModul();
+  const t = menitLalu(30);
+  const hasil = antrian(ctx, [{ waktu: t, lat: -7.2575, lng: 112.7521, akurasi: 12, baterai: 70 }]);
+  cek('antrian: kiriman pertama diterima', hasil.result === 'success' && hasil.diterima === 1, JSON.stringify(hasil));
+  cek('antrian: satu baris jejak ditulis', jumlahJejak(ctx) === 1);
+  cek('antrian: baris posisi terakhir dibuat', ctx._sheets.GpsPosisiTerakhir._data.length === 2);
+
+  const jejak = ctx._sheets.GpsTracking._data[1];
+  cek('antrian: waktu jejak memakai waktu HP, bukan waktu tiba',
+    Math.abs(new Date(jejak[0]).getTime() - t) < 1000, String(jejak[0]));
+  cek('antrian: sumber ditulis "antrian" agar admin tahu ini susulan', jejak[7] === 'antrian', String(jejak[7]));
+}
+
+// B. Diam di tempat: aturan penipisan tetap berlaku di dalam kiriman
+{
+  const ctx = muatModul();
+  const titik = [];
+  for (let i = 5; i >= 1; i--) {
+    titik.push({ waktu: menitLalu(i * 5), lat: -7.2575 + i / 1000000, lng: 112.7521, akurasi: 10 });
+  }
+  const hasil = antrian(ctx, titik);
+  cek('antrian: lima titik diterima', hasil.diterima === 5, String(hasil.diterima));
+  cek('antrian: diam di tempat hanya menyisakan satu baris jejak', jumlahJejak(ctx) === 1, String(jumlahJejak(ctx)));
+}
+
+// C. Berpindah jauh: setiap titik meninggalkan jejak
+{
+  const ctx = muatModul();
+  const titik = [
+    { waktu: menitLalu(20), lat: -7.2575, lng: 112.7521, akurasi: 10 },
+    { waktu: menitLalu(15), lat: -7.2605, lng: 112.7551, akurasi: 10 },
+    { waktu: menitLalu(10), lat: -7.2645, lng: 112.7601, akurasi: 10 }
+  ];
+  const hasil = antrian(ctx, titik);
+  cek('antrian: perjalanan menghasilkan tiga baris jejak', jumlahJejak(ctx) === 3, String(jumlahJejak(ctx)));
+  cek('antrian: jarak harian terakumulasi', hasil.jarakHariIniKm > 0.8, String(hasil.jarakHariIniKm));
+}
+
+// D. Titik lama TIDAK boleh memundurkan posisi terakhir
+{
+  const ctx = muatModul();
+  ping(ctx, { lat: -7.2700, lng: 112.7700, akurasi: 10, sumber: 'awal' });
+  const barisSebelum = ctx._sheets.GpsPosisiTerakhir._data[1].slice();
+
+  const hasil = antrian(ctx, [{ waktu: menitLalu(45), lat: -7.2575, lng: 112.7521, akurasi: 10 }]);
+  const barisSesudah = ctx._sheets.GpsPosisiTerakhir._data[1];
+
+  cek('antrian: titik lama dilaporkan tidak memperbarui posisi terakhir',
+    hasil.posisiTerakhirDiperbarui === false, JSON.stringify(hasil));
+  cek('antrian: koordinat peta admin tidak mundur',
+    barisSesudah[4] === barisSebelum[4] && barisSesudah[5] === barisSebelum[5],
+    String(barisSesudah[4]) + ',' + String(barisSesudah[5]));
+  cek('antrian: waktu terakhir tidak mundur',
+    new Date(barisSesudah[7]).getTime() === new Date(barisSebelum[7]).getTime());
+  cek('antrian: jejaknya tetap ditulis walau posisi tidak diperbarui', jumlahJejak(ctx) === 2, String(jumlahJejak(ctx)));
+  cek('antrian: penghitung titik hari ini tetap bertambah',
+    Number(barisSesudah[14]) === Number(barisSebelum[14]) + 1,
+    String(barisSebelum[14]) + ' -> ' + String(barisSesudah[14]));
+}
+
+// E. Titik yang memang lebih baru boleh memperbarui posisi terakhir
+{
+  const ctx = muatModul();
+  ping(ctx, { lat: -7.2700, lng: 112.7700, akurasi: 10, sumber: 'awal' });
+  mundurkanWaktu(ctx, 30);
+
+  const hasil = antrian(ctx, [{ waktu: menitLalu(2), lat: -7.2575, lng: 112.7521, akurasi: 10 }]);
+  const baris = ctx._sheets.GpsPosisiTerakhir._data[1];
+  cek('antrian: titik lebih baru memperbarui posisi terakhir', hasil.posisiTerakhirDiperbarui === true);
+  cek('antrian: koordinat peta admin ikut pindah', Math.abs(Number(baris[4]) - (-7.2575)) < 1e-9, String(baris[4]));
+  cek('antrian: sumber pada posisi terakhir ditandai antrian', baris[8] === 'antrian', String(baris[8]));
+}
+
+// F. Titik yang tidak masuk akal disaring
+{
+  const ctx = muatModul();
+  const hasil = antrian(ctx, [
+    { waktu: Date.now() + 60 * 60000, lat: -7.2575, lng: 112.7521, akurasi: 10 },   // jam HP maju sejam
+    { waktu: Date.now() - 13 * 3600000, lat: -7.2575, lng: 112.7521, akurasi: 10 }, // lebih tua dari 12 jam
+    { waktu: menitLalu(10), lat: 999, lng: 112.7521, akurasi: 10 },                 // koordinat mustahil
+    { waktu: menitLalu(9), lat: -7.2575, lng: 112.7521, akurasi: 5000 },            // akurasi 5 km
+    { waktu: menitLalu(8), lat: -7.2575, lng: 112.7521, akurasi: 10 }               // satu-satunya yang sah
+  ]);
+  cek('antrian: hanya titik yang sah diterima', hasil.diterima === 1, JSON.stringify(hasil.diterima));
+  cek('antrian: yang tersaring tidak menghasilkan baris', jumlahJejak(ctx) === 1, String(jumlahJejak(ctx)));
+}
+
+// G. Urutan acak tetap dicatat kronologis
+{
+  const ctx = muatModul();
+  antrian(ctx, [
+    { waktu: menitLalu(5), lat: -7.2645, lng: 112.7601, akurasi: 10 },
+    { waktu: menitLalu(20), lat: -7.2575, lng: 112.7521, akurasi: 10 },
+    { waktu: menitLalu(12), lat: -7.2605, lng: 112.7551, akurasi: 10 }
+  ]);
+  const j = ctx._sheets.GpsTracking._data;
+  cek('antrian: jejak tersimpan urut waktu',
+    new Date(j[1][0]).getTime() < new Date(j[2][0]).getTime() &&
+    new Date(j[2][0]).getTime() < new Date(j[3][0]).getTime());
+}
+
+// H. Kiriman kosong dan karyawan yang dikecualikan
+{
+  const ctx = muatModul();
+  const kosong = antrian(ctx, []);
+  cek('antrian: kiriman kosong bukan error', kosong.result === 'success' && kosong.diterima === 0);
+  cek('antrian: kiriman kosong tidak membuat sheet', !ctx._sheets.GpsTracking);
+
+  const ctx2 = muatModul({ konfig: [['U1', 'Ari Prasetyo', 'Tidak', 300, new Date(), 'admin']] });
+  const mati = antrian(ctx2, [{ waktu: menitLalu(5), lat: -7.2575, lng: 112.7521, akurasi: 10 }]);
+  cek('antrian: karyawan yang dikecualikan tidak dicatat',
+    mati.result === 'success' && mati.dilacak === false && jumlahJejak(ctx2) === 0);
+}
+
+// I. Batas 50 titik per kiriman
+{
+  const ctx = muatModul();
+  const banyak = [];
+  for (let i = 70; i >= 1; i--) banyak.push({ waktu: menitLalu(i), lat: -7.2575 + i / 1000, lng: 112.7521, akurasi: 10 });
+  const hasil = antrian(ctx, banyak);
+  cek('antrian: tidak lebih dari 50 titik diproses per kiriman', hasil.diterima === 50, String(hasil.diterima));
+}
+
 console.log('\n---------------------------------');
 console.log(`  LULUS : ${lulus}`);
 console.log(`  GAGAL : ${gagal}`);

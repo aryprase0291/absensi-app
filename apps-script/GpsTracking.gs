@@ -87,6 +87,15 @@ const GPS_TRACK = {
   TRAIL_MAKS_SCAN: 45000
 };
 
+// Ambang khusus kiriman antrian (titik susulan dari HP yang sempat
+// kehilangan sinyal). Angkanya harus SELARAS dengan src/utils/antrianGps.js:
+// klien membuang titik >12 jam sendiri, server menolaknya sebagai lapis kedua.
+const GPS_ANTRIAN = {
+  MAKS_TITIK: 50,                        // sepadan dengan ANTRIAN_BATCH_MAKS di klien
+  UMUR_MAKS_MS: 12 * 3600 * 1000,        // sepadan dengan ANTRIAN_UMUR_MAKS_MS
+  TOLERANSI_DEPAN_MS: 5 * 60 * 1000      // jam HP yang maju sedikit tetap diterima
+};
+
 const GPS_TRACK_CACHE_CFG = 'GPSTRACK_CFG_V1';
 const GPS_TRACK_CACHE_USER = 'GPSTRACK_USER_V1';
 const GPS_TRACK_CACHE_TTL = 600;
@@ -530,6 +539,275 @@ function handleTrackGpsPing(data) {
     statusArea: area.status,
     jarakArea: area.jarak,
     alamat: alamat || '',
+    jarakHariIniKm: jarakHariIni
+  });
+}
+
+/**
+ * Menerima SEKUMPULAN titik yang tertinggal di HP karyawan karena
+ * jaringan mati saat titiknya dibaca (lihat src/utils/antrianGps.js).
+ *
+ * KENAPA BUKAN MEMANGGIL handleTrackGpsPing BERKALI-KALI
+ *
+ * 1. WAKTU. Titik antrian membawa waktu dari HP, bukan waktu tiba di
+ *    server. Dipaksa lewat jalur ping biasa, jejak perjalanan pagi hari
+ *    akan tercatat semuanya pada menit yang sama saat sinyal kembali —
+ *    laporan jarak tempuh dan "menit di luar area" ikut salah.
+ * 2. KUOTA. Satu request Apps Script memakan 1–34 detik. Empat puluh
+ *    titik berarti empat puluh panggilan yang dipakai bersama seluruh
+ *    fitur absensi. Di sini semuanya ditulis dengan SATU setValues.
+ * 3. ARAH WAKTU. Titik lama TIDAK BOLEH menggeser mundur baris "posisi
+ *    terakhir" yang dipakai peta admin. Baris itu hanya diperbarui bila
+ *    titik terbaru dalam kiriman ini memang lebih baru dari yang
+ *    tersimpan; selain itu yang diperbarui hanya penghitung harian.
+ *
+ * Alamat sengaja TIDAK dicari untuk titik antrian: satu kiriman bisa
+ * berisi 50 titik, dan kuota geocoding harian akan habis oleh satu
+ * karyawan yang seharian di area tanpa sinyal. Alamat tetap dicari untuk
+ * titik terbaru saat baris posisi terakhir diperbarui.
+ */
+function handleTrackGpsAntrian(data) {
+  const userId = String(data.userId || '').trim();
+  if (!userId) return responseJSON({ result: 'error', message: 'User tidak dikenal.' });
+
+  const masuk = Array.isArray(data.titik) ? data.titik : [];
+  if (!masuk.length) {
+    return responseJSON({ result: 'success', dilacak: true, diterima: 0, dicatat: 0, message: 'Antrian kosong.' });
+  }
+
+  const cfg = _gpsTrackKonfigUser(userId);
+  if (!cfg.aktif) {
+    return responseJSON({
+      result: 'success', dilacak: false, diterima: 0, dicatat: 0,
+      intervalDetik: cfg.interval,
+      message: 'Pelacakan lokasi nonaktif untuk akun ini.'
+    });
+  }
+
+  // --- Saring dan urutkan --------------------------------------------
+  // Titik antrian datang dari jam HP karyawan, yang bisa salah setel.
+  // Yang di masa depan ditolak (jam maju), yang terlalu lama ditolak
+  // (tidak menjelaskan apa pun lagi, dan klien memang membuangnya
+  // sendiri setelah 12 jam).
+  const sekarang = new Date();
+  const batasLama = sekarang.getTime() - GPS_ANTRIAN.UMUR_MAKS_MS;
+  const batasDepan = sekarang.getTime() + GPS_ANTRIAN.TOLERANSI_DEPAN_MS;
+
+  const titik = [];
+  for (let i = 0; i < masuk.length && titik.length < GPS_ANTRIAN.MAKS_TITIK; i++) {
+    const t = masuk[i] || {};
+    const lat = Number(t.lat);
+    const lng = Number(t.lng);
+    const waktu = Number(t.waktu);
+    if (!isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    if (!isFinite(waktu) || waktu <= 0 || waktu < batasLama || waktu > batasDepan) continue;
+    const akurasi = isFinite(Number(t.akurasi)) ? Math.round(Number(t.akurasi)) : null;
+    if (akurasi !== null && akurasi > GPS_TRACK.AKURASI_MAKS_M) continue;
+    titik.push({
+      waktu: waktu, lat: lat, lng: lng, akurasi: akurasi,
+      baterai: isFinite(Number(t.baterai)) ? Math.round(Number(t.baterai)) : ''
+    });
+  }
+  titik.sort(function (a, b) { return a.waktu - b.waktu; });
+
+  if (!titik.length) {
+    return responseJSON({
+      result: 'success', dilacak: true, diterima: 0, dicatat: 0,
+      intervalDetik: cfg.interval,
+      message: 'Tidak ada titik antrian yang layak dicatat.'
+    });
+  }
+
+  const peta = _gpsTrackPetaUser();
+  const profil = peta[userId] || {};
+  const nama = String(data.nama || profil.nama || '-');
+  const divisi = String(profil.divisi || '-');
+  const lokasiKerja = String(profil.lokasi || 'All');
+
+  const bukti = data.gpsBukti || {};
+  const deviceId = String(bukti.deviceId || data.deviceId || '-');
+  const platform = String(bukti.platform || data.platform || '-');
+
+  // --- Keadaan awal dari baris posisi terakhir ------------------------
+  const sheetLast = _pastikanSheetGpsLast();
+  const sebelumnya = _gpsTrackCariBaris(sheetLast, userId);
+
+  let waktuTerakhir = null;
+  let latTerakhir = null;
+  let lngTerakhir = null;
+  let alamatLama = '';
+  let statusAreaLama = '-';
+  let waktuLog = null;
+  let latLog = null;
+  let lngLog = null;
+  let titikHariIni = 0;
+  let jarakHariIni = 0;
+
+  if (sebelumnya) {
+    const n = sebelumnya.nilai;
+    latTerakhir = Number(n[4]);
+    lngTerakhir = Number(n[5]);
+    waktuTerakhir = _gpsTrackWaktu(n[7]);
+    alamatLama = String(n[9] || '');
+    statusAreaLama = String(n[10] || '-');
+    waktuLog = _gpsTrackWaktu(n[18]);
+    latLog = Number(n[19]);
+    lngLog = Number(n[20]);
+    if (waktuTerakhir && _gpsTrackTglKunci(new Date(waktuTerakhir)) === _gpsTrackTglKunci(sekarang)) {
+      titikHariIni = Number(n[14]) || 0;
+      jarakHariIni = Number(n[15]) || 0;
+    }
+  }
+
+  // Titik antrian hanya boleh disambung ke keadaan tersimpan bila
+  // memang terjadi SESUDAHNYA. Kalau tidak (ping terbaru sudah lebih
+  // dulu masuk), perhitungan dimulai bersih dari dalam kiriman ini —
+  // menghitung jarak mundur ke masa lalu hanya menghasilkan angka palsu.
+  const lanjutan = !!(sebelumnya && waktuTerakhir && waktuTerakhir <= titik[0].waktu);
+  let refLat = lanjutan && isFinite(latTerakhir) ? latTerakhir : null;
+  let refLng = lanjutan && isFinite(lngTerakhir) ? lngTerakhir : null;
+  let refWaktu = lanjutan ? waktuTerakhir : null;
+  let curLogLat = lanjutan && isFinite(latLog) && latLog !== 0 ? latLog : null;
+  let curLogLng = lanjutan && isFinite(lngLog) && lngLog !== 0 ? lngLog : null;
+  let curLogWaktu = lanjutan ? waktuLog : null;
+  let areaSebelum = lanjutan ? statusAreaLama : '-';
+
+  // --- Susun baris jejak ---------------------------------------------
+  const barisJejak = [];
+  let jarakTerakhirM = null;
+  let areaTerbaru = { status: '-', jarak: null, area: '-' };
+
+  for (let i = 0; i < titik.length; i++) {
+    const t = titik[i];
+    const waktuTitik = new Date(t.waktu);
+    const hariIni = _gpsTrackTglKunci(waktuTitik) === _gpsTrackTglKunci(sekarang);
+
+    let jarakM = null;
+    let kecepatan = null;
+    if (refLat !== null && refLng !== null) {
+      jarakM = Math.round(_gpsTrackJarak(refLat, refLng, t.lat, t.lng));
+      if (refWaktu && t.waktu > refWaktu) {
+        const jam = (t.waktu - refWaktu) / 3600000;
+        if (jam > 0) kecepatan = Math.round((jarakM / 1000) / jam);
+      }
+      const masukAkal = kecepatan === null || kecepatan <= GPS_TRACK.KECEPATAN_MUSTAHIL_KMJ;
+      if (hariIni && masukAkal) jarakHariIni = Number((jarakHariIni + jarakM / 1000).toFixed(3));
+    }
+    if (hariIni) titikHariIni += 1;
+
+    const area = _gpsTrackStatusArea(userId, t.lat, t.lng);
+    const areaBerubah = area.status !== '-' && areaSebelum !== '-' && area.status !== areaSebelum;
+
+    let jarakDariLog = null;
+    if (curLogLat !== null && curLogLng !== null) {
+      jarakDariLog = _gpsTrackJarak(curLogLat, curLogLng, t.lat, t.lng);
+    }
+    const umurLogDtk = curLogWaktu ? (t.waktu - curLogWaktu) / 1000 : null;
+
+    const perluLog = jarakDariLog === null ||
+      jarakDariLog >= GPS_TRACK.JARAK_MIN_LOG_M ||
+      umurLogDtk === null || umurLogDtk >= GPS_TRACK.JEDA_HEARTBEAT_DTK ||
+      areaBerubah;
+
+    if (perluLog) {
+      barisJejak.push([
+        waktuTitik, userId, nama, divisi, t.lat, t.lng,
+        t.akurasi === null ? '' : t.akurasi,
+        // Sumber ditulis 'antrian', bukan 'periodik': admin yang melihat
+        // jejak berhak tahu titik ini disusulkan, bukan dikirim saat itu.
+        'antrian',
+        jarakM === null ? '' : jarakM,
+        kecepatan === null ? '' : kecepatan,
+        t.baterai,
+        area.status,
+        '',
+        deviceId, platform
+      ]);
+      curLogLat = t.lat;
+      curLogLng = t.lng;
+      curLogWaktu = t.waktu;
+    }
+
+    refLat = t.lat;
+    refLng = t.lng;
+    refWaktu = t.waktu;
+    areaSebelum = area.status !== '-' ? area.status : areaSebelum;
+    jarakTerakhirM = jarakM;
+    areaTerbaru = area;
+  }
+
+  // --- Tulis jejak sekaligus ------------------------------------------
+  if (barisJejak.length) {
+    try {
+      const sheetTrack = _pastikanSheetGpsTrack();
+      const mulai = sheetTrack.getLastRow() + 1;
+      sheetTrack.getRange(mulai, 1, barisJejak.length, GPS_TRACK_HEADERS.length).setValues(barisJejak);
+      _gpsTrackPangkasOtomatis(sheetTrack);
+    } catch (e) {
+      console.warn('Gagal menulis jejak antrian GPS: ' + e.message);
+    }
+  }
+
+  // --- Perbarui baris posisi terakhir ---------------------------------
+  const terbaru = titik[titik.length - 1];
+  const lebihBaru = !waktuTerakhir || terbaru.waktu > waktuTerakhir;
+
+  try {
+    if (!sebelumnya) {
+      const alamat = _gpsTrackAlamat(terbaru.lat, terbaru.lng, jarakTerakhirM, 'antrian', '');
+      sheetLast.appendRow([
+        userId, nama, divisi, lokasiKerja, terbaru.lat, terbaru.lng,
+        terbaru.akurasi === null ? '' : terbaru.akurasi,
+        new Date(terbaru.waktu), 'antrian', alamat || '',
+        areaTerbaru.status,
+        areaTerbaru.jarak === null ? '' : areaTerbaru.jarak,
+        areaTerbaru.area,
+        terbaru.baterai,
+        titikHariIni, jarakHariIni,
+        deviceId, platform,
+        curLogWaktu ? new Date(curLogWaktu) : new Date(terbaru.waktu),
+        curLogLat === null ? terbaru.lat : curLogLat,
+        curLogLng === null ? terbaru.lng : curLogLng
+      ]);
+      _gpsTrackCacheSimpan('GPSTRACK_ROW_' + userId, { baris: sheetLast.getLastRow() });
+    } else if (lebihBaru) {
+      const alamat = _gpsTrackAlamat(terbaru.lat, terbaru.lng, jarakTerakhirM, 'antrian', alamatLama);
+      // Kolom log hanya boleh maju. Kalau baris jejak terakhir yang
+      // tersimpan ternyata lebih baru dari kiriman ini, membiarkannya
+      // mundur akan membuat ping berikutnya menulis jejak berlebihan.
+      const logAkhir = (waktuLog && curLogWaktu && waktuLog > curLogWaktu) ? waktuLog : curLogWaktu;
+      const logMaju = logAkhir === curLogWaktu;
+      sheetLast.getRange(sebelumnya.baris, 1, 1, GPS_LAST_HEADERS.length).setValues([[
+        userId, nama, divisi, lokasiKerja, terbaru.lat, terbaru.lng,
+        terbaru.akurasi === null ? '' : terbaru.akurasi,
+        new Date(terbaru.waktu), 'antrian', alamat || '',
+        areaTerbaru.status,
+        areaTerbaru.jarak === null ? '' : areaTerbaru.jarak,
+        areaTerbaru.area,
+        terbaru.baterai,
+        titikHariIni, jarakHariIni,
+        deviceId, platform,
+        logAkhir ? new Date(logAkhir) : new Date(terbaru.waktu),
+        logMaju ? (curLogLat === null ? terbaru.lat : curLogLat) : latLog,
+        logMaju ? (curLogLng === null ? terbaru.lng : curLogLng) : lngLog
+      ]]);
+    } else {
+      // Titik lama yang disusulkan: peta admin TIDAK boleh mundur.
+      // Yang tetap diperbarui hanya penghitung harian, karena jejak
+      // barunya memang menambah jarak tempuh hari ini.
+      sheetLast.getRange(sebelumnya.baris, 15, 1, 2).setValues([[titikHariIni, jarakHariIni]]);
+    }
+  } catch (e) {
+    return responseJSON({ result: 'error', message: 'Gagal menyimpan antrian posisi: ' + e.message });
+  }
+
+  return responseJSON({
+    result: 'success',
+    dilacak: true,
+    diterima: titik.length,
+    dicatat: barisJejak.length,
+    posisiTerakhirDiperbarui: lebihBaru,
+    intervalDetik: cfg.interval,
     jarakHariIniKm: jarakHariIni
   });
 }

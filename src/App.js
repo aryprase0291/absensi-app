@@ -4,7 +4,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
   Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
-import { SCRIPT_URL, TIMEOUT_DURATION, BOARD_ABSENSI_URL } from './config/constants';
+import { SCRIPT_URL, TIMEOUT_DURATION, TIMEOUT_LABEL, BOARD_ABSENSI_URL } from './config/constants';
 import { FRONTEND_VERSION } from './config/updateManifest';
 import BackButton from './components/BackButton';
 import RekapExcelScreen from './screens/RekapExcelScreen';
@@ -474,7 +474,12 @@ const handleLogout = useCallback(() => {
 }, []);
 
     //----RESET TIMER OTOMATIS LOGOUT----
-const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); if (user) logoutTimerRef.current = setTimeout(() => { alert("Sesi Anda berakhir karena tidak ada aktivitas selama 10 menit."); handleLogout(); }, TIMEOUT_DURATION); }, [user, handleLogout]);
+//
+    // Kalimatnya disusun dari TIMEOUT_LABEL, bukan angka yang diketik di
+    // sini. Sebelumnya teksnya berbunyi "10 menit" padahal ambangnya 5
+    // menit — karyawan yang mengeluh "baru ditinggal sebentar" ternyata
+    // benar, dan pesannya sendiri yang berbohong.
+const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); if (user) logoutTimerRef.current = setTimeout(() => { alert(`Sesi Anda berakhir karena tidak ada aktivitas selama ${TIMEOUT_LABEL}.`); handleLogout(); }, TIMEOUT_DURATION); }, [user, handleLogout]);
 
     // LISTENER AKTIVITAS USER (AUTO-LOGOUT)
 useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart']; ev.forEach(e => window.addEventListener(e, resetTimer)); return () => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); ev.forEach(e => window.removeEventListener(e, resetTimer)); }; }, [user, resetTimer]);

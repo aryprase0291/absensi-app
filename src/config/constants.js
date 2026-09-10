@@ -28,13 +28,49 @@ export const SCRIPT_URL = process.env.REACT_APP_SCRIPT_URL || PRODUCTION_SCRIPT_
 export const IS_TEST_BACKEND = SCRIPT_URL !== PRODUCTION_SCRIPT_URL;
 
 // ============================================================
-// DURASI AUTO-LOGOUT
-// Default 5 menit. Saat development bisa diperpanjang lewat `.env.local`:
+// DURASI AUTO-LOGOUT (STANDBY)
+//
+// Default **60 menit** sejak aktivitas terakhir (bukan sejak login):
+// setiap sentuhan/klik/gulir menyetel ulang hitungannya. Selama jendela
+// itu aplikasi berada dalam keadaan "standby" — layar boleh menganggur,
+// tetapi sesinya masih hidup dan pelacakan posisi terus berjalan
+// (lihat utils/gpsTracker.js).
+//
+// KENAPA 60 MENIT, BUKAN 5.
+// Angka 5 menit dibuat saat aplikasi ini hanya dipakai untuk mengisi
+// form absen. Setelah ada pelacakan posisi, sesi yang mati adalah
+// pelacakan yang mati: karyawan lapangan yang tidak menyentuh layarnya
+// selama perjalanan akan hilang dari Dashboard GPS justru pada saat
+// posisinya paling ingin diketahui.
+//
+// JANGAN dimatikan sepenuhnya (mis. 0 atau angka raksasa). HP yang
+// tertinggal di meja akan menjadi sesi terbuka bagi siapa pun yang
+// memegangnya. Kalau perlu disetel per lingkungan, pakai `.env.local`:
 //   REACT_APP_TIMEOUT_MINUTES=120
 // ============================================================
-const TIMEOUT_MINUTES = Number(process.env.REACT_APP_TIMEOUT_MINUTES) || 5;
+const TIMEOUT_MINUTES = Number(process.env.REACT_APP_TIMEOUT_MINUTES) || 60;
 
 export const TIMEOUT_DURATION = TIMEOUT_MINUTES * 60 * 1000;
+
+// Dipakai untuk menyusun kalimat yang dilihat karyawan, supaya teksnya
+// tidak pernah lagi berbeda dari angka yang sebenarnya berlaku.
+export const TIMEOUT_LABEL = TIMEOUT_MINUTES >= 60 && TIMEOUT_MINUTES % 60 === 0
+  ? `${TIMEOUT_MINUTES / 60} jam`
+  : `${TIMEOUT_MINUTES} menit`;
+
+// ============================================================
+// PELACAKAN POSISI SAAT STANDBY
+//
+// WAKE LOCK: menahan layar HP tetap menyala selama pelacakan aktif.
+// Ini satu-satunya cara yang benar-benar bekerja di web untuk menjaga
+// GPS tetap mengirim titik saat karyawan tidak menyentuh aplikasinya —
+// browser membekukan timer pada tab yang tersembunyi, dan layar yang
+// terkunci mematikan pembacaan posisi sepenuhnya.
+//
+// Konsekuensinya jujur: baterai lebih boros. Matikan lewat `.env.local`
+// dengan REACT_APP_GPS_WAKE_LOCK=0 bila suatu saat dianggap terlalu mahal.
+// ============================================================
+export const GPS_WAKE_LOCK_AKTIF = String(process.env.REACT_APP_GPS_WAKE_LOCK || '1') !== '0';
 
 export const ICON_MAP = {
   'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': FileText, 'Sakit': AlertTriangle, 'Lembur': Clock, 'Dinas': Briefcase, 'Cuti': Calendar

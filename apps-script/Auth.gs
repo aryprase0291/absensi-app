@@ -181,6 +181,10 @@ const ACTION_ROLES = {
   // ditimpa dari token di bawah, jadi tidak ada yang bisa mengirim
   // posisi atas nama orang lain.
   'track_gps_ping': '*',
+  // Susulan titik yang tertinggal saat HP kehilangan sinyal. Sama seperti
+  // track_gps_ping: userId ditimpa dari token, jadi tidak ada yang bisa
+  // menyusulkan posisi atas nama orang lain.
+  'track_gps_antrian': '*',
   'get_gps_tracking_status': '*',
 
   // --- Penyetuju (sesuai App.js: canApprove) ---
