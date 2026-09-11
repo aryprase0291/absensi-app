@@ -69,6 +69,26 @@ const approvalMenuHidden = (role) => !isApprovalRole(role);
 const APPROVAL_HEAD_ROLES = ['manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
 const ROLE_LABEL_FALLBACK = { manager: 'Manager', kepala: 'Kepala', kepala_divisi: 'Kepala Divisi', supervisor: 'Supervisor', spv: 'SPV', pimpinan: 'Pimpinan' };
 
+// ============================================================
+// BACKEND LAMA vs FITUR BARU
+//
+// Frontend dan backend di-deploy TERPISAH (Vercel/hosting vs Apps Script),
+// jadi selalu ada jendela waktu ketika bundle baru sudah dipakai karyawan
+// sementara Apps Script masih versi lama. Dalam jendela itu, doPost membalas
+// "Action tidak dikenal" untuk setiap action yang belum ada di sana.
+//
+// Itu kalimat untuk programmer, bukan untuk admin. Tanpa penerjemahan di
+// bawah, admin yang membuka Panel hanya melihat popup "Action tidak dikenal."
+// dan tidak punya petunjuk sama sekali soal apa yang harus dilakukan.
+// ============================================================
+const aksiBelumAdaDiBackend = (data) =>
+  /tidak dikenal/i.test(String((data && data.message) || ''));
+
+const PESAN_BACKEND_LAMA =
+  'Fitur ini belum ada di backend. Salin apps-script/Devices.gs dan '
+  + 'apps-script/FaceProfile.gs ke editor Apps Script, jalankan SETUP_DEVICE_LOCK() '
+  + 'dan SETUP_FACE_PROFILE() sekali, lalu Deploy versi baru pada deployment yang sudah ada.';
+
 const MAKS_PERCOBAAN = 3;
 
 const jedaMs = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -6570,6 +6590,10 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [deviceCari, setDeviceCari] = useState('');
   const [deviceKuotaDraft, setDeviceKuotaDraft] = useState({});
   const [deviceTampilLog, setDeviceTampilLog] = useState(false);
+  // Dipisah per fitur, bukan satu penanda bersama: sangat mungkin admin
+  // sudah menempel Devices.gs tapi lupa FaceProfile.gs, dan pesan yang
+  // menyebut keduanya sekaligus justru menyesatkan.
+  const [deviceBelumAda, setDeviceBelumAda] = useState(false);
 
   // --- WAJAH ACUAN (lihat apps-script/FaceProfile.gs) ---
   const [wajahList, setWajahList] = useState([]);
@@ -6580,6 +6604,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [wajahFileInfo, setWajahFileInfo] = useState([]);
   const [wajahProses, setWajahProses] = useState('');
   const [wajahHanyaBelum, setWajahHanyaBelum] = useState(false);
+  const [wajahBelumAda, setWajahBelumAda] = useState(false);
 
   const LIST_LOKASI = ['Surabaya', 'Jakarta', 'Semarang', 'Cilegon', 'Citeureup', 'Makassar', 'Balikpapan', 'Medan', 'All'];
 
@@ -6996,9 +7021,16 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_device_list' }) });
       const data = await res.json();
       if (data.result === 'success') {
+        setDeviceBelumAda(false);
         setDeviceList(data.devices || []);
         setDeviceSesi(data.sesi || []);
         setDeviceMode(data.mode || 'tandai');
+      } else if (aksiBelumAdaDiBackend(data)) {
+        // Ditampilkan sebagai kartu di dalam tab, bukan alert: admin perlu
+        // membaca langkah-langkahnya sambil melihat layarnya.
+        setDeviceBelumAda(true);
+        setDeviceList([]);
+        setDeviceSesi([]);
       } else alert(data.message || 'Gagal memuat daftar perangkat.');
     } catch (e) { alert('Gagal koneksi saat memuat daftar perangkat.'); }
     finally { setLoadingDevice(false); }
@@ -7023,6 +7055,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'set_device_mode', mode: modeBaru }) });
       const data = await res.json();
       if (data.result === 'success') { setDeviceMode(data.mode); alert(data.message); }
+      else if (aksiBelumAdaDiBackend(data)) alert(PESAN_BACKEND_LAMA);
       else alert(data.message || 'Gagal mengubah mode.');
     } catch (e) { alert('Gagal koneksi saat mengubah mode perangkat.'); }
     finally { setLoading(false); }
@@ -7088,12 +7121,16 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_wajah_list' }) });
       const data = await res.json();
       if (data.result === 'success') {
+        setWajahBelumAda(false);
         setWajahList(data.list || []);
         setWajahKonfig({
           mode: data.mode || 'ketat',
           ambang: data.ambang || 0.52,
           wajibTerdaftar: !!data.wajibTerdaftar
         });
+      } else if (aksiBelumAdaDiBackend(data)) {
+        setWajahBelumAda(true);
+        setWajahList([]);
       } else alert(data.message || 'Gagal memuat data wajah.');
     } catch (e) { alert('Gagal koneksi saat memuat data wajah.'); }
     finally { setLoadingWajah(false); }
@@ -7106,7 +7143,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       const data = await res.json();
       if (data.result === 'success') {
         setWajahKonfig({ mode: data.mode, ambang: data.ambang, wajibTerdaftar: !!data.wajibTerdaftar });
-      } else alert(data.message || 'Gagal menyimpan pengaturan.');
+      } else if (aksiBelumAdaDiBackend(data)) alert(PESAN_BACKEND_LAMA);
+      else alert(data.message || 'Gagal menyimpan pengaturan.');
     } catch (e) { alert('Gagal koneksi saat menyimpan pengaturan wajah.'); }
     finally { setLoading(false); }
   };
@@ -7934,8 +7972,49 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       )}
 
       {/* KONTEN TAB: INFO HRD */}
+      {/* Backend Apps Script belum menerima berkas fitur ini.
+          Ditampilkan menggantikan seluruh isi tab — bukan di atasnya —
+          karena daftar yang kosong beserta tombol-tombolnya hanya akan
+          membuat admin mengira fiturnya rusak, lalu mencoba satu per satu
+          dan mendapat popup yang sama berulang kali. */}
+      {activeTab === 'perangkat' && user.role === 'admin' && deviceBelumAda && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" strokeWidth={2} />
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-amber-900">Backend belum diperbarui</p>
+              <p className="text-[12px] leading-relaxed text-amber-800 mt-1">
+                Aplikasi di perangkat ini sudah versi {FRONTEND_VERSION}, tetapi Apps Script di spreadsheet
+                belum mengenal perintah <b>get_device_list</b>. Frontend dan backend memang di-deploy terpisah,
+                jadi keadaan ini normal sampai langkah di bawah dikerjakan.
+              </p>
+
+              <ol className="mt-3 space-y-1.5 text-[12px] leading-relaxed text-amber-900 list-decimal pl-4">
+                <li>Buka spreadsheet <b>absen</b> → Ekstensi › Apps Script.</li>
+                <li>Tambah file baru <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">Devices.gs</code> dan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">FaceProfile.gs</code>, tempel isi dari folder <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">apps-script/</code>.</li>
+                <li>Perbarui juga <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">Auth.gs</code>, <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">Code.gs</code>, dan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">UpdateManifest.gs</code>.</li>
+                <li>Jalankan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">SETUP_DEVICE_LOCK()</code> dan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">SETUP_FACE_PROFILE()</code> sekali.</li>
+                <li>Deploy › Kelola deployment › ikon pensil › <b>Versi baru</b> › Deploy. Pakai deployment yang sudah ada agar URL tidak berubah.</li>
+              </ol>
+
+              <p className="text-[11.5px] leading-relaxed text-amber-700 mt-3">
+                Setelah Deploy, semua karyawan akan diminta login ulang satu kali — itu yang mendaftarkan
+                perangkat mereka. Hindari mengerjakannya pada jam masuk atau jam pulang.
+              </p>
+
+              <button
+                onClick={fetchDeviceList}
+                className="mt-4 inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-amber-900 text-white text-[12px] font-medium hover:bg-amber-800"
+              >
+                <RefreshCcw className="w-3.5 h-3.5" strokeWidth={2} /> Periksa lagi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KONTEN TAB: PERANGKAT & SESI LOGIN */}
-      {activeTab === 'perangkat' && user.role === 'admin' && (
+      {activeTab === 'perangkat' && user.role === 'admin' && !deviceBelumAda && (
         <div className="space-y-3">
           {/* Mode berlaku. Ditaruh paling atas karena seluruh isi layar di
               bawahnya hanya masuk akal kalau admin tahu mode mana yang aktif. */}
@@ -8124,8 +8203,49 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         </div>
       )}
 
+      {/* Backend Apps Script belum menerima berkas fitur ini.
+          Ditampilkan menggantikan seluruh isi tab — bukan di atasnya —
+          karena daftar yang kosong beserta tombol-tombolnya hanya akan
+          membuat admin mengira fiturnya rusak, lalu mencoba satu per satu
+          dan mendapat popup yang sama berulang kali. */}
+      {activeTab === 'wajah' && user.role === 'admin' && wajahBelumAda && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" strokeWidth={2} />
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-amber-900">Backend belum diperbarui</p>
+              <p className="text-[12px] leading-relaxed text-amber-800 mt-1">
+                Aplikasi di perangkat ini sudah versi {FRONTEND_VERSION}, tetapi Apps Script di spreadsheet
+                belum mengenal perintah <b>get_wajah_list</b>. Frontend dan backend memang di-deploy terpisah,
+                jadi keadaan ini normal sampai langkah di bawah dikerjakan.
+              </p>
+
+              <ol className="mt-3 space-y-1.5 text-[12px] leading-relaxed text-amber-900 list-decimal pl-4">
+                <li>Buka spreadsheet <b>absen</b> → Ekstensi › Apps Script.</li>
+                <li>Tambah file baru <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">Devices.gs</code> dan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">FaceProfile.gs</code>, tempel isi dari folder <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">apps-script/</code>.</li>
+                <li>Perbarui juga <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">Auth.gs</code>, <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">Code.gs</code>, dan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">UpdateManifest.gs</code>.</li>
+                <li>Jalankan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">SETUP_DEVICE_LOCK()</code> dan <code className="px-1 py-0.5 rounded bg-amber-100 font-mono text-[11px]">SETUP_FACE_PROFILE()</code> sekali.</li>
+                <li>Deploy › Kelola deployment › ikon pensil › <b>Versi baru</b> › Deploy. Pakai deployment yang sudah ada agar URL tidak berubah.</li>
+              </ol>
+
+              <p className="text-[11.5px] leading-relaxed text-amber-700 mt-3">
+                Setelah Deploy, semua karyawan akan diminta login ulang satu kali — itu yang mendaftarkan
+                perangkat mereka. Hindari mengerjakannya pada jam masuk atau jam pulang.
+              </p>
+
+              <button
+                onClick={fetchWajahList}
+                className="mt-4 inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-amber-900 text-white text-[12px] font-medium hover:bg-amber-800"
+              >
+                <RefreshCcw className="w-3.5 h-3.5" strokeWidth={2} /> Periksa lagi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KONTEN TAB: WAJAH KARYAWAN */}
-      {activeTab === 'wajah' && user.role === 'admin' && (
+      {activeTab === 'wajah' && user.role === 'admin' && !wajahBelumAda && (
         <div className="space-y-3">
           <div className="bg-white rounded-2xl border border-slate-200/70 p-4">
             <div className="flex items-start gap-2.5 mb-3">
