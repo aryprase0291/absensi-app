@@ -89,7 +89,30 @@ kena tuduhan palsu.
 
 ---
 
-## Jitter: bukti, bukan vonis
+## Jitter nol: vonis, tapi hanya di atas dasar yang benar
+
+### Riwayat keputusan jitter nol
+
+Aturan ini berganti tiga kali dalam tiga hari. Tabel ini ada supaya tidak
+berganti untuk keempat kalinya karena lupa alasannya:
+
+| Tanggal | Perlakuan | Akibat |
+|---|---|---|
+| s/d 9 Sep 2026 | Dua pembacaan berjarak 1,2 detik; jitter 0 → absen **ditolak di HP**, server +45 | Fake GPS tertahan, **tapi karyawan jujur ikut tertuduh** |
+| 10 Sep 2026 | Tuduhan dicabut seluruhnya; server +20 (WASPADA) | Tuduhan palsu hilang, **tapi Fake GPS lolos di Masuk/Pulang** |
+| **11 Sep 2026** | Ditolak lagi, **hanya bila ada ≥ 2 fix BERBEDA**; server +100 | Keduanya tertutup |
+
+Pelajaran yang sebenarnya: **yang salah pada versi 9 Sep bukan bobotnya,
+melainkan dasarnya.** Membandingkan dua pembacaan yang sering merupakan fix
+yang sama memang tidak membuktikan apa-apa. Begitu dasarnya diperbaiki
+(pembeda = `position.timestamp`), bobot penuhnya layak dikembalikan.
+
+Satu hal yang sempat luput pada 10 Sep: **skor server 45 pun tidak pernah
+memblokir** — ambang blokir 100, tinjau 50. Jadi yang benar-benar menahan
+Fake GPS selama ini adalah penolakan di `handleSubmit` sisi klien, dan ketika
+itu dicabut, menurunkan 45→20 di server tidak ada hubungannya dengan
+lolosnya Fake GPS. Kalau suatu saat gerbang klien dicabut lagi, **naikkan
+skor servernya ke ≥ 100 pada saat yang sama.**
 
 ### Aturan lama, dan kenapa ia salah tuduh
 
@@ -121,24 +144,34 @@ justru fix yang bagus). Tiga sebabnya:
   menghasilkannya, jadi tidak perlu menebak lama menunggu. Target 3 fix berbeda,
   batas keras **3,5 detik**, dan berhenti **1,2 detik** setelah fix kedua didapat
   (jitter sudah bisa dihitung; fix ketiga hanya memperkuat).
-- **Badge merah "Mock GPS" di layar karyawan tidak lagi menyala karena jitter.**
-  Yang menyalakannya hanya sinyal keras: flag Mock Location dari sistem,
-  lingkungan otomasi, koordinat 0,0, akurasi 0 m, presisi desimal rendah.
-- **Bobot di server turun 45 → 20** (level WASPADA: tercatat, tidak pernah cukup
-  untuk menyeret seseorang ke TINJAU sendirian).
-- **Tetapi jitter nol + riwayat yang sudah mencurigakan = +30 tambahan.** Riwayat
+- **Badge merah "Mock GPS" menyala lagi karena jitter — tetapi hanya bila
+  terkumpul ≥ 2 fix BERBEDA.** Bersamanya, `handleSubmit` menolak kiriman
+  Masuk/Pulang seperti sebelum 10 Sep. Perangkat yang sekadar diam tidak
+  pernah sampai ke sini: chip-nya mengulang fix yang sama, sehingga jitternya
+  `null` dan tidak dinilai. Sinyal keras (flag Mock Location dari sistem,
+  otomasi, koordinat 0,0, akurasi 0 m, presisi desimal rendah) tetap menjadi
+  vonis sendiri-sendiri seperti sebelumnya.
+- **Bobot di server: `JITTER_NOL_POIN` = 100** bila klien mengirim
+  `sampelBerbeda` (>= 1.0.18) — cukup memblokir sendirian.
+- **`JITTER_NOL_POIN_TAKPASTI` = 20 untuk klien lama** yang tidak mengirim
+  `sampelBerbeda`. Pada klien itu "2 sampel" bisa saja satu fix yang dibaca
+  dua kali, dan menghukumnya dengan bobot penuh berarti mengulang persis
+  salah-tuduh 9 Sep pada HP yang belum sempat memuat ulang aplikasinya.
+- **Jitter nol + riwayat yang sudah mencurigakan = +30 tambahan.** Riwayat
   ada di server dan tidak bisa disentuh dari browser. Ketika keduanya menunjuk
   arah yang sama — titik yang tidak pernah berubah di riwayat DAN tidak bergetar
-  saat dibaca — kasus aslinya tetap tertangkap dan tetap diblokir (uji "Pola
-  identik DITAMBAH koordinat beku" menghasilkan skor 115).
+  saat dibaca — kasus aslinya tetap tertangkap dan tetap diblokir. Sejak bobot
+  jitter dinaikkan, bonus ini praktis hanya berguna untuk klien lama: ia yang
+  mengangkat kiriman 20 poin ke level TINJAU.
 
 Harganya: pembukaan form absen bertambah hingga ~3,5 detik pada perangkat yang
 menahan posisinya. Itu dibayar untuk menghentikan tuduhan palsu.
 
 Bidang bukti baru yang dikirim klien: `sampelBerbeda` (jumlah fix dengan
 timestamp berbeda), `fixTerulang` (berapa kali browser menyerahkan fix yang sama),
-dan `jitterNol`. Klien lama yang tidak mengirim `sampelBerbeda` tetap diterima —
-tidak ada cara membedakannya secara surut.
+dan `jitterNol`. Klien lama yang tidak mengirim `sampelBerbeda` tetap diterima,
+tetapi dengan bobot yang tidak pernah memblokir — lihat
+`JITTER_NOL_POIN_TAKPASTI` di atas.
 
 ---
 

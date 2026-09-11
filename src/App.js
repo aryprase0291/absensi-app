@@ -4343,10 +4343,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       if (!isEditMode && isGpsRequired && 'geolocation' in navigator) {
         try {
           // getVerifiedGeolocation mengumpulkan sampai 3 fix GPS yang
-          // BERBEDA (dibedakan dari timestamp-nya), maksimal 5 detik.
-          // Jitter yang dihasilkan dikirim sebagai bukti ke server, tetapi
-          // TIDAK lagi menyalakan badge "Mock GPS" sendirian — lihat
-          // catatan panjang di utils/antiFakeGps.js soal salah tuduh.
+          // BERBEDA (dibedakan dari timestamp-nya), maksimal 3,5 detik.
+          // Koordinat yang tidak bergeser sedikit pun di antara fix-fix
+          // itu menyalakan badge "Mock GPS" dan menolak kiriman di
+          // handleSubmit. Perangkat yang hanya DIAM tidak kena: chip-nya
+          // mengulang fix yang sama, jitternya null, bukan nol.
           const { position, accuracy, isMockSuspicious, warning, bukti } = await getVerifiedGeolocation({ timeout: 10000 });
           if (isMounted) {
             setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });

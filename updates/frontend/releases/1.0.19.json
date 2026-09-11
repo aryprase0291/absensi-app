@@ -10,6 +10,7 @@
     "Pencocokan dilakukan di server — data wajah acuan tidak pernah dikirim ke HP, sehingga tidak dapat ditiru dari sisi aplikasi.",
     "Hasil pencocokan ditampilkan sebelum tombol Kirim ditekan, jadi karyawan tahu lebih awal bila harus mengambil ulang foto.",
     "Model pengenal wajah diunduh di latar saat kamera dibuka, sehingga tidak menambah waktu tunggu sebelum memotret.",
-    "Pengajuan Dinas kini terkunci pada kamera depan, tetapi tetap boleh memuat lebih dari satu orang dalam satu foto."
+    "Pengajuan Dinas kini terkunci pada kamera depan, tetapi tetap boleh memuat lebih dari satu orang dalam satu foto.",
+    "Penolakan Fake GPS pada presensi Masuk & Pulang dikembalikan: koordinat yang tidak bergeser sama sekali pada beberapa pembacaan GPS berbeda kembali menolak kiriman di perangkat."
   ]
 }

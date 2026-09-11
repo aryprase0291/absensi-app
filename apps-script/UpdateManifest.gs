@@ -11,7 +11,8 @@ var BACKEND_UPDATE_HISTORY = [
       "Sheet FaceProfiles berisi deskriptor wajah 128 dimensi per karyawan — bukan foto, dan tidak pernah dikirim ke klien.",
       "Gerbang wajah di handleAbsen untuk tipe Hadir & Pulang, berjalan sebelum foto diunggah ke Drive.",
       "Endpoint baru: get_device_list, get_device_audit, save_device_config, lepas_device, cabut_sesi_user, set_device_mode, verifikasi_wajah, get_wajah_list, daftar_wajah, hapus_wajah, set_face_config.",
-      "Mode penguncian perangkat dan mode verifikasi wajah dapat diubah dari Panel Admin tanpa menyentuh kode."
+      "Mode penguncian perangkat dan mode verifikasi wajah dapat diubah dari Panel Admin tanpa menyentuh kode.",
+      "Bobot jitter nol dikembalikan ke tingkat memblokir (100), tetapi hanya untuk aplikasi yang melaporkan jumlah fix GPS berbeda; aplikasi versi lama tetap 20 poin agar tidak salah tuduh."
     ]
   },
   {

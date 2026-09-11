@@ -93,7 +93,19 @@ describe('getVerifiedGeolocation — fix yang sama tidak boleh dihitung sebagai 
 });
 
 describe('getVerifiedGeolocation — jitter pada fix yang benar-benar berbeda', () => {
-  test('koordinat identik pada 3 fix berbeda: dicatat sebagai bukti, BUKAN vonis', async () => {
+  // PASANGAN WAJIB dari uji "timestamp identik" di blok sebelumnya.
+  // Keduanya harus selalu dibaca berdampingan, karena justru PERBEDAAN
+  // hasilnya yang menjadi inti seluruh aturan ini:
+  //
+  //   fix yang sama diulang  -> jitter null -> TIDAK dituduh (perangkat diam)
+  //   fix berbeda, koordinat -> jitter nol  -> DITUDUH      (pin Fake GPS)
+  //   tidak bergerak sedikit pun
+  //
+  // Perlakuan kasus ini berubah tiga kali (9 Sep memblokir dengan dasar
+  // yang salah, 10 Sep tidak memblokir sama sekali sehingga Fake GPS
+  // lolos, 11 Sep memblokir dengan dasar yang benar). Jangan mengubahnya
+  // lagi tanpa membaca ANTI-FAKE-GPS.md bagian "Riwayat keputusan jitter nol".
+  test('koordinat identik pada 3 fix BERBEDA: menyalakan vonis', async () => {
     const ts = Date.now();
     pasangGeolocation(
       buatPos(LAT, LNG, 6, ts),
@@ -104,9 +116,8 @@ describe('getVerifiedGeolocation — jitter pada fix yang benar-benar berbeda', 
     expect(hasil.bukti.sampelBerbeda).toBe(3);
     expect(hasil.bukti.jitterMeter).toBe(0);
     expect(hasil.bukti.jitterNol).toBe(true);
-    // Inti perbaikan 10 Sep 2026: badge merah tidak menyala karena ini.
-    expect(hasil.isMockSuspicious).toBe(false);
-    expect(hasil.bukti.alasanClient.join(' ')).toMatch(/bukan tuduhan/i);
+    expect(hasil.isMockSuspicious).toBe(true);
+    expect(hasil.warning).toMatch(/tidak bergerak sama sekali/i);
   });
 
   test('perangkat bergeser: jitter terukur lebih dari nol', async () => {

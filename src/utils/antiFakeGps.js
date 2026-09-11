@@ -41,11 +41,16 @@
 //   - Sampel hanya dihitung sebagai sampel BERBEDA bila `timestamp`-nya
 //     berbeda. Timestamp yang sama = fix yang sama dipakai ulang, dan
 //     jitternya "tidak diketahui" (null), bukan nol.
-//   - Jitter nol tidak lagi menjadi VONIS di sisi klien. Ia tetap
-//     dikirim sebagai bukti ke server (bobotnya diturunkan di
-//     AntiFakeGps.gs), tetapi tidak lagi menyalakan badge merah sendirian.
-//     Yang menyalakan badge hanya sinyal keras: flag Mock Location dari
-//     sistem, lingkungan otomasi, koordinat 0,0, akurasi 0, presisi rendah.
+//   - Jitter nol hanya dinilai kalau memang ada DUA FIX BERBEDA. Dengan
+//     dasar itu, ia kembali menjadi VONIS (11 Sep 2026) — lihat catatan
+//     panjang di dekat `resolve()` di bawah dan ANTI-FAKE-GPS.md.
+//
+// Yang perlu dipegang: perangkat asli yang diam MENGULANG fix yang sama
+// (timestamp sama) sehingga jitternya null dan tidak dihukum sama sekali.
+// Pin Fake GPS menyuntikkan fix BARU berulang kali dengan koordinat yang
+// sama persis — itu yang ditolak. Sinyal keras (flag Mock Location dari
+// sistem, otomasi, koordinat 0,0, akurasi 0, presisi rendah) tetap menjadi
+// vonis sendiri-sendiri seperti sebelumnya.
 // ---------------------------------------------------------------------
 
 const SAMPEL_TARGET = 3;          // fix BERBEDA yang diincar sebelum berhenti
@@ -319,9 +324,10 @@ function hitungJitter(sampel) {
  * berikutnya dikumpulkan lewat watchPosition, dan seluruh prosesnya
  * dibatasi SAMPEL_BUDGET_MS agar form absen tidak menggantung.
  *
- * PENTING: jitter nol TIDAK LAGI menjadikan `isMockSuspicious` true.
- * Lihat catatan panjang di kepala berkas — aturan lama menuduh karyawan
- * yang perangkatnya justru mengunci posisi dengan baik.
+ * PENTING: jitter nol menjadikan `isMockSuspicious` true HANYA bila
+ * terkumpul >= 2 fix BERBEDA. Aturan sebelum 10 Sep 2026 tidak memakai
+ * syarat itu dan karena itu menuduh karyawan yang perangkatnya justru
+ * mengunci posisi dengan baik.
  */
 export function getVerifiedGeolocation(options = {}) {
   return new Promise(async (resolve, reject) => {
@@ -375,12 +381,41 @@ export function getVerifiedGeolocation(options = {}) {
 
     const alasan = validasi.reasons.slice();
 
-    // Jitter nol dicatat sebagai BUKTI, bukan vonis. Ia ikut dikirim ke
-    // server dan diberi bobot ringan di sana; badge merah di layar
-    // karyawan hanya menyala untuk sinyal keras di validateGpsPosition.
-    const jitterNol = jitterMeter !== null && jitterMeter <= JITTER_NOL_TOLERANSI;
+    // JITTER NOL — DIKEMBALIKAN JADI PENOLAKAN (11 Sep 2026)
+    //
+    // Riwayat singkat, supaya tidak diayun bolak-balik lagi:
+    //
+    //   sebelum 10 Sep : dua pembacaan berjarak 1,2 detik; jitter 0 menolak
+    //                    absen. MENUDUH karyawan jujur, karena kedua
+    //                    pembacaan itu sering fix yang SAMA, bukan dua fix.
+    //   10 Sep         : tuduhan dicabut seluruhnya -> Fake GPS lolos,
+    //                    sebab penolakan di layar inilah satu-satunya yang
+    //                    benar-benar menahannya (skor server 45 pun tidak
+    //                    pernah mencapai ambang blokir 100).
+    //   sekarang       : penolakannya kembali, TAPI hanya atas dasar fix
+    //                    yang BENAR-BENAR BERBEDA.
+    //
+    // Kenapa syarat itu yang membedakan: fix dipisahkan oleh
+    // `position.timestamp` (lihat kumpulkanSampelBerbeda). Perangkat asli
+    // yang diam menyerahkan fix yang SAMA berkali-kali — itu terhitung
+    // `fixTerulang`, sampelBerbeda tetap 1, dan jitter dilaporkan null
+    // sehingga tidak dihukum sama sekali. Pin Fake GPS menyuntikkan posisi
+    // berulang kali sebagai fix BARU: timestamp-nya maju, koordinatnya
+    // tidak bergerak satu milimeter pun. Itulah pola yang ditolak di sini.
+    //
+    // JANGAN melonggarkan syarat `sampel.length >= 2` menjadi jumlah
+    // pemanggilan getCurrentPosition. Persis itu yang dulu salah.
+    const jitterNol = jitterMeter !== null
+      && sampel.length >= 2
+      && jitterMeter <= JITTER_NOL_TOLERANSI;
+
+    let mencurigakan = validasi.isSuspicious;
     if (jitterNol) {
-      alasan.push('Koordinat sama pada ' + sampel.length + ' fix berbeda (dicatat sebagai bukti, bukan tuduhan)');
+      alasan.push(
+        'Koordinat tidak bergerak sama sekali pada ' + sampel.length
+        + ' fix GPS berbeda — GPS asli selalu bergetar walau perangkat diam'
+      );
+      mencurigakan = true;
     }
 
     const perangkat = ambilSidikPerangkat();
@@ -389,8 +424,8 @@ export function getVerifiedGeolocation(options = {}) {
       lat: posFinal.coords.latitude,
       lng: posFinal.coords.longitude,
       accuracy: validasi.accuracy,
-      isMockSuspicious: validasi.isSuspicious,
-      warning: validasi.warning,
+      isMockSuspicious: mencurigakan,
+      warning: mencurigakan ? alasan.join('. ') : validasi.warning,
       position: posFinal,
 
       // Paket bukti yang dikirim apa adanya ke server untuk diperiksa

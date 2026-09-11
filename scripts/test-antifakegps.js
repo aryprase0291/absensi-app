@@ -133,16 +133,37 @@ uji('Perpindahan mustahil (Surabaya -> Jakarta dalam 10 menit)',
   { userId: 'U1', tipe: 'Hadir', lokasi: '-6.2087634, 106.8455916', gpsAccuracy: 15, gpsBukti: buktiSehat },
   { blokir: true });
 
-console.log('\n=== HARUS DITANDAI, TAPI TIDAK DIBLOKIR ===');
-
-// Sejak 10 Sep 2026 bobotnya 20 (WASPADA), bukan 45. Alasannya ada di
-// ANTI-FAKE-GPS.md: chip GNSS modern menahan posisi saat perangkat diam,
-// jadi jitter nol pada karyawan dengan riwayat wajar BUKAN bukti kuat.
-uji('Koordinat beku pada riwayat wajar: dicatat WASPADA, tidak dituduh',
+// KOORDINAT BEKU PADA FIX YANG BENAR-BENAR BERBEDA.
+//
+// Kasus ini sempat tiga kali berganti perlakuan; jangan diubah lagi tanpa
+// membaca ANTI-FAKE-GPS.md bagian "Riwayat keputusan jitter nol".
+//   9 Sep  : memblokir, TAPI dasarnya salah (dua pembacaan = sering satu fix)
+//  10 Sep  : tidak memblokir sama sekali -> Fake GPS lolos di Masuk/Pulang
+//  11 Sep  : memblokir lagi, kali ini HANYA atas dasar fix berbeda
+//
+// Pasangannya ada di kelompok "tidak boleh kena": sampelBerbeda = 1 (chip
+// mengulang fix yang sama, ciri perangkat asli yang diam) wajib AMAN.
+uji('Koordinat tidak bergeser pada 2 fix GPS BERBEDA -> ditolak',
   riwayatWajar('U1', 'Budi', 10),
   { userId: 'U1', tipe: 'Hadir', lokasi: '-7.2901234, 112.7356789', gpsAccuracy: 15,
     gpsBukti: Object.assign({}, buktiSehat, { jitterMeter: 0, sampelBerbeda: 2 }) },
+  { blokir: true, level: 'BLOKIR' });
+
+console.log('\n=== HARUS DITANDAI, TAPI TIDAK DIBLOKIR ===');
+
+// Klien < 1.0.18 tidak mengirim sampelBerbeda, jadi "2 sampel" bisa saja
+// satu fix yang dibaca dua kali. Menghukumnya dengan bobot penuh berarti
+// mengulang salah-tuduh 9 Sep pada HP yang belum sempat memuat ulang.
+uji('Klien lama tanpa sampelBerbeda: dicatat WASPADA, tidak memblokir',
+  riwayatWajar('U1', 'Budi', 10),
+  { userId: 'U1', tipe: 'Hadir', lokasi: '-7.2901234, 112.7356789', gpsAccuracy: 15,
+    gpsBukti: { sampel: 2, jitterMeter: 0, akurasi1: 15, akurasi2: 15, driftWaktuMs: 500 } },
   { blokir: false, skorMin: 20, level: 'WASPADA' });
+
+// DIPINDAH ke kelompok "harus diblokir" pada 11 Sep 2026 — lihat di bawah.
+// Ringkasnya: yang salah pada versi 9 Sep bukan bobotnya, melainkan
+// dasarnya (dua pembacaan yang sering merupakan satu fix). Dengan
+// sampelBerbeda >= 2, dasarnya sudah benar dan bobot penuh dikembalikan.
 
 uji('Pola INDRA LESTARI: koordinat identik 25x, tak ada karyawan lain di titik itu',
   riwayatIdentik('U9', 'INDRA LESTARI', 25, '-7.290039699999999, 112.73560859999999'),
