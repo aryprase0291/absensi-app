@@ -16,6 +16,7 @@ const URL_MODEL = `${BASE}/models`;
 const BATAS_UNDUH_MS = 25000;
 
 let janjiMuat = null;
+let janjiPengenal = null;
 
 function muatSkrip(src) {
   return new Promise((resolve, reject) => {
@@ -79,6 +80,42 @@ export function muatFaceApi() {
   });
 
   return janjiMuat;
+}
+
+// =======================================================
+// MODEL PENGENAL WAJAH (identitas, bukan sekadar "ada wajah")
+//
+// face_recognition_model.bin berukuran ~6,2 MB — tiga puluh kali lipat
+// detektor wajah. Karena itu ia SENGAJA DIPISAH dari muatFaceApi():
+// kamera harus sudah bisa menyala dan memandu posisi wajah sementara
+// berkas ini masih mengalir di latar. Kalau digabung, karyawan menatap
+// layar kosong belasan detik di jaringan kantor yang pelan.
+//
+// Dipanggil dua kali dengan tujuan berbeda:
+//   - saat kamera Hadir/Pulang dibuka  -> mulai mengunduh (hasil diabaikan)
+//   - saat tombol jepret ditekan       -> ditunggu sampai selesai
+// Karena janjinya dipakai ulang, panggilan kedua hampir selalu instan.
+// =======================================================
+
+export function muatPengenalWajah() {
+  if (janjiPengenal) return janjiPengenal;
+
+  janjiPengenal = (async () => {
+    const faceapi = await muatFaceApi();
+    if (!faceapi.nets.faceRecognitionNet.isLoaded) {
+      await faceapi.nets.faceRecognitionNet.loadFromUri(URL_MODEL);
+    }
+    return faceapi;
+  })().catch((err) => {
+    janjiPengenal = null; // boleh dicoba lagi saat kamera dibuka ulang
+    throw err;
+  });
+
+  return janjiPengenal;
+}
+
+export function pengenalWajahSiap() {
+  return !!(window.faceapi && window.faceapi.nets.faceRecognitionNet.isLoaded);
 }
 
 export function faceApiSiap() {

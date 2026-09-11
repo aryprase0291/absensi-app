@@ -138,6 +138,23 @@ yang dipakai.
 
 ## 4. Jenis absen lain
 
-Dinas dan Sakit tidak berubah: keduanya masih boleh memakai kamera belakang
-(Sakit bahkan tetap default kamera belakang) dan tidak memakai verifikasi
-wajah.
+**Diperbarui 11 Sep 2026 (1.0.19).** Dua aturan yang sebelumnya menempel
+pada satu penanda kini dipisah, karena ternyata tidak selalu berjalan
+bersama:
+
+| Jenis | Kamera depan dikunci | Verifikasi wajah |
+|---|---|---|
+| Hadir, Pulang | ya | ya — satu wajah, identitas dicocokkan |
+| **Dinas** | **ya** | **tidak** |
+| Sakit | tidak (default kamera belakang) | tidak |
+
+**Dinas sengaja mengunci kamera depan tanpa gerbang wajah.** Foto dinas
+memang sering berisi beberapa orang sekaligus — tim di lokasi, atau
+karyawan bersama pihak yang ditemui — jadi syarat "tepat satu wajah" akan
+menolak foto yang justru paling wajar. Yang tetap ingin dicegah adalah foto
+dinas diambil dari kamera belakang (memotret layar, dokumen, atau
+pemandangan sebagai pengganti kehadiran orangnya).
+
+Di kode, keduanya sekarang dua penanda terpisah di `AttendanceForm`:
+`wajibKameraDepan` dan `wajibWajah`. Menambahkan jenis absen baru ke salah
+satunya **tidak** otomatis memasukkannya ke yang lain.

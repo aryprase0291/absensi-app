@@ -1,7 +1,23 @@
 {
   "frontend": {
-    "currentVersion": "1.0.18",
+    "currentVersion": "1.0.19",
     "history": [
+      {
+        "file": "1.0.19.json",
+        "version": "1.0.19",
+        "releasedAt": "2026-09-11",
+        "required": true,
+        "notes": [
+          "Satu akun kini hanya aktif di satu perangkat: login dari HP lain otomatis mengakhiri sesi di HP sebelumnya, dengan pesan yang menyebutkan alasannya.",
+          "Setiap HP mendapat identitas tetap dan terikat ke akun pemakainya; HP yang dipakai akun lain tercatat dan terlihat di Panel Admin.",
+          "Admin dapat menaikkan kuota akun per perangkat, untuk HP milik PIC yang memang mengabsenkan timnya.",
+          "Presensi Masuk & Pulang kini mencocokkan wajah dengan wajah acuan karyawan; wajah yang bukan pemilik akun ditolak dan fotonya dibuang.",
+          "Pencocokan dilakukan di server — data wajah acuan tidak pernah dikirim ke HP, sehingga tidak dapat ditiru dari sisi aplikasi.",
+          "Hasil pencocokan ditampilkan sebelum tombol Kirim ditekan, jadi karyawan tahu lebih awal bila harus mengambil ulang foto.",
+          "Model pengenal wajah diunduh di latar saat kamera dibuka, sehingga tidak menambah waktu tunggu sebelum memotret.",
+          "Pengajuan Dinas kini terkunci pada kamera depan, tetapi tetap boleh memuat lebih dari satu orang dalam satu foto."
+        ]
+      },
       {
         "file": "1.0.18.json",
         "version": "1.0.18",
@@ -62,8 +78,22 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.18",
+    "currentVersion": "1.0.19",
     "history": [
+      {
+        "file": "1.0.19.json",
+        "version": "1.0.19",
+        "releasedAt": "2026-09-11",
+        "required": true,
+        "notes": [
+          "Sheet Devices, DeviceUser, SesiAktif, dan DeviceAudit untuk pengikatan perangkat dan pencatatan pelanggarannya.",
+          "Token login membawa SessionID; sesi lama otomatis batal saat akun yang sama login di perangkat lain.",
+          "Sheet FaceProfiles berisi deskriptor wajah 128 dimensi per karyawan — bukan foto, dan tidak pernah dikirim ke klien.",
+          "Gerbang wajah di handleAbsen untuk tipe Hadir & Pulang, berjalan sebelum foto diunggah ke Drive.",
+          "Endpoint baru: get_device_list, get_device_audit, save_device_config, lepas_device, cabut_sesi_user, set_device_mode, verifikasi_wajah, get_wajah_list, daftar_wajah, hapus_wajah, set_face_config.",
+          "Mode penguncian perangkat dan mode verifikasi wajah dapat diubah dari Panel Admin tanpa menyentuh kode."
+        ]
+      },
       {
         "file": "1.0.18.json",
         "version": "1.0.18",

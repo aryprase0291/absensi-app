@@ -14,7 +14,7 @@
 // + simetri + kontras. Ditandai sebagai "mode terbatas" pada UI.
 // =======================================================
 
-import { muatFaceApi } from './faceApiLoader';
+import { muatFaceApi, muatPengenalWajah } from './faceApiLoader';
 
 const AMBANG = {
   skorMin: 0.5,
@@ -196,6 +196,114 @@ export async function periksaWajahPenuh(sumber) {
     return { ok: nilai.ok, pesan: nilai.ok ? '' : nilai.pesan };
   } catch (e) {
     return { ok: true, pesan: '', dilewati: true };
+  }
+}
+
+// =======================================================
+// DESKRIPTOR IDENTITAS (128 angka)
+//
+// periksaWajahPenuh() di atas menjawab "ini wajah manusia hidup dan
+// utuh?". Fungsi di bawah menjawab pertanyaan yang berbeda: "wajah
+// SIAPA?" — dan jawabannya berupa 128 angka yang dibandingkan di SERVER.
+//
+// Angka-angka ini tidak pernah dibandingkan di sini dengan acuan apa pun,
+// dan itu disengaja: acuan milik karyawan tidak boleh sampai ke HP.
+// Kalau ia dikirim ke klien, siapa pun yang membuka DevTools tinggal
+// mengirimkannya kembali dan lolos tanpa menghadap kamera sama sekali.
+// Lihat catatan panjang di apps-script/FaceProfile.gs.
+// =======================================================
+
+/**
+ * Ambil deskriptor 128 dimensi dari satu frame/canvas.
+ *
+ * @param {HTMLVideoElement|HTMLCanvasElement|HTMLImageElement} sumber
+ * @returns {Promise<{ ok: boolean, deskriptor: number[]|null, pesan: string, tersedia: boolean }>}
+ *
+ * `tersedia: false` berarti modelnya gagal dimuat — BUKAN berarti
+ * wajahnya salah. Pemanggil harus membedakan keduanya: menolak absen
+ * karena jaringan kantor sedang buruk adalah kegagalan yang berbeda
+ * jenis dari menolak absen karena wajahnya orang lain.
+ */
+export async function ambilDeskriptorWajah(sumber) {
+  let faceapi;
+  try {
+    faceapi = await muatPengenalWajah();
+  } catch (e) {
+    return {
+      ok: false,
+      deskriptor: null,
+      tersedia: false,
+      pesan: 'Model pengenal wajah gagal dimuat. Periksa koneksi lalu buka ulang kamera.'
+    };
+  }
+
+  try {
+    const hasil = await faceapi
+      .detectSingleFace(sumber, OPSI_DETEKTOR())
+      .withFaceLandmarks(true)
+      .withFaceDescriptor();
+
+    if (!hasil || !hasil.descriptor) {
+      return {
+        ok: false,
+        deskriptor: null,
+        tersedia: true,
+        pesan: 'Wajah tidak terbaca untuk pencocokan. Cari tempat lebih terang dan hadap lurus ke kamera.'
+      };
+    }
+
+    // Float32Array -> array biasa, supaya JSON.stringify tidak
+    // mengubahnya menjadi objek {"0":..,"1":..} yang ditolak server.
+    return {
+      ok: true,
+      deskriptor: Array.prototype.slice.call(hasil.descriptor),
+      tersedia: true,
+      pesan: ''
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      deskriptor: null,
+      tersedia: false,
+      pesan: 'Pencocokan wajah gagal dijalankan di perangkat ini.'
+    };
+  }
+}
+
+/**
+ * Versi untuk Panel Admin: satu berkas foto (File/Blob) -> deskriptor.
+ * Ambangnya sengaja lebih longgar daripada layar presensi — foto arsip
+ * HRD sering diambil dari jarak jauh atau agak menyerong, dan menolaknya
+ * mentah-mentah membuat pendaftaran 300 karyawan mustahil. Yang tetap
+ * WAJIB: satu wajah saja di dalam foto.
+ */
+export async function deskriptorDariGambar(gambar) {
+  let faceapi;
+  try {
+    faceapi = await muatPengenalWajah();
+  } catch (e) {
+    return { ok: false, deskriptor: null, pesan: 'Model pengenal wajah gagal dimuat.' };
+  }
+
+  try {
+    const semua = await faceapi
+      .detectAllFaces(gambar, new window.faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.35 }))
+      .withFaceLandmarks(true)
+      .withFaceDescriptors();
+
+    if (!semua || !semua.length) {
+      return { ok: false, deskriptor: null, pesan: 'Tidak ada wajah terdeteksi pada foto ini.' };
+    }
+    if (semua.length > 1) {
+      return { ok: false, deskriptor: null, pesan: `Terdeteksi ${semua.length} wajah. Pakai foto yang hanya berisi satu orang.` };
+    }
+    return {
+      ok: true,
+      deskriptor: Array.prototype.slice.call(semua[0].descriptor),
+      pesan: ''
+    };
+  } catch (e) {
+    return { ok: false, deskriptor: null, pesan: 'Foto gagal dianalisis.' };
   }
 }
 

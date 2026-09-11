@@ -19,9 +19,11 @@ import ProcessingModal from './components/ProcessingModal';
 import { getVerifiedGeolocation } from './utils/antiFakeGps';
 import { mulaiPelacakGps, kirimTitikGps } from './utils/gpsTracker';
 import { periksaGpsWajib, izinSudahDiberikan, tandaiIzinPernahOk, lupakanIzin, GPS_STATUS } from './utils/gpsWajib';
-import { startFaceLivenessTracker, periksaWajahPenuh } from './utils/faceLiveness';
+import { startFaceLivenessTracker, periksaWajahPenuh, ambilDeskriptorWajah, deskriptorDariGambar } from './utils/faceLiveness';
+import { muatPengenalWajah } from './utils/faceApiLoader';
 import { bukaKameraDepan, hentikanStream } from './utils/kameraDepan';
 import { ambilVersiFrontendServer, bandingkanVersi, pantauPembaruan } from './utils/pembaruan';
+import { infoPerangkat } from './utils/perangkat';
 
 // ============================================================
 // HELPER API — token login + penanganan respons HTML dari Google
@@ -52,7 +54,11 @@ const ACTION_AMAN_DIULANG = [
   'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config', 'get_team_history',
   'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period',
   'get_rekap_admin', 'get_koreksi_list', 'get_gps_audit', 'get_alamat',
-  'get_gps_tracking_status', 'get_gps_live', 'get_gps_trail', 'get_gps_tracking_admin'
+  'get_gps_tracking_status', 'get_gps_live', 'get_gps_trail', 'get_gps_tracking_admin',
+  // verifikasi_wajah hanya membandingkan angka dan tidak menulis apa pun,
+  // jadi aman diulang — dan justru harus, karena kegagalannya menghalangi
+  // karyawan mengambil foto presensi.
+  'verifikasi_wajah', 'get_device_list', 'get_device_audit', 'get_wajah_list'
 ];
 
 const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
@@ -144,6 +150,16 @@ const fetchApi = async (url, opts = {}, percobaan = 1) => {
   // tiba-tiba dimuat ulang akan membuang isian beserta fotonya.
   // Pemanggilnya cukup berhenti diam-diam; sesi tetap akan divalidasi
   // pada aksi berikutnya yang benar-benar dilakukan user.
+  // Sesi digusur karena akun ini dipakai login di perangkat lain
+  // (lihat apps-script/Devices.gs). Dibedakan dari AUTH_REQUIRED karena
+  // kalimatnya berbeda: karyawan perlu tahu bahwa akunnya dipakai orang
+  // lain, bukan sekadar "waktunya habis".
+  if (data && data.code === 'SESI_DIGANTI' && !opts.senyap) {
+    sessionStorage.clear();
+    alert(data.message || 'Akun Anda dipakai login di perangkat lain. Silakan login kembali.');
+    window.location.reload();
+  }
+
   if (data && data.code === 'AUTH_REQUIRED' && !opts.senyap) {
     sessionStorage.clear();
     alert('Sesi Anda sudah berakhir. Silakan login ulang.');
@@ -4195,7 +4211,17 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const isIntervalType = !['Hadir', 'Pulang'].includes(type);
   const isShiftWorker = user.role === 'karyawan_shift'; 
   const isClockIn = type === 'Hadir';
-  // Presensi masuk & pulang: WAJIB kamera depan + wajah penuh terverifikasi.
+  // DUA ATURAN YANG BERBEDA, SENGAJA DIPISAH.
+  //
+  // Sampai 1.0.19 keduanya menempel pada satu flag, sehingga "kunci kamera
+  // depan" otomatis berarti "hanya boleh satu wajah". Untuk Dinas itu
+  // salah: foto dinas memang sering berisi beberapa orang sekaligus,
+  // tetapi tetap tidak boleh diambil dari kamera belakang.
+  //
+  //   wajibKameraDepan -> kamera belakang ditolak, tombol ganti kamera hilang
+  //   wajibWajah       -> verifikasi wajah penuh + liveness + pencocokan
+  //                       identitas, dan karena itu HANYA SATU wajah
+  const wajibKameraDepan = ['Hadir', 'Pulang', 'Dinas'].includes(type);
   const wajibWajah = ['Hadir', 'Pulang'].includes(type);
 
   const [selectedShift, setSelectedShift] = useState('');
@@ -4219,6 +4245,14 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const [errorKamera, setErrorKamera] = useState('');
   const [fotoTerverifikasi, setFotoTerverifikasi] = useState(false);
   const [sedangVerifikasi, setSedangVerifikasi] = useState(false);
+  // Pencocokan IDENTITAS wajah (Hadir/Pulang). Berbeda dari livenessStatus
+  // di atas, yang hanya menilai "ini wajah manusia hidup".
+  //   status: 'idle' | 'model' | 'proses' | 'cocok' | 'gagal'
+  const [wajahIdentitas, setWajahIdentitas] = useState({ status: 'idle', pesan: '' });
+  // Deskriptor 128 angka dari foto yang diterima. Disimpan di ref, bukan
+  // state: ia tidak pernah dipakai untuk menggambar apa pun, dan menaruhnya
+  // di state memicu render ulang seluruh form pada momen paling sibuk.
+  const deskriptorWajahRef = useRef(null);
   
   // FORM DATA
   const [location, setLocation] = useState(null);
@@ -4408,9 +4442,9 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       setLivenessStatus({ status: 'idle', isLive: false, faceCount: 0, message: '', badgeColor: '' });
       try {
           let stream;
-          if (wajibWajah) {
-            // Hadir / Pulang: kamera depan DIKUNCI. bukaKameraDepan() menolak
-            // stream yang ternyata berasal dari kamera belakang.
+          if (wajibKameraDepan) {
+            // Hadir / Pulang / Dinas: kamera depan DIKUNCI. bukaKameraDepan()
+            // menolak stream yang ternyata berasal dari kamera belakang.
             const hasil = await bukaKameraDepan({ width: 640, height: 480 });
             stream = hasil.stream;
             setKameraInfo({ facing: hasil.facing || 'user', label: hasil.label, dikenali: hasil.dikenali, ok: true });
@@ -4425,6 +4459,19 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
             setCameraActive(true);
             if (wajibWajah) {
               trackerRef.current = startFaceLivenessTracker(videoRef.current, setLivenessStatus);
+              // Model pengenal wajah (~6,2 MB) mulai diunduh SEKARANG, di
+              // latar, tanpa ditunggu. Karyawan butuh beberapa detik untuk
+              // memosisikan wajahnya; detik-detik itu yang dipakai. Kalau
+              // baru diunduh saat tombol jepret ditekan, ia menunggu dua
+              // kali — sekali untuk posisi, sekali untuk berkasnya.
+              deskriptorWajahRef.current = null;
+              setWajahIdentitas({ status: 'model', pesan: '' });
+              muatPengenalWajah()
+                .then(() => setWajahIdentitas((p) => (p.status === 'model' ? { status: 'idle', pesan: '' } : p)))
+                .catch(() => setWajahIdentitas({
+                  status: 'gagal',
+                  pesan: 'Model pengenal wajah gagal dimuat. Periksa koneksi, lalu buka ulang kamera.'
+                }));
             }
           } else {
             hentikanStream(stream);
@@ -4433,14 +4480,14 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           setKameraInfo({ facing: '', label: '', dikenali: false, ok: false });
           const pesan = (err && err.message) ? err.message : 'Gagal akses kamera.';
           setErrorKamera(pesan);
-          if (!wajibWajah) alert(pesan);
+          if (!wajibKameraDepan) alert(pesan);
       }
   };
   // Ganti kamera hanya berlaku untuk jenis non-presensi (Dinas / Sakit).
-  useEffect(() => { if (cameraActive && !wajibWajah) { startCamera(); } }, [facingMode]);
+  useEffect(() => { if (cameraActive && !wajibKameraDepan) { startCamera(); } }, [facingMode]);
 
   const toggleCamera = () => {
-    if (wajibWajah) return; // kamera depan terkunci untuk Hadir / Pulang
+    if (wajibKameraDepan) return; // kamera depan terkunci untuk Hadir / Pulang / Dinas
     if (trackerRef.current) {
       trackerRef.current.stop();
       trackerRef.current = null;
@@ -4470,6 +4517,83 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           alert((cek && cek.pesan) || 'Wajah tidak terverifikasi pada foto. Ulangi dengan wajah penuh menghadap kamera.');
           return;
         }
+
+        // --- GERBANG IDENTITAS: wajah SIAPA ---------------------------
+        // Sampai di sini kita hanya tahu ini wajah manusia hidup dan utuh.
+        // Sekarang dicocokkan dengan wajah acuan pemilik akun.
+        //
+        // Pembandingnya dikerjakan SERVER. Yang dikirim dari sini hanya
+        // 128 angka hasil jepretan; acuan milik karyawan tidak pernah
+        // sampai ke HP (lihat apps-script/FaceProfile.gs).
+        setSedangVerifikasi(true);
+        setWajahIdentitas({ status: 'proses', pesan: 'Mencocokkan wajah…' });
+        let lolosIdentitas = false;
+        try {
+          const desk = await ambilDeskriptorWajah(canvas);
+
+          if (!desk.ok && !desk.tersedia) {
+            // Modelnya yang gagal, BUKAN wajahnya yang salah. Foto tetap
+            // diteruskan: server masih punya gerbangnya sendiri, dan
+            // menolak absen karena jaringan buruk adalah kegagalan yang
+            // salah alamat.
+            deskriptorWajahRef.current = null;
+            setWajahIdentitas({ status: 'gagal', pesan: desk.pesan });
+            lolosIdentitas = true;
+          } else if (!desk.ok) {
+            alert(desk.pesan);
+            setWajahIdentitas({ status: 'gagal', pesan: desk.pesan });
+          } else {
+            const res = await fetchApi(SCRIPT_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'verifikasi_wajah', wajahDescriptor: desk.deskriptor })
+            });
+            const hasil = await res.json();
+
+            if (hasil.result !== 'success') {
+              // Server tidak menjawab (Google membalas HTML, dsb). Foto
+              // diteruskan; gerbang sesungguhnya tetap jalan saat Kirim.
+              deskriptorWajahRef.current = desk.deskriptor;
+
+              // Selama jendela transisi rilis, backend lama belum mengenal
+              // action ini. Itu keadaan yang sepenuhnya normal dan bukan
+              // urusan karyawan — jangan tampilkan apa-apa.
+              const backendBelumSiap = /tidak dikenal/i.test(String(hasil.message || ''));
+              setWajahIdentitas(backendBelumSiap
+                ? { status: 'idle', pesan: '' }
+                : { status: 'gagal', pesan: hasil.message || 'Pencocokan wajah tidak dapat dijalankan sekarang.' });
+              lolosIdentitas = true;
+            } else if (hasil.bolehLanjut) {
+              deskriptorWajahRef.current = desk.deskriptor;
+              setWajahIdentitas({
+                status: hasil.cocok ? 'cocok' : 'idle',
+                pesan: hasil.cocok
+                  ? 'Wajah cocok dengan data karyawan ✓'
+                  : (hasil.status === 'belum_terdaftar'
+                      ? 'Wajah acuan Anda belum didaftarkan admin — presensi tetap dapat dikirim.'
+                      : '')
+              });
+              lolosIdentitas = true;
+            } else {
+              // Inilah penolakan yang sebenarnya: wajahnya bukan pemilik akun.
+              deskriptorWajahRef.current = null;
+              setWajahIdentitas({ status: 'gagal', pesan: hasil.pesan || 'Wajah tidak cocok dengan data karyawan ini.' });
+              alert(
+                (hasil.pesan || 'Wajah tidak cocok dengan data karyawan ini.')
+                + '\n\nPresensi hanya boleh diambil oleh pemilik akun. '
+                + 'Bila Anda yakin ini keliru, coba di tempat yang lebih terang tanpa masker/topi, '
+                + 'lalu hubungi admin bila tetap gagal.'
+              );
+            }
+          }
+        } catch (e) {
+          deskriptorWajahRef.current = null;
+          setWajahIdentitas({ status: 'gagal', pesan: 'Gagal menghubungi server untuk pencocokan wajah.' });
+          lolosIdentitas = true; // gerbang server saat Kirim tetap menjaga
+        } finally {
+          setSedangVerifikasi(false);
+        }
+
+        if (!lolosIdentitas) return; // foto dibuang, kamera tetap menyala
       }
 
       const now = getServerNow(); const timestampText = `${now.toLocaleDateString('id-ID')} ${now.toLocaleTimeString('id-ID', { hour12: false })}`;
@@ -4554,6 +4678,18 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           // bersama riwayat absensi karyawan — keputusan menolak absen ada
           // di server, bukan di sini, karena kode ini bisa diubah pengguna.
           gpsBukti: gpsValidation.bukti || null,
+
+          // Identitas perangkat: server membandingkannya dengan perangkat
+          // yang dipakai saat login. Bedanya ditandai, bukan ditolak
+          // (lihat apps-script/Devices.gs).
+          ...infoPerangkat(),
+
+          // 128 angka wajah dari foto yang barusan dijepret. Server
+          // mencocokkannya lagi di handleAbsen — pemeriksaan saat jepret
+          // tadi hanya untuk memberi tahu karyawan lebih awal, bukan
+          // pengganti gerbang ini.
+          wajahDescriptor: (wajibWajah && !isEditMode) ? deskriptorWajahRef.current : null,
+
           ...intervalData,
           jamMulai: finalJamMulai,
           jamSelesai: finalJamSelesai
@@ -4603,6 +4739,15 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
            sessionStorage.setItem('app_user', JSON.stringify(updatedUser));
         }
         setEditItem(null); setView(isEditMode ? 'history' : 'dashboard');
+      } else if (data.code === 'WAJAH_TIDAK_COCOK') {
+        // Gerbang server. Fotonya dibuang supaya tidak ada jalan mengirim
+        // ulang isi yang sama tanpa menghadap kamera lagi.
+        fotoMentahRef.current = null;
+        deskriptorWajahRef.current = null;
+        setPhoto(null);
+        setFotoTerverifikasi(false);
+        setWajahIdentitas({ status: 'gagal', pesan: data.message });
+        alert(data.message + '\n\nSilakan ambil ulang foto presensi.');
       } else { alert(data.message); }
     } catch (e) { alert('Gagal kirim.'); } finally { setIsSubmitting(false); }
   };
@@ -4832,7 +4977,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
             <SeksiForm
               ikon={Camera}
               judul="Foto kehadiran"
-              catatan={wajibWajah ? "Wajib — kamera depan, wajah penuh terlihat" : "Wajib — diambil langsung dari kamera"}
+              catatan={wajibWajah
+                ? "Wajib — kamera depan, wajah penuh terlihat"
+                : wajibKameraDepan
+                  ? "Wajib — kamera depan, boleh lebih dari satu orang"
+                  : "Wajib — diambil langsung dari kamera"}
               warnaIkon={tema.chip}
               padat
               aksi={photo
@@ -4873,13 +5022,26 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                             </p>
                           </div>
                         )}
+                        {/* Baris kedua khusus pencocokan IDENTITAS. Sengaja
+                            terpisah dari pesan liveness di atas: keduanya
+                            menjawab pertanyaan berbeda dan bisa berbeda status
+                            pada saat yang sama. */}
+                        {(wajahIdentitas.status === 'model' || wajahIdentitas.status === 'proses') && (
+                          <div className="mt-2 px-3 py-1 rounded-full bg-blue-600/80 backdrop-blur-sm border border-white/25">
+                            <p className="text-[10.5px] font-semibold text-white text-center">
+                              {wajahIdentitas.status === 'model'
+                                ? 'Menyiapkan pencocokan wajah…'
+                                : 'Mencocokkan dengan data karyawan…'}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="absolute inset-6 rounded-2xl border-2 border-white/25 pointer-events-none"></div>
                     )}
 
                     <div className="absolute inset-x-0 bottom-0 pt-10 pb-4 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center gap-8">
-                      {wajibWajah ? (
+                      {wajibKameraDepan ? (
                         <span className="w-10"></span>
                       ) : (
                         <button onClick={toggleCamera} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-sm border border-white/25 flex items-center justify-center text-white active:scale-90 transition-transform" title="Ganti kamera">
@@ -4920,15 +5082,37 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                 </div>
               )}
 
-              {wajibWajah && cameraActive && !photo && !kameraInfo.dikenali && (
+              {wajibWajah && !isEditMode && wajahIdentitas.pesan && (
+                <div className={`mt-2.5 rounded-xl border p-3 ${
+                  wajahIdentitas.status === 'cocok'
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : wajahIdentitas.status === 'gagal'
+                      ? 'bg-rose-50 border-rose-200'
+                      : 'bg-amber-50 border-amber-200'
+                }`}>
+                  <p className={`text-[11.5px] font-semibold leading-relaxed ${
+                    wajahIdentitas.status === 'cocok'
+                      ? 'text-emerald-700'
+                      : wajahIdentitas.status === 'gagal'
+                        ? 'text-rose-700'
+                        : 'text-amber-700'
+                  }`}>
+                    {wajahIdentitas.pesan}
+                  </p>
+                </div>
+              )}
+
+              {wajibKameraDepan && cameraActive && !photo && !kameraInfo.dikenali && (
                 <p className="mt-2 text-[10.5px] text-slate-500 leading-relaxed">
-                  Jenis kamera tidak dilaporkan perangkat ini — verifikasi wajah penuh tetap wajib lolos sebelum foto dapat diambil.
+                  {wajibWajah
+                    ? 'Jenis kamera tidak dilaporkan perangkat ini — verifikasi wajah penuh tetap wajib lolos sebelum foto dapat diambil.'
+                    : 'Jenis kamera tidak dilaporkan perangkat ini. Pastikan Anda memakai kamera depan.'}
                 </p>
               )}
 
               {photo && (
                 <button
-                  onClick={() => { /* Wajib dikosongkan: tanpa ini efek penggambaran ulang stempel bisa memunculkan kembali foto yang baru saja dibuang. */ fotoMentahRef.current = null; setPhoto(null); setFotoTerverifikasi(false); startCamera(); }}
+                  onClick={() => { /* Wajib dikosongkan: tanpa ini efek penggambaran ulang stempel bisa memunculkan kembali foto yang baru saja dibuang. */ fotoMentahRef.current = null; deskriptorWajahRef.current = null; setPhoto(null); setFotoTerverifikasi(false); setWajahIdentitas({ status: 'idle', pesan: '' }); startCamera(); }}
                   className="mt-2.5 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-[12.5px] font-semibold text-slate-700 transition-colors active:scale-[0.99]"
                 >
                   <RotateCcw className="w-3.5 h-3.5" strokeWidth={2.2} /> Ambil ulang
@@ -6377,6 +6561,26 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   });
   const [masterInput, setMasterInput] = useState({ kategori: 'Menu', value: '', label: '' });
 
+  // --- PENGUNCIAN PERANGKAT (lihat apps-script/Devices.gs) ---
+  const [deviceList, setDeviceList] = useState([]);
+  const [deviceSesi, setDeviceSesi] = useState([]);
+  const [deviceMode, setDeviceMode] = useState('tandai');
+  const [deviceAudit, setDeviceAudit] = useState([]);
+  const [loadingDevice, setLoadingDevice] = useState(false);
+  const [deviceCari, setDeviceCari] = useState('');
+  const [deviceKuotaDraft, setDeviceKuotaDraft] = useState({});
+  const [deviceTampilLog, setDeviceTampilLog] = useState(false);
+
+  // --- WAJAH ACUAN (lihat apps-script/FaceProfile.gs) ---
+  const [wajahList, setWajahList] = useState([]);
+  const [wajahKonfig, setWajahKonfig] = useState({ mode: 'ketat', ambang: 0.52, wajibTerdaftar: false });
+  const [loadingWajah, setLoadingWajah] = useState(false);
+  const [wajahCari, setWajahCari] = useState('');
+  const [wajahTargetId, setWajahTargetId] = useState('');
+  const [wajahFileInfo, setWajahFileInfo] = useState([]);
+  const [wajahProses, setWajahProses] = useState('');
+  const [wajahHanyaBelum, setWajahHanyaBelum] = useState(false);
+
   const LIST_LOKASI = ['Surabaya', 'Jakarta', 'Semarang', 'Cilegon', 'Citeureup', 'Makassar', 'Balikpapan', 'Medan', 'All'];
 
   // Logic Fetch User
@@ -6398,6 +6602,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     if (activeTab === 'geofence') fetchGeofenceConfig();
     if (activeTab === 'period') fetchAbsencePeriod();
     if (activeTab === 'approval_team') fetchApprovalTeamConfig();
+    if (activeTab === 'perangkat') fetchDeviceList();
+    if (activeTab === 'wajah') fetchWajahList();
   }, [activeTab]);
 
   const fetchAbsencePeriod = async () => {
@@ -6781,6 +6987,209 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     (u.nama || '').toLowerCase().includes(atSearch.toLowerCase())
   );
 
+  // ============================================================
+  // PERANGKAT — 1 perangkat 1 akun, kuota lebih untuk HP milik PIC
+  // ============================================================
+  const fetchDeviceList = async () => {
+    setLoadingDevice(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_device_list' }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setDeviceList(data.devices || []);
+        setDeviceSesi(data.sesi || []);
+        setDeviceMode(data.mode || 'tandai');
+      } else alert(data.message || 'Gagal memuat daftar perangkat.');
+    } catch (e) { alert('Gagal koneksi saat memuat daftar perangkat.'); }
+    finally { setLoadingDevice(false); }
+  };
+
+  const fetchDeviceAudit = async () => {
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_device_audit', limit: 150 }) });
+      const data = await res.json();
+      if (data.result === 'success') setDeviceAudit(data.log || []);
+    } catch (e) { /* riwayat gagal dimuat tidak boleh mengunci layar */ }
+  };
+
+  const handleUbahDeviceMode = async (modeBaru) => {
+    if (modeBaru === 'ketat' && !window.confirm(
+      'Mode KETAT menolak login dari perangkat yang kuotanya sudah penuh.\n\n'
+      + 'Karyawan yang berganti HP tidak akan bisa masuk sampai admin melepas ikatan perangkat lamanya. '
+      + 'Nyalakan ini hanya setelah daftar perangkat di bawah terlihat wajar.\n\nLanjutkan?'
+    )) return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'set_device_mode', mode: modeBaru }) });
+      const data = await res.json();
+      if (data.result === 'success') { setDeviceMode(data.mode); alert(data.message); }
+      else alert(data.message || 'Gagal mengubah mode.');
+    } catch (e) { alert('Gagal koneksi saat mengubah mode perangkat.'); }
+    finally { setLoading(false); }
+  };
+
+  const handleSimpanKuotaDevice = async (deviceId) => {
+    const kuota = deviceKuotaDraft[deviceId];
+    if (kuota === undefined || kuota === '') return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'save_device_config', deviceId, kuota }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setDeviceList(prev => prev.map(d => d.deviceId === deviceId ? { ...d, kuota: parseInt(kuota, 10) } : d));
+        setDeviceKuotaDraft(prev => { const n = { ...prev }; delete n[deviceId]; return n; });
+      } else alert(data.message || 'Gagal menyimpan kuota.');
+    } catch (e) { alert('Gagal koneksi saat menyimpan kuota.'); }
+    finally { setLoading(false); }
+  };
+
+  const handleUbahStatusDevice = async (deviceId, statusBaru) => {
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'save_device_config', deviceId, status: statusBaru }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setDeviceList(prev => prev.map(d => d.deviceId === deviceId ? { ...d, status: statusBaru } : d));
+      } else alert(data.message || 'Gagal mengubah status perangkat.');
+    } catch (e) { alert('Gagal koneksi saat mengubah status perangkat.'); }
+    finally { setLoading(false); }
+  };
+
+  const handleLepasIkatan = async (deviceId, targetUserId, nama) => {
+    if (!window.confirm(`Lepas ikatan ${nama} dari perangkat ini?\n\nSesi aktifnya ikut dicabut, jadi ia harus login ulang.`)) return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'lepas_device', deviceId, targetUserId }) });
+      const data = await res.json();
+      alert(data.message || (data.result === 'success' ? 'Ikatan dilepas.' : 'Gagal melepas ikatan.'));
+      if (data.result === 'success') fetchDeviceList();
+    } catch (e) { alert('Gagal koneksi saat melepas ikatan.'); }
+    finally { setLoading(false); }
+  };
+
+  const handleCabutSesi = async (targetUserId, nama) => {
+    if (!window.confirm(`Paksa logout ${nama}? Ikatan perangkatnya tidak dihapus.`)) return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'cabut_sesi_user', targetUserId }) });
+      const data = await res.json();
+      alert(data.message || 'Selesai.');
+      if (data.result === 'success') fetchDeviceList();
+    } catch (e) { alert('Gagal koneksi saat mencabut sesi.'); }
+    finally { setLoading(false); }
+  };
+
+  // ============================================================
+  // WAJAH ACUAN KARYAWAN
+  // ============================================================
+  const fetchWajahList = async () => {
+    setLoadingWajah(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_wajah_list' }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setWajahList(data.list || []);
+        setWajahKonfig({
+          mode: data.mode || 'ketat',
+          ambang: data.ambang || 0.52,
+          wajibTerdaftar: !!data.wajibTerdaftar
+        });
+      } else alert(data.message || 'Gagal memuat data wajah.');
+    } catch (e) { alert('Gagal koneksi saat memuat data wajah.'); }
+    finally { setLoadingWajah(false); }
+  };
+
+  const handleSimpanKonfigWajah = async (perubahan) => {
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'set_face_config', ...perubahan }) });
+      const data = await res.json();
+      if (data.result === 'success') {
+        setWajahKonfig({ mode: data.mode, ambang: data.ambang, wajibTerdaftar: !!data.wajibTerdaftar });
+      } else alert(data.message || 'Gagal menyimpan pengaturan.');
+    } catch (e) { alert('Gagal koneksi saat menyimpan pengaturan wajah.'); }
+    finally { setLoading(false); }
+  };
+
+  // Berkas foto -> elemen <img> -> deskriptor. Analisisnya dikerjakan di
+  // BROWSER ADMIN, bukan di server: Apps Script tidak bisa menjalankan
+  // model neural, dan mengirim foto mentah ke sana hanya akan menumpuk
+  // berkas besar tanpa gunanya.
+  const bacaBerkasKeGambar = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Berkas tidak terbaca.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => resolve({ img, dataUrl: reader.result });
+      img.onerror = () => reject(new Error('Berkas ini bukan gambar yang bisa dibuka.'));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const handlePilihFotoWajah = async (e) => {
+    const files = Array.from(e.target.files || []).slice(0, 3);
+    e.target.value = ''; // supaya memilih berkas yang sama lagi tetap memicu onChange
+    if (!files.length) return;
+    if (!wajahTargetId) { alert('Pilih karyawan terlebih dahulu.'); return; }
+
+    setWajahProses('Menganalisis foto…');
+    const hasil = [];
+    for (let i = 0; i < files.length; i++) {
+      try {
+        setWajahProses(`Menganalisis foto ${i + 1} dari ${files.length}…`);
+        const { img, dataUrl } = await bacaBerkasKeGambar(files[i]);
+        const d = await deskriptorDariGambar(img);
+        hasil.push({ nama: files[i].name, ok: d.ok, pesan: d.pesan, deskriptor: d.deskriptor, dataUrl: d.ok ? dataUrl : null });
+      } catch (err) {
+        hasil.push({ nama: files[i].name, ok: false, pesan: err.message, deskriptor: null, dataUrl: null });
+      }
+    }
+    setWajahFileInfo(hasil);
+    setWajahProses('');
+  };
+
+  const handleSimpanWajah = async () => {
+    const valid = wajahFileInfo.filter(f => f.ok && f.deskriptor);
+    if (!wajahTargetId) { alert('Pilih karyawan terlebih dahulu.'); return; }
+    if (!valid.length) { alert('Belum ada foto yang berhasil dianalisis.'); return; }
+
+    const target = wajahList.find(u => u.userId === wajahTargetId);
+    setLoading(true);
+    setWajahProses('Menyimpan…');
+    try {
+      const res = await fetchApi(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'daftar_wajah',
+          targetUserId: wajahTargetId,
+          targetNama: target ? target.nama : '',
+          descriptors: valid.map(f => f.deskriptor),
+          // Hanya foto pertama yang disimpan, sekadar agar admin bisa
+          // melihat wajah siapa yang terdaftar. Bukan ini yang dipakai
+          // mencocokkan — yang dipakai adalah deskriptornya.
+          fotoAcuan: valid[0].dataUrl || ''
+        })
+      });
+      const data = await res.json();
+      alert(data.message || (data.result === 'success' ? 'Tersimpan.' : 'Gagal menyimpan.'));
+      if (data.result === 'success') { setWajahFileInfo([]); fetchWajahList(); }
+    } catch (e) { alert('Gagal koneksi saat menyimpan wajah acuan.'); }
+    finally { setLoading(false); setWajahProses(''); }
+  };
+
+  const handleHapusWajah = async (userId, nama) => {
+    if (!window.confirm(`Hapus wajah acuan ${nama}?\n\nIa tidak akan bisa presensi Masuk/Pulang bila pengaturan "wajib terdaftar" sedang aktif.`)) return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'hapus_wajah', targetUserId: userId }) });
+      const data = await res.json();
+      alert(data.message || 'Selesai.');
+      if (data.result === 'success') fetchWajahList();
+    } catch (e) { alert('Gagal koneksi saat menghapus wajah acuan.'); }
+    finally { setLoading(false); }
+  };
+
   const switchTab = (tabName) => { setActiveTab(tabName); setIsMenuOpen(false); };
 
   // Satu gaya input untuk seluruh panel — sebelumnya tiap tab memakai
@@ -6798,6 +7207,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'period': return 'Periode Absensi';
           case 'approval_team': return 'Tim Approval';
           case 'board': return 'Board Absensi';
+          case 'perangkat': return 'Perangkat & Sesi Login';
+          case 'wajah': return 'Wajah Karyawan';
           default: return 'Admin Panel';
       }
   };
@@ -6883,6 +7294,18 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                                 <UsersRound className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'approval_team' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
                                 <span className="flex-1 leading-tight">Tim approval</span>
                                 {activeTab === 'approval_team' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+
+                            <button onClick={() => switchTab('perangkat')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'perangkat' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <Smartphone className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'perangkat' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Perangkat & sesi login</span>
+                                {activeTab === 'perangkat' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
+                            </button>
+
+                            <button onClick={() => switchTab('wajah')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'wajah' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
+                                <ScanFace className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'wajah' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
+                                <span className="flex-1 leading-tight">Wajah karyawan</span>
+                                {activeTab === 'wajah' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
                             </button>
 
                             <button onClick={() => setView('gps_dashboard')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-700 hover:bg-sky-50/50 hover:text-sky-800 transition-colors">
@@ -7511,6 +7934,391 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       )}
 
       {/* KONTEN TAB: INFO HRD */}
+      {/* KONTEN TAB: PERANGKAT & SESI LOGIN */}
+      {activeTab === 'perangkat' && user.role === 'admin' && (
+        <div className="space-y-3">
+          {/* Mode berlaku. Ditaruh paling atas karena seluruh isi layar di
+              bawahnya hanya masuk akal kalau admin tahu mode mana yang aktif. */}
+          <div className="bg-white rounded-2xl border border-slate-200/70 p-4">
+            <div className="flex items-start gap-2.5 mb-3">
+              <Smartphone className="w-[18px] h-[18px] text-slate-400 mt-0.5 shrink-0" strokeWidth={1.75} />
+              <div>
+                <p className="text-[13px] font-semibold text-slate-800">Aturan satu perangkat satu akun</p>
+                <p className="text-[11px] leading-relaxed text-slate-500 mt-0.5">
+                  Satu akun selalu hanya aktif di satu perangkat: login baru otomatis mengeluarkan sesi lama,
+                  berlaku pada mode apa pun kecuali Nonaktif.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {[
+                { nilai: 'tandai', judul: 'Tandai saja', ket: 'Login tidak pernah diblokir. Perangkat baru dan perangkat milik orang lain hanya dicatat untuk ditinjau. Aman dipakai saat baru dinyalakan.' },
+                { nilai: 'ketat', judul: 'Ketat', ket: 'Perangkat yang kuotanya sudah penuh menolak akun lain. Karyawan yang ganti HP harus dilepas ikatannya dulu oleh admin.' },
+                { nilai: 'off', judul: 'Nonaktif', ket: 'Semua pemeriksaan perangkat dan sesi tunggal dimatikan.' }
+              ].map(m => (
+                <label key={m.nilai} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${deviceMode === m.nilai ? 'bg-slate-900 border-slate-900' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                  <input type="radio" name="device_mode" checked={deviceMode === m.nilai} onChange={() => handleUbahDeviceMode(m.nilai)} className="mt-0.5 w-4 h-4" />
+                  <span>
+                    <span className={`block text-[13px] font-semibold ${deviceMode === m.nilai ? 'text-white' : 'text-slate-800'}`}>{m.judul}</span>
+                    <span className={`block mt-0.5 text-[11px] leading-relaxed ${deviceMode === m.nilai ? 'text-slate-300' : 'text-slate-500'}`}>{m.ket}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input className={inputCls} value={deviceCari} onChange={e => setDeviceCari(e.target.value)} placeholder="Cari nama karyawan atau ID perangkat…" />
+            <button onClick={fetchDeviceList} disabled={loadingDevice} className="shrink-0 px-3 py-2.5 rounded-lg bg-white border border-slate-200 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              <RefreshCcw className={`w-4 h-4 ${loadingDevice ? 'animate-spin' : ''}`} strokeWidth={2} />
+            </button>
+          </div>
+
+          {loadingDevice ? (
+            <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin" /></div>
+          ) : (
+            <>
+              {deviceList.length === 0 && (
+                <div className="bg-white rounded-2xl border border-slate-200/70 p-6 text-center">
+                  <p className="text-[12.5px] text-slate-500">Belum ada perangkat tercatat.</p>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                    Perangkat terdaftar sendiri saat karyawan login memakai aplikasi versi 1.0.19 atau lebih baru.
+                  </p>
+                </div>
+              )}
+
+              {deviceList
+                .filter(d => {
+                  const q = deviceCari.trim().toLowerCase();
+                  if (!q) return true;
+                  if (d.deviceId.toLowerCase().includes(q) || (d.label || '').toLowerCase().includes(q)) return true;
+                  return (d.pengguna || []).some(p => (p.nama || '').toLowerCase().includes(q) || (p.username || '').toLowerCase().includes(q));
+                })
+                .map(d => {
+                  const kelebihan = (d.pengguna || []).length > d.kuota;
+                  // Delapan karakter pertama ID adalah sidik perangkat
+                  // (lihat src/utils/perangkat.js). Dua baris dengan awalan
+                  // sama = kemungkinan besar HP yang sama dengan data situs
+                  // yang sudah dibersihkan.
+                  const sidik = d.deviceId.split('-')[0];
+                  const kembar = deviceList.filter(x => x.deviceId.split('-')[0] === sidik).length;
+                  return (
+                    <div key={d.deviceId} className={`bg-white rounded-2xl border overflow-hidden ${d.status === 'diblokir' ? 'border-rose-200' : kelebihan ? 'border-amber-200' : 'border-slate-200/70'}`}>
+                      <div className="p-4 border-b border-slate-100">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[13.5px] font-semibold text-slate-800 truncate">{d.label || 'Perangkat'}</p>
+                            <p className="text-[10.5px] font-mono text-slate-400 mt-0.5 truncate">{d.deviceId}</p>
+                            <p className="text-[11px] text-slate-500 mt-1">Terakhir dipakai: {d.terakhirLihat || '-'}</p>
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 rounded-full text-[10px] font-semibold ${d.status === 'diblokir' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                            {d.status === 'diblokir' ? 'Diblokir' : 'Aktif'}
+                          </span>
+                        </div>
+
+                        {kembar > 1 && (
+                          <p className="mt-2 text-[10.5px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+                            {kembar} perangkat memiliki sidik yang sama ({sidik}). Kemungkinan satu HP yang data situsnya dibersihkan berulang kali.
+                          </p>
+                        )}
+                        {kelebihan && (
+                          <p className="mt-2 text-[10.5px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+                            {(d.pengguna || []).length} akun memakai perangkat ini, padahal kuotanya {d.kuota}.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="p-4 border-b border-slate-100 flex items-end gap-2">
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Kuota akun pada perangkat ini</label>
+                          <input
+                            className={inputCls} type="number" min="1" max="50"
+                            value={deviceKuotaDraft[d.deviceId] !== undefined ? deviceKuotaDraft[d.deviceId] : d.kuota}
+                            onChange={e => setDeviceKuotaDraft(prev => ({ ...prev, [d.deviceId]: e.target.value }))}
+                          />
+                          <p className="text-[10.5px] text-slate-400 mt-1 leading-relaxed">Naikkan hanya untuk HP milik PIC yang memang mengabsenkan timnya.</p>
+                        </div>
+                        <button
+                          onClick={() => handleSimpanKuotaDevice(d.deviceId)}
+                          disabled={loading || deviceKuotaDraft[d.deviceId] === undefined}
+                          className="shrink-0 px-3.5 py-2.5 rounded-lg bg-slate-900 text-white text-[12px] font-medium hover:bg-slate-800 disabled:opacity-40"
+                        >Simpan</button>
+                      </div>
+
+                      <div className="p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Akun terikat ({(d.pengguna || []).length})</p>
+                        {(d.pengguna || []).length === 0 && <p className="text-[12px] text-slate-400">Belum ada.</p>}
+                        <div className="space-y-2">
+                          {(d.pengguna || []).map(pg => (
+                            <div key={pg.userId} className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                              <div className="min-w-0">
+                                <p className="text-[12.5px] font-semibold text-slate-800 truncate">{pg.nama || pg.userId}</p>
+                                <p className="text-[10.5px] text-slate-500 truncate">{pg.username} · {pg.jumlahLogin}x login · terakhir {pg.terakhir || '-'}</p>
+                              </div>
+                              <button onClick={() => handleLepasIkatan(d.deviceId, pg.userId, pg.nama || pg.userId)} disabled={loading} className="shrink-0 text-[11px] font-medium text-rose-500 hover:text-rose-700 disabled:opacity-40">Lepas</button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          onClick={() => handleUbahStatusDevice(d.deviceId, d.status === 'diblokir' ? 'aktif' : 'diblokir')}
+                          disabled={loading}
+                          className={`mt-3 w-full py-2.5 rounded-xl text-[12.5px] font-semibold transition-colors disabled:opacity-40 ${d.status === 'diblokir' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200'}`}
+                        >
+                          {d.status === 'diblokir' ? 'Aktifkan kembali perangkat ini' : 'Blokir perangkat ini'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {/* Sesi yang sedang berjalan */}
+              <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+                <div className="p-4 border-b border-slate-100">
+                  <p className="text-[13px] font-semibold text-slate-800">Sesi login terakhir ({deviceSesi.length})</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Satu baris per karyawan. "Paksa logout" mencabut sesinya tanpa menghapus ikatan perangkat.</p>
+                </div>
+                <div className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
+                  {deviceSesi.length === 0 && <p className="p-6 text-center text-[12px] text-slate-400">Belum ada sesi tercatat.</p>}
+                  {deviceSesi
+                    .filter(se => !deviceCari.trim() || (se.nama || '').toLowerCase().includes(deviceCari.trim().toLowerCase()))
+                    .map(se => (
+                    <div key={se.userId} className="flex items-center justify-between gap-2 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-[12.5px] font-semibold text-slate-800 truncate">{se.nama || se.userId}</p>
+                        <p className="text-[10.5px] text-slate-500 truncate">{se.loginAt} · {se.platform || 'perangkat tidak diketahui'}</p>
+                        {se.tanda && <p className="text-[10.5px] font-medium text-amber-600 mt-0.5">Tanda: {se.tanda.replace(/_/g, ' ')}</p>}
+                      </div>
+                      <button onClick={() => handleCabutSesi(se.userId, se.nama || se.userId)} disabled={loading} className="shrink-0 text-[11px] font-medium text-slate-500 hover:text-rose-600 disabled:opacity-40">Paksa logout</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Riwayat kejadian */}
+              <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+                <button
+                  onClick={() => { const buka = !deviceTampilLog; setDeviceTampilLog(buka); if (buka && !deviceAudit.length) fetchDeviceAudit(); }}
+                  className="w-full flex items-center justify-between gap-2 p-4 text-left hover:bg-slate-50"
+                >
+                  <span className="text-[13px] font-semibold text-slate-800">Riwayat kejadian perangkat</span>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${deviceTampilLog ? 'rotate-180' : ''}`} strokeWidth={2} />
+                </button>
+                {deviceTampilLog && (
+                  <div className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto border-t border-slate-100">
+                    {deviceAudit.length === 0 && <p className="p-6 text-center text-[12px] text-slate-400">Belum ada kejadian tercatat.</p>}
+                    {deviceAudit.map((lg, i) => (
+                      <div key={i} className="px-4 py-3">
+                        <p className="text-[12px] font-semibold text-slate-800">{lg.nama || lg.userId || '-'} · <span className="font-normal text-slate-500">{lg.aksi.replace(/_/g, ' ')}</span></p>
+                        <p className="text-[10.5px] text-slate-400 mt-0.5">{lg.waktu}</p>
+                        {lg.tanda && <p className="text-[10.5px] font-medium text-amber-600 mt-0.5">{lg.tanda.replace(/_/g, ' ')}</p>}
+                        {lg.detail && <p className="text-[10.5px] text-slate-500 mt-0.5 leading-relaxed">{lg.detail}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* KONTEN TAB: WAJAH KARYAWAN */}
+      {activeTab === 'wajah' && user.role === 'admin' && (
+        <div className="space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/70 p-4">
+            <div className="flex items-start gap-2.5 mb-3">
+              <ScanFace className="w-[18px] h-[18px] text-slate-400 mt-0.5 shrink-0" strokeWidth={1.75} />
+              <div>
+                <p className="text-[13px] font-semibold text-slate-800">Verifikasi identitas wajah</p>
+                <p className="text-[11px] leading-relaxed text-slate-500 mt-0.5">
+                  Berlaku hanya untuk presensi <b>Masuk</b> dan <b>Pulang</b> lewat aplikasi. Foto acuan diproses di
+                  peramban ini menjadi 128 angka; fotonya sendiri tidak dipakai untuk mencocokkan.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {[
+                { nilai: 'ketat', judul: 'Ketat' },
+                { nilai: 'tandai', judul: 'Tandai' },
+                { nilai: 'off', judul: 'Nonaktif' }
+              ].map(m => (
+                <button key={m.nilai} onClick={() => handleSimpanKonfigWajah({ mode: m.nilai })} disabled={loading}
+                  className={`py-2.5 rounded-xl text-[12.5px] font-semibold border transition-colors disabled:opacity-50 ${wajahKonfig.mode === m.nilai ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                  {m.judul}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] leading-relaxed text-slate-500 mb-3">
+              {wajahKonfig.mode === 'ketat'
+                ? 'Wajah yang tidak cocok akan menolak presensi.'
+                : wajahKonfig.mode === 'tandai'
+                  ? 'Presensi tetap diterima; ketidakcocokan hanya dicatat untuk ditinjau.'
+                  : 'Pencocokan wajah dimatikan sepenuhnya.'}
+            </p>
+
+            {/* Ambang kemiripan. Inilah tuas yang benar-benar dipakai saat
+                karyawan yang benar berulang kali ditolak — tanpa ini,
+                satu-satunya jalan keluar adalah deploy ulang backend. */}
+            <div className="mb-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="flex items-baseline justify-between mb-1.5">
+                <span className="text-[13px] font-semibold text-slate-800">Ambang kemiripan</span>
+                <span className="text-[13px] font-bold text-slate-900 tabular-nums">{Number(wajahKonfig.ambang).toFixed(2)}</span>
+              </div>
+              <input
+                type="range" min="0.40" max="0.60" step="0.01"
+                value={wajahKonfig.ambang}
+                disabled={loading || wajahKonfig.mode === 'off'}
+                onChange={e => setWajahKonfig(k => ({ ...k, ambang: parseFloat(e.target.value) }))}
+                onMouseUp={e => handleSimpanKonfigWajah({ ambang: e.target.value })}
+                onTouchEnd={e => handleSimpanKonfigWajah({ ambang: e.target.value })}
+                className="w-full accent-slate-900 disabled:opacity-40"
+              />
+              <div className="flex justify-between text-[10px] font-medium text-slate-400 mt-0.5">
+                <span>0,40 · paling ketat</span>
+                <span>0,60 · batas baku</span>
+              </div>
+              <p className="text-[10.5px] leading-relaxed text-slate-500 mt-2">
+                Makin kecil makin ketat. Mulai dari 0,52. Bila karyawan yang benar sering ditolak — biasanya karena
+                foto acuannya lama atau kurang terang — naikkan sedikit demi sedikit, dan jangan lewat 0,60.
+                Cara yang lebih baik: daftarkan ulang wajahnya dengan foto yang lebih jelas.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
+              <input type="checkbox" checked={wajahKonfig.wajibTerdaftar} disabled={loading}
+                onChange={e => handleSimpanKonfigWajah({ wajibTerdaftar: e.target.checked })}
+                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
+              <span>
+                <span className="block text-[13px] font-semibold text-slate-800">Wajib sudah terdaftar</span>
+                <span className="block mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                  Nyalakan hanya setelah semua karyawan di bawah terdaftar. Selama mati, karyawan yang belum punya
+                  wajah acuan tetap boleh presensi — itu yang membuat fitur ini bisa dinyalakan sebelum pendaftaran selesai.
+                </span>
+              </span>
+            </label>
+          </div>
+
+          {loadingWajah ? (
+            <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin" /></div>
+          ) : (
+            <>
+              {(() => {
+                const total = wajahList.length;
+                const sudah = wajahList.filter(u => u.terdaftar).length;
+                const persen = total ? Math.round((sudah / total) * 100) : 0;
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200/70 p-4">
+                    <div className="flex items-baseline justify-between mb-2">
+                      <p className="text-[13px] font-semibold text-slate-800">{sudah} dari {total} karyawan terdaftar</p>
+                      <span className="text-[12px] font-semibold text-slate-500 tabular-nums">{persen}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: persen + '%' }} />
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Pendaftaran */}
+              <div className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3">
+                <p className="text-[13px] font-semibold text-slate-800">Daftarkan wajah acuan</p>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Karyawan</label>
+                  <select className={inputCls} value={wajahTargetId} onChange={e => { setWajahTargetId(e.target.value); setWajahFileInfo([]); }}>
+                    <option value="">— pilih karyawan —</option>
+                    {wajahList.map(u => (
+                      <option key={u.userId} value={u.userId}>
+                        {u.nama} · {u.divisi || '-'}{u.terdaftar ? ' (sudah terdaftar)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Foto wajah (maksimal 3 berkas)</label>
+                  <input type="file" accept="image/*" multiple onChange={handlePilihFotoWajah} disabled={!wajahTargetId || !!wajahProses}
+                    className="w-full text-[12px] text-slate-600 file:mr-3 file:py-2 file:px-3.5 file:rounded-lg file:border-0 file:text-[12px] file:font-medium file:bg-slate-900 file:text-white hover:file:bg-slate-800 disabled:opacity-50" />
+                  <p className="text-[10.5px] text-slate-400 mt-1.5 leading-relaxed">
+                    Pakai foto menghadap depan, terang, tanpa masker atau kacamata gelap, dan hanya berisi satu orang.
+                    Beberapa foto dari sudut sedikit berbeda membuat pencocokan lebih tahan terhadap perubahan cahaya.
+                  </p>
+                </div>
+
+                {wajahProses && (
+                  <p className="flex items-center gap-2 text-[12px] font-medium text-blue-600">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> {wajahProses}
+                  </p>
+                )}
+
+                {wajahFileInfo.length > 0 && (
+                  <div className="space-y-2">
+                    {wajahFileInfo.map((f, i) => (
+                      <div key={i} className={`flex items-center gap-3 rounded-xl border p-2.5 ${f.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                        {f.dataUrl
+                          ? <img src={f.dataUrl} alt="" className="w-11 h-11 rounded-lg object-cover shrink-0" />
+                          : <span className="w-11 h-11 rounded-lg bg-white/70 flex items-center justify-center shrink-0"><X className="w-4 h-4 text-rose-500" /></span>}
+                        <div className="min-w-0">
+                          <p className={`text-[12px] font-semibold truncate ${f.ok ? 'text-emerald-700' : 'text-rose-700'}`}>{f.nama}</p>
+                          <p className={`text-[10.5px] leading-relaxed ${f.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{f.ok ? 'Wajah terbaca ✓' : f.pesan}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button onClick={handleSimpanWajah} disabled={loading || !!wajahProses || !wajahFileInfo.some(f => f.ok)}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-40">
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />} Simpan wajah acuan
+                </button>
+              </div>
+
+              {/* Daftar karyawan */}
+              <div className="flex items-center gap-2">
+                <input className={inputCls} value={wajahCari} onChange={e => setWajahCari(e.target.value)} placeholder="Cari karyawan…" />
+                <button onClick={() => setWajahHanyaBelum(!wajahHanyaBelum)}
+                  className={`shrink-0 px-3 py-2.5 rounded-lg border text-[12px] font-medium transition-colors ${wajahHanyaBelum ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                  Belum daftar
+                </button>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+                <div className="divide-y divide-slate-100 max-h-[520px] overflow-y-auto">
+                  {wajahList
+                    .filter(u => !wajahHanyaBelum || !u.terdaftar)
+                    .filter(u => {
+                      const q = wajahCari.trim().toLowerCase();
+                      if (!q) return true;
+                      return (u.nama || '').toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q);
+                    })
+                    .map(u => (
+                      <div key={u.userId} className="flex items-center gap-3 px-4 py-3">
+                        {u.fotoAcuan
+                          ? <img src={u.fotoAcuan} alt="" className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200" />
+                          : <span className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0"><User className="w-4 h-4 text-slate-400" /></span>}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12.5px] font-semibold text-slate-800 truncate">{u.nama}</p>
+                          <p className="text-[10.5px] text-slate-500 truncate">
+                            {u.divisi || '-'} · {u.terdaftar ? `${u.jumlahSampel} sampel · ${u.updatedAt}` : 'belum terdaftar'}
+                          </p>
+                        </div>
+                        {u.terdaftar ? (
+                          <button onClick={() => handleHapusWajah(u.userId, u.nama)} disabled={loading} className="shrink-0 text-[11px] font-medium text-rose-500 hover:text-rose-700 disabled:opacity-40">Hapus</button>
+                        ) : (
+                          <button onClick={() => { setWajahTargetId(u.userId); setWajahFileInfo([]); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="shrink-0 text-[11px] font-medium text-slate-500 hover:text-slate-900">Daftarkan</button>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {activeTab === 'news' && (
         <div className="animate-in fade-in duration-300">
           <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
@@ -7551,9 +8359,12 @@ function LoginScreen({ onLogin }) {
     e.preventDefault();
     setLoading(true);
     try {
+      // Identitas perangkat ikut dikirim: server memakainya untuk aturan
+      // 1 perangkat 1 akun dan untuk menggusur sesi di HP lain
+      // (lihat apps-script/Devices.gs).
       const response = await fetchApi(SCRIPT_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'login', username, password })
+        body: JSON.stringify({ action: 'login', username, password, ...infoPerangkat() })
       });
       const data = await response.json();
       if (data.result === 'success' && data.user) {

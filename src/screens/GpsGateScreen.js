@@ -1,5 +1,5 @@
 import React from 'react';
-import { MapPin, RefreshCcw, Loader2, LogOut, ShieldAlert, Settings, CheckCircle2 } from 'lucide-react';
+import { RefreshCcw, Loader2, LogOut, ShieldAlert, Settings, CheckCircle2 } from 'lucide-react';
 import { GPS_STATUS, jenisPerangkat } from '../utils/gpsWajib';
 
 // =====================================================================
@@ -163,10 +163,6 @@ export default function GpsGateScreen({ status, pesan, memeriksa, onPeriksaUlang
           )}
         </div>
 
-        <p className="mt-6 text-center text-[10px] leading-relaxed text-slate-500">
-          <MapPin className="mr-1 inline h-3 w-3" />
-          Lokasi perangkat direkam oleh sistem absensi selama aplikasi digunakan.
-        </p>
       </div>
     </div>
   );

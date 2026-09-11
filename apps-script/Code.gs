@@ -63,7 +63,12 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.18";
+const APP_VERSION = "1.0.19";
+// 1.0.19 — penguncian perangkat (Devices.gs) + pencocokan wajah acuan
+//          (FaceProfile.gs). WAJIB naik versi: token terbitan 1.0.18 tidak
+//          punya SessionID, dan authorizeRequest menolaknya sebagai sesi
+//          habis. Tanpa kenaikan versi, HP yang aplikasinya masih terbuka
+//          akan terus mengirim token lama dan tampak "error" tanpa sebab.
 // 1.0.16 — pelacakan posisi karyawan (GpsTracking.gs) + Dashboard GPS
 //          khusus admin. Backend lama tetap melayani klien 1.0.15:
 //          action ping GPS akan dijawab "Action tidak dikenal" dan
@@ -137,6 +142,19 @@ function doPost(e) {
     // =====================================================
     const gate = authorizeRequest(data);
     if (!gate.ok) {
+      // SESI_DIGANTI dibedakan dari SESI_HABIS dengan sengaja. Keduanya
+      // sama-sama melempar ke login, tetapi kalimatnya berbeda: yang satu
+      // "waktunya habis", yang satu "akun Anda dipakai di perangkat lain".
+      // Perbedaan itu yang membuat karyawan melapor kalau akunnya dipinjam.
+      if (gate.message === 'SESI_DIGANTI') {
+        return responseJSON({
+          result: 'error',
+          code: 'SESI_DIGANTI',
+          message: 'Akun Anda baru saja dipakai login di perangkat lain, '
+            + 'sehingga sesi di perangkat ini diakhiri. Satu akun hanya boleh aktif '
+            + 'di satu perangkat. Silakan login kembali bila ini memang Anda.'
+        });
+      }
       return responseJSON({
         result: 'error',
         code: gate.message === 'SESI_HABIS' ? 'AUTH_REQUIRED' : 'FORBIDDEN',
@@ -189,6 +207,21 @@ function doPost(e) {
     if (action === 'import_db_absen') return handleImportDbAbsen(data); // lihat ImportDbAbsen.gs
     if (action === 'delete_absensi') return handleDeleteAbsensi(data);
     if (action === 'update_absensi') return handleUpdateAbsensi(data);
+
+    // --- PENGUNCIAN PERANGKAT (lihat Devices.gs) ---
+    if (action === 'get_device_list') return handleGetDeviceList(data);
+    if (action === 'get_device_audit') return handleGetDeviceAudit(data);
+    if (action === 'save_device_config') return handleSaveDeviceConfig(data);
+    if (action === 'lepas_device') return handleLepasDevice(data);
+    if (action === 'cabut_sesi_user') return handleCabutSesiUser(data);
+    if (action === 'set_device_mode') return handleSetDeviceMode(data);
+
+    // --- WAJAH ACUAN KARYAWAN (lihat FaceProfile.gs) ---
+    if (action === 'verifikasi_wajah') return handleVerifikasiWajah(data);
+    if (action === 'get_wajah_list') return handleGetWajahList(data);
+    if (action === 'daftar_wajah') return handleDaftarWajah(data);
+    if (action === 'hapus_wajah') return handleHapusWajah(data);
+    if (action === 'set_face_config') return handleSetFaceConfig(data);
 
     // --- AUTH & USER MANAGEMENT ---
     if (action === 'login') return handleLogin(data);
@@ -283,6 +316,39 @@ function handleAbsen(data) {
       gpsAlasan: analisaGps.alasan
     });
   }
+
+  // --- GERBANG IDENTITAS WAJAH (lihat FaceProfile.gs) ---------------
+  // Hanya berlaku untuk Hadir & Pulang, dan hanya bila wajah acuan
+  // karyawan sudah didaftarkan admin. Diletakkan SEBELUM foto diunggah
+  // ke Drive supaya percobaan yang ditolak tidak meninggalkan sampah
+  // berkas. Dibungkus typeof agar Code.gs tetap jalan bila
+  // FaceProfile.gs belum ter-deploy.
+  const gerbangWajah = (typeof faceGerbangAbsen === 'function')
+    ? faceGerbangAbsen(data)
+    : { tolak: false, pesan: '', tanda: '', jarak: null };
+
+  if (gerbangWajah.tolak) {
+    catatGps('DITOLAK-WAJAH', null);
+    return responseJSON({
+      result: 'error',
+      code: 'WAJAH_TIDAK_COCOK',
+      message: gerbangWajah.pesan
+    });
+  }
+
+  // --- TANDA PERANGKAT (lihat Devices.gs) ---------------------------
+  // Tidak pernah menolak absen. Fungsinya mencatat: absen ini datang
+  // dari perangkat yang bukan miliknya / dari perangkat berbeda dengan
+  // saat login. Yang meninjau adalah admin, bukan kode ini.
+  //
+  // SENGAJA TIDAK memanggil catatGps() di sini. Absen yang lolos SELALU
+  // dicatat sekali di akhir fungsi ini ('DITERIMA' / 'DITERIMA-DITANDAI');
+  // menambah satu panggilan di sini membuat setiap absen bertanda muncul
+  // DUA KALI di audit GPS, dan angka pada Panel Integritas GPS ikut
+  // menggelembung tanpa ada yang menyadari sebabnya.
+  // Tandanya sudah punya tempatnya sendiri: sheet DeviceAudit, ditulis
+  // oleh deviceTandaAbsen() dan faceGerbangAbsen().
+  if (typeof deviceTandaAbsen === 'function') { deviceTandaAbsen(data); }
 
   // =================================================================
   // --- [BARU] VALIDASI CATATAN WAJIB DIISI ---
@@ -1608,6 +1674,30 @@ function handleLogin(data) {
   );
 
   if (foundUser) {
+    // --- GERBANG PERANGKAT (lihat Devices.gs) -----------------------
+    // Dijalankan SETELAH password terbukti benar, bukan sebelum: kalau
+    // dijalankan lebih dulu, orang yang salah ketik password pun akan
+    // mendaftarkan HP-nya ke akun orang lain.
+    //
+    // Fungsi ini juga menerbitkan SessionID baru, dan penerbitan itulah
+    // yang MENGGUSUR sesi lama di perangkat lain. Jadi urutannya penting:
+    // apa pun yang gagal setelah baris ini akan tetap membuat karyawan
+    // ter-logout di HP lamanya.
+    const cekPerangkat = (typeof devicePeriksaLogin === 'function')
+      ? devicePeriksaLogin(
+          { id: foundUser[0], nama: foundUser[3], username: foundUser[1] },
+          data
+        )
+      : { boleh: true, pesan: '', tanda: '', deviceId: '', sessionId: '', pemilik: '' };
+
+    if (!cekPerangkat.boleh) {
+      return responseJSON({
+        result: 'error',
+        code: 'PERANGKAT_DITOLAK',
+        message: cekPerangkat.pesan
+      });
+    }
+
     const noPayroll = String(foundUser[7] || '-');
     const geofence = _ambilGeofenceUser(foundUser[0]);
 
@@ -1688,11 +1778,20 @@ function handleLogin(data) {
           // TOKEN AUTENTIKASI (lihat Auth.gs)
           // Frontend menyimpannya bersama data user dan mengirimkannya
           // kembali di setiap request. Tanpa ini, request akan ditolak.
+          // Tanda perangkat ikut dikirim supaya layar utama bisa
+          // memberi tahu karyawan bahwa HP-nya belum dikenali — jauh
+          // lebih baik daripada ia baru tahu saat absennya dipertanyakan.
+          perangkatTanda: cekPerangkat.tanda || '',
+          perangkatPemilik: cekPerangkat.pemilik || '',
+
           token: createAuthToken({
             id: foundUser[0],
             role: foundUser[5],
             divisi: foundUser[4],
-            lokasi: foundUser[13] || 'All'
+            lokasi: foundUser[13] || 'All',
+            sessionId: cekPerangkat.sessionId,
+            deviceId: cekPerangkat.deviceId,
+            tanda: cekPerangkat.tanda
           })
       }, // <--- PASTIKAN ADA KOMA (,) DI SINI
 

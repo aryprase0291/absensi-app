@@ -86,6 +86,18 @@ function _getSecret() {
 function createAuthToken(u) {
   const payload = {
     u: String(u.id),
+    // SESI TUNGGAL (lihat Devices.gs). `s` adalah SessionID yang berlaku
+    // saat token diterbitkan. Login berikutnya dari perangkat mana pun
+    // menerbitkan SessionID baru, sehingga token ini otomatis mati —
+    // itulah yang membuat satu akun tidak bisa hidup di dua HP sekaligus.
+    // Token terbitan versi lama tidak punya `s`; lihat verifikasiSesi()
+    // di authorizeRequest untuk perlakuannya.
+    s: String(u.sessionId || ''),
+    // Perangkat tempat login terjadi + tanda pelanggaran (kalau ada),
+    // dibawa di token supaya handleAbsen bisa memeriksanya tanpa
+    // membaca sheet apa pun di jalur panas.
+    dv: String(u.deviceId || ''),
+    t: String(u.tanda || ''),
     // .trim() WAJIB: kalau sel Role di sheet Users berisi "admin " dengan
     // spasi di belakang, tanpa trim si admin akan terkunci dari semua
     // action admin. Kasus ini sangat mudah terjadi pada data hasil ketik manual.
@@ -187,6 +199,13 @@ const ACTION_ROLES = {
   'track_gps_antrian': '*',
   'get_gps_tracking_status': '*',
 
+  // Pemeriksaan kecocokan wajah SEBELUM tombol Kirim ditekan
+  // (FaceProfile.gs). Wajib '*': setiap karyawan memeriksa wajahnya
+  // SENDIRI — userId ditimpa dari token di bawah, jadi tidak ada yang
+  // bisa menanyakan kecocokan atas nama orang lain. Endpoint ini tidak
+  // pernah mengembalikan deskriptor acuan, hanya cocok/tidak.
+  'verifikasi_wajah': '*',
+
   // --- Penyetuju (sesuai App.js: canApprove) ---
   // Kepala divisi/supervisor diberi jalur yang sama seperti manager.
   'get_approval_list': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
@@ -234,7 +253,23 @@ const ACTION_ROLES = {
   'get_koreksi_list': ['admin'],
   'save_koreksi': ['admin'],
   'delete_koreksi': ['admin'],
-  'get_rekap_admin': ['admin']
+  'get_rekap_admin': ['admin'],
+
+  // --- PENGUNCIAN PERANGKAT (Devices.gs) — ADMIN SAJA ---
+  // Daftar perangkat memuat pasangan siapa-memakai-HP-mana untuk seluruh
+  // karyawan. Sengaja tanpa 'hrd', selaras dengan Dashboard GPS.
+  'get_device_list': ['admin'],
+  'get_device_audit': ['admin'],
+  'save_device_config': ['admin'],
+  'lepas_device': ['admin'],
+  'cabut_sesi_user': ['admin'],
+  'set_device_mode': ['admin'],
+
+  // --- WAJAH ACUAN (FaceProfile.gs) — ADMIN SAJA ---
+  'get_wajah_list': ['admin'],
+  'daftar_wajah': ['admin'],
+  'hapus_wajah': ['admin'],
+  'set_face_config': ['admin']
 };
 
 /**
@@ -269,10 +304,42 @@ function authorizeRequest(data) {
   }
 
   // ---------------------------------------------------------
+  // SESI TUNGGAL — 1 akun hidup di 1 perangkat saja
+  //
+  // Tanda tangan token yang sah TIDAK cukup: token lama tetap sah
+  // sampai 12 jam meski pemiliknya sudah login lagi di HP lain. Yang
+  // menentukan mana yang masih berlaku adalah SessionID.
+  //
+  // Biayanya satu pembacaan Script Properties per request — sengaja
+  // tidak menyentuh sheet apa pun, karena kode ini berjalan pada
+  // SETIAP pemanggilan API (lihat catatan di kepala Devices.gs).
+  // ---------------------------------------------------------
+  if (typeof deviceAktif === 'function' && deviceAktif()) {
+    const sesiToken = String(auth.s || '');
+    const sesiBerlaku = deviceSesiBerlaku(auth.u);
+
+    if (!sesiToken) {
+      // Token terbitan versi < 1.0.19. Tidak ada cara memastikan ini
+      // masih sesi yang sah, jadi diperlakukan seperti sesi habis:
+      // fetchApi di App.js akan membersihkan sesi dan melempar ke login,
+      // dan login itulah yang mendaftarkan perangkatnya.
+      return { ok: false, message: 'SESI_HABIS' };
+    }
+    if (sesiBerlaku && sesiToken !== sesiBerlaku) {
+      return { ok: false, message: 'SESI_DIGANTI' };
+    }
+  }
+
+  // ---------------------------------------------------------
   // Timpa field yang tadinya bisa dipalsukan klien
   // ---------------------------------------------------------
 
   data._auth = auth;
+
+  // deviceId dari body dipakai handleAbsen hanya untuk DIBANDINGKAN
+  // dengan deviceId di token (lihat deviceTandaAbsen). Ia tidak pernah
+  // menjadi sumber kebenaran, jadi tidak perlu ditimpa — justru
+  // perbedaannya yang informatif.
 
   // Identitas: seluruh handler memakai data.userId / data.id
   // sebagai "diri sendiri", jadi aman ditimpa menyeluruh.
