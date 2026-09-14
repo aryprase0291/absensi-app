@@ -63,7 +63,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.19";
+const APP_VERSION = "1.0.21";
 // 1.0.19 — penguncian perangkat (Devices.gs) + pencocokan wajah acuan
 //          (FaceProfile.gs). WAJIB naik versi: token terbitan 1.0.18 tidak
 //          punya SessionID, dan authorizeRequest menolaknya sebagai sesi
@@ -1733,7 +1733,11 @@ function handleLogin(data) {
     let pengumumanLogin = null;
     let pengumumanOk = false;
     try {
-      pengumumanLogin = cariPengumumanAktif();
+      // Lewat simpanan (Cache.gs): sheet Announcements ~1.000 baris disisir
+      // 4 kolomnya di SETIAP login hanya untuk mengambil satu baris aktif.
+      pengumumanLogin = (typeof getPengumumanAktifCached === 'function')
+        ? getPengumumanAktifCached()
+        : cariPengumumanAktif();
       pengumumanOk = true;
     } catch (e) {
       console.warn('Pengumuman gagal dibaca saat login: ' + e.message);
@@ -3388,7 +3392,12 @@ function hitungDurasi(start, end) { const diff = Math.abs(end - start); const mi
 
 //---POP UP INFO HRD--//
 function handleGetLatestAnnouncement() {
-  return responseJSON({ result: 'success', data: cariPengumumanAktif() });
+  return responseJSON({
+    result: 'success',
+    data: (typeof getPengumumanAktifCached === 'function')
+      ? getPengumumanAktifCached()
+      : cariPengumumanAktif()
+  });
 }
 
 /**
@@ -3462,6 +3471,8 @@ function handleTambahAnnouncement(data) {
   const waktu = new Date();
   
   sheet.appendRow([uuid, waktu, data.isi, 'Active']); // [cite: 44]
+  // Tanpa ini, pengumuman baru baru muncul di HP karyawan setelah TTL habis.
+  if (typeof PENGUMUMAN_CACHE_BERSIHKAN === 'function') PENGUMUMAN_CACHE_BERSIHKAN();
   return responseJSON({ result: 'success', message: 'Pengumuman berhasil diterbitkan.' });
 }
 

@@ -1,0 +1,10 @@
+{
+  "version": "1.0.21",
+  "releasedAt": "2026-09-14",
+  "required": true,
+  "notes": [
+    "Membuka aplikasi lebih cepat: pengecekan versi ke server tidak lagi dijalankan sebagai permintaan terpisah saat layar login, karena informasi versinya sudah ikut dalam balasan login.",
+    "Foto absen dikecilkan ke maksimal 1280 piksel sebelum dikirim, sehingga menekan Kirim jauh lebih cepat di jaringan seluler. Ketelitian pencocokan wajah tidak berubah — pemeriksaan wajah tetap memakai gambar resolusi penuh.",
+    "Stempel waktu dan alamat pada foto tetap terbaca dengan ukuran yang sama proporsionalnya."
+  ]
+}

@@ -59,7 +59,9 @@ ditekan tidak pernah diperiksa lagi.
 
 ---
 
-## 2. Yang berlaku sekarang untuk Hadir & Pulang
+## 2. Yang berlaku sekarang untuk Hadir, Pulang & Standby
+
+(Standby ikut sejak 1.0.20 — lihat `wajibWajah` di `src/App.js`.)
 
 ### Lapis 1 — kamera depan dikunci (`src/utils/kameraDepan.js`)
 
@@ -70,7 +72,7 @@ ditekan tidak pernah diperiksa lagi.
    dan label perangkat. Kalau hasilnya kamera belakang, stream **dimatikan**
    dan muncul pesan merah + tombol "Coba lagi". Tidak ada foto yang bisa
    diambil.
-4. Tombol ganti kamera dihapus untuk Hadir/Pulang, dan `toggleCamera()`
+4. Tombol ganti kamera dihapus untuk Hadir/Pulang/Standby, dan `toggleCamera()`
    menolak dijalankan (bukan sekadar disembunyikan di UI).
 
 Catatan: sebagian laptop/webcam tidak melaporkan `facingMode` **maupun** label
@@ -112,7 +114,7 @@ sebelum menjepret.
 
 ### Lapis 4 — gerbang saat kirim
 
-`handleSubmit()` menolak kiriman Hadir/Pulang bila foto tidak berasal dari
+`handleSubmit()` menolak kiriman Hadir/Pulang/Standby bila foto tidak berasal dari
 alur terverifikasi (`fotoTerverifikasi`).
 
 ### Kalau model gagal diunduh

@@ -8,7 +8,10 @@ tidak menggantikan yang lain.
 | `KAMERA-WAJAH.md` | "Apakah ini **wajah manusia** yang hidup dan utuh?" | 1.0.17 |
 | **dokumen ini** | "Apakah ini wajah **si pemilik akun**?" | 1.0.19 |
 
-Keduanya berjalan berurutan pada presensi **Masuk** dan **Pulang** saja.
+Keduanya berjalan berurutan pada presensi **Masuk**, **Pulang**, dan —
+sejak 1.0.20 — **Standby**. Daftar tipenya ada di dua tempat yang WAJIB
+selaras: `wajibWajah` di `src/App.js` dan `FACE_TIPE_WAJIB` di
+`apps-script/FaceProfile.gs`.
 
 **Dinas** mengunci kamera depan tetapi **tidak** memakai gerbang wajah mana
 pun — foto dinas boleh berisi lebih dari satu orang. **Sakit** tidak berubah
@@ -146,7 +149,7 @@ fitur ini bisa dinyalakan **sebelum** 300-an karyawan selesai didaftarkan:
 
 * **Mati (baku):** karyawan yang belum punya wajah acuan tetap boleh absen
   (ditandai). Yang sudah terdaftar tetap dicocokkan dengan ketat.
-* **Nyala:** karyawan tanpa wajah acuan tidak bisa presensi Masuk/Pulang
+* **Nyala:** karyawan tanpa wajah acuan tidak bisa presensi Masuk/Pulang/Standby
   sama sekali.
 
 > Nyalakan sakelar ini **hanya setelah** bilah kemajuan di Panel Admin
@@ -163,7 +166,7 @@ kali lipat detektor wajah yang sudah ada.
 
 Karena itu ia **sengaja dipisah** dari `muatFaceApi()`:
 
-* saat kamera Masuk/Pulang dibuka → **mulai** diunduh di latar, tidak
+* saat kamera Masuk/Pulang/Standby dibuka → **mulai** diunduh di latar, tidak
   ditunggu. Detik-detik yang dipakai karyawan memosisikan wajahnya adalah
   detik-detik yang dipakai berkas ini mengalir.
 * saat tombol jepret ditekan → baru **ditunggu** sampai selesai. Karena

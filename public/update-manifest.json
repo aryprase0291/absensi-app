@@ -1,7 +1,29 @@
 {
   "frontend": {
-    "currentVersion": "1.0.19",
+    "currentVersion": "1.0.21",
     "history": [
+      {
+        "file": "1.0.21.json",
+        "version": "1.0.21",
+        "releasedAt": "2026-09-14",
+        "required": true,
+        "notes": [
+          "Membuka aplikasi lebih cepat: pengecekan versi ke server tidak lagi dijalankan sebagai permintaan terpisah saat layar login, karena informasi versinya sudah ikut dalam balasan login.",
+          "Foto absen dikecilkan ke maksimal 1280 piksel sebelum dikirim, sehingga menekan Kirim jauh lebih cepat di jaringan seluler. Ketelitian pencocokan wajah tidak berubah — pemeriksaan wajah tetap memakai gambar resolusi penuh.",
+          "Stempel waktu dan alamat pada foto tetap terbaca dengan ukuran yang sama proporsionalnya."
+        ]
+      },
+      {
+        "file": "1.0.20.json",
+        "version": "1.0.20",
+        "releasedAt": "2026-09-11",
+        "required": true,
+        "notes": [
+          "Pengajuan Standby kini wajib menyertakan foto, dan fotonya harus diambil langsung dari kamera depan — tombol ganti kamera tidak lagi muncul pada form ini.",
+          "Foto Standby dicocokkan dengan wajah acuan karyawan seperti presensi Masuk & Pulang: hasil pencocokan tampil sebelum tombol Kirim ditekan, dan wajah yang bukan pemilik akun ditolak.",
+          "Tombol Kirim pada form Standby tidak aktif selama foto belum diambil atau wajah belum terverifikasi."
+        ]
+      },
       {
         "file": "1.0.19.json",
         "version": "1.0.19",
@@ -79,8 +101,31 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.19",
+    "currentVersion": "1.0.21",
     "history": [
+      {
+        "file": "1.0.21.json",
+        "version": "1.0.21",
+        "releasedAt": "2026-09-14",
+        "required": true,
+        "notes": [
+          "Login dipercepat: pemeriksaan perangkat pada login harian tidak lagi mengunci seluruh skrip (LockService) dan tidak lagi membaca sheet Devices, DeviceUser, dan SesiAktif secara utuh. Kunci hanya dipakai saat memang ada perangkat atau ikatan baru.",
+          "Nomor baris perangkat, ikatan, sesi, dan wajah acuan disimpan sebagai indeks; setiap penulisan tetap memverifikasi isi barisnya lebih dulu sehingga indeks yang basi tidak pernah menimpa baris milik karyawan lain.",
+          "Pengumuman aktif ikut disimpan sementara, sehingga sheet Announcements tidak lagi disisir pada setiap login. Pengumuman yang diterbitkan lewat Panel Admin tetap langsung terlihat.",
+          "Pembacaan konfigurasi (mode perangkat, mode wajah, ambang, kunci token) tidak lagi diulang di dalam satu permintaan yang sama.",
+          "Tidak ada perubahan struktur data maupun kontrak API. Urutan deploy bebas."
+        ]
+      },
+      {
+        "file": "1.0.20.json",
+        "version": "1.0.20",
+        "releasedAt": "2026-09-11",
+        "required": true,
+        "notes": [
+          "Gerbang wajah di handleAbsen (FACE_TIPE_WAJIB) kini juga mencakup tipe Standby, berjalan sebelum foto diunggah ke Drive.",
+          "Urutan deploy: bundle frontend 1.0.20 harus tayang lebih dulu — bundle lama mengirim Standby tanpa deskriptor wajah dan akan ditolak pada mode 'ketat'."
+        ]
+      },
       {
         "file": "1.0.19.json",
         "version": "1.0.19",

@@ -1,0 +1,12 @@
+{
+  "version": "1.0.21",
+  "releasedAt": "2026-09-14",
+  "required": true,
+  "notes": [
+    "Login dipercepat: pemeriksaan perangkat pada login harian tidak lagi mengunci seluruh skrip (LockService) dan tidak lagi membaca sheet Devices, DeviceUser, dan SesiAktif secara utuh. Kunci hanya dipakai saat memang ada perangkat atau ikatan baru.",
+    "Nomor baris perangkat, ikatan, sesi, dan wajah acuan disimpan sebagai indeks; setiap penulisan tetap memverifikasi isi barisnya lebih dulu sehingga indeks yang basi tidak pernah menimpa baris milik karyawan lain.",
+    "Pengumuman aktif ikut disimpan sementara, sehingga sheet Announcements tidak lagi disisir pada setiap login. Pengumuman yang diterbitkan lewat Panel Admin tetap langsung terlihat.",
+    "Pembacaan konfigurasi (mode perangkat, mode wajah, ambang, kunci token) tidak lagi diulang di dalam satu permintaan yang sama.",
+    "Tidak ada perubahan struktur data maupun kontrak API. Urutan deploy bebas."
+  ]
+}

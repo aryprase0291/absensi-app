@@ -71,6 +71,10 @@ const FACE_AMBANG_DEFAULT = 0.52;
 
 // Absen yang wajib dicocokkan wajahnya.
 //
+// Standby ikut sejak 1.0.20: di rekap ia berdiri sekolom dengan Masuk dan
+// Pulang sebagai penanda kehadiran orangnya, jadi bukti fotonya harus
+// setara — satu wajah, milik pemegang akun.
+//
 // Dinas & Sakit sengaja TIDAK ikut, tapi alasannya berbeda — jangan
 // disamakan kalau suatu saat daftar ini diubah:
 //   - Sakit : boleh kamera belakang, memang bukan bukti kehadiran orangnya.
@@ -78,7 +82,12 @@ const FACE_AMBANG_DEFAULT = 0.52;
 //             fotonya sering berisi beberapa orang sekaligus. Syarat
 //             "tepat satu wajah" yang melekat pada pencocokan identitas
 //             akan menolak foto yang justru paling wajar.
-const FACE_TIPE_WAJIB = ['Hadir', 'Pulang'];
+//
+// URUTAN DEPLOY (jangan ditukar): daftar ini hanya boleh bertambah SETELAH
+// bundle frontend yang mengirim wajahDescriptor untuk tipe itu sudah
+// tayang. Bundle lama mengirim Standby tanpa deskriptor -> faceCocokkan
+// menjawab 'kiriman_invalid' -> mode 'ketat' MENOLAK absennya.
+const FACE_TIPE_WAJIB = ['Hadir', 'Pulang', 'Standby'];
 
 // =======================================================
 // KONFIGURASI
@@ -86,7 +95,12 @@ const FACE_TIPE_WAJIB = ['Hadir', 'Pulang'];
 
 function faceMode() {
   try {
-    const v = String(PropertiesService.getScriptProperties().getProperty(FACE_MODE_KEY) || '').trim().toLowerCase();
+    // Lewat memo per-eksekusi (Cache.gs). faceMode() dibaca dua kali di
+    // setiap absen (faceGerbangAbsen lalu faceCocokkan) dan sekali lagi
+    // di verifikasi_wajah — tiga round trip Properties untuk satu nilai.
+    const v = (typeof _propGetCepat_ === 'function')
+      ? String(_propGetCepat_(FACE_MODE_KEY)).trim().toLowerCase()
+      : String(PropertiesService.getScriptProperties().getProperty(FACE_MODE_KEY) || '').trim().toLowerCase();
     if (v === 'off' || v === 'tandai' || v === 'ketat') return v;
   } catch (e) { /* jatuh ke default */ }
   return 'ketat';
@@ -94,7 +108,9 @@ function faceMode() {
 
 function faceAmbang() {
   try {
-    const v = parseFloat(PropertiesService.getScriptProperties().getProperty(FACE_AMBANG_KEY));
+    const v = parseFloat((typeof _propGetCepat_ === 'function')
+      ? _propGetCepat_(FACE_AMBANG_KEY)
+      : PropertiesService.getScriptProperties().getProperty(FACE_AMBANG_KEY));
     if (!isNaN(v) && v > 0.2 && v < 1.2) return v;
   } catch (e) { /* jatuh ke default */ }
   return FACE_AMBANG_DEFAULT;
@@ -102,7 +118,9 @@ function faceAmbang() {
 
 function faceWajibTerdaftar() {
   try {
-    return String(PropertiesService.getScriptProperties().getProperty(FACE_WAJIB_KEY) || '0') === '1';
+    return String((typeof _propGetCepat_ === 'function')
+      ? _propGetCepat_(FACE_WAJIB_KEY)
+      : (PropertiesService.getScriptProperties().getProperty(FACE_WAJIB_KEY) || '0')) === '1';
   } catch (e) {
     return false;
   }
@@ -123,6 +141,9 @@ function faceSetKonfigurasi(mode, ambang, wajibTerdaftar) {
   if (wajibTerdaftar !== undefined && wajibTerdaftar !== null) {
     props.setProperty(FACE_WAJIB_KEY, wajibTerdaftar ? '1' : '0');
   }
+  // Memo per-eksekusi Cache.gs harus dilupakan, kalau tidak layar admin
+  // menampilkan nilai lama pada respons dari request yang sama.
+  if (typeof _propLupakanSatuan_ === 'function') _propLupakanSatuan_();
 }
 
 // =======================================================
@@ -150,16 +171,39 @@ function _faceSheet() {
  * ratusan ribu karakter pada setiap absen.
  * @return {number} nomor baris, atau -1
  */
+const FACE_IDX_KUNCI = 'FACEIDX_V1';   // userId -> nomor baris
+const FACE_IDX_TTL   = 6 * 60 * 60;
+
 function _faceCariBaris(sh, userId) {
-  const last = sh.getLastRow();
-  if (last < 2) return -1;
-  const kolomA = sh.getRange(2, 1, last - 1, 1).getValues();
   const target = String(userId === null || userId === undefined ? '' : userId).trim();
   if (!target) return -1;
+  const last = sh.getLastRow();
+  if (last < 2) return -1;
+
+  // Jalur cepat: nomor baris dari indeks, diverifikasi dengan membaca SATU
+  // sel. Pencocokan wajah terjadi dua kali per presensi (verifikasi_wajah
+  // saat jepret, lalu gerbang saat Kirim), jadi pembacaan kolom A sepanjang
+  // ~300 baris ini dibayar dua kali setiap orang absen.
+  try {
+    const idx = (typeof _ambilTahan_ === 'function') ? _ambilTahan_(FACE_IDX_KUNCI) : null;
+    const tebakan = idx && idx[target];
+    if (tebakan && tebakan >= 2 && tebakan <= last) {
+      if (String(sh.getRange(tebakan, 1).getValue()).trim() === target) return tebakan;
+    }
+  } catch (e) { /* indeks itu optimasi, bukan sumber kebenaran */ }
+
+  const kolomA = sh.getRange(2, 1, last - 1, 1).getValues();
+  const peta = {};
+  let ketemu = -1;
   for (let i = 0; i < kolomA.length; i++) {
-    if (String(kolomA[i][0]).trim() === target) return i + 2;
+    const uid = String(kolomA[i][0]).trim();
+    if (!uid) continue;
+    peta[uid] = i + 2;
+    if (uid === target) ketemu = i + 2;
   }
-  return -1;
+  try { if (typeof _simpanTahan_ === 'function') _simpanTahan_(FACE_IDX_KUNCI, peta, FACE_IDX_TTL); }
+  catch (e) { /* abaikan */ }
+  return ketemu;
 }
 
 /**
@@ -470,6 +514,8 @@ function handleDaftarWajah(data) {
   const barisAda = _faceCariBaris(sh, targetUserId);
   if (barisAda === -1) {
     sh.appendRow(baris);
+    // Baris baru belum ada di indeks; biarkan dibangun ulang saat dibaca.
+    try { if (typeof _hapusTahan_ === 'function') _hapusTahan_(FACE_IDX_KUNCI); } catch (e) { /* abaikan */ }
   } else {
     // Foto acuan lama dipertahankan kalau kali ini tidak ada foto baru.
     if (!urlFoto) baris[6] = sh.getRange(barisAda, 7).getValue();
@@ -492,7 +538,9 @@ function handleHapusWajah(data) {
   const baris = _faceCariBaris(sh, targetUserId);
   if (baris === -1) return responseJSON({ result: 'error', message: 'Karyawan ini belum punya wajah acuan.' });
 
+  // deleteRow menggeser nomor baris di bawahnya -> indeks langsung usang.
   sh.deleteRow(baris);
+  try { if (typeof _hapusTahan_ === 'function') _hapusTahan_(FACE_IDX_KUNCI); } catch (e) { /* abaikan */ }
   return responseJSON({ result: 'success', message: 'Wajah acuan dihapus.' });
 }
 

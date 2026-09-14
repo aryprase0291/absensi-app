@@ -1,0 +1,9 @@
+{
+  "version": "1.0.20",
+  "releasedAt": "2026-09-11",
+  "required": true,
+  "notes": [
+    "Gerbang wajah di handleAbsen (FACE_TIPE_WAJIB) kini juga mencakup tipe Standby, berjalan sebelum foto diunggah ke Drive.",
+    "Urutan deploy: bundle frontend 1.0.20 harus tayang lebih dulu — bundle lama mengirim Standby tanpa deskriptor wajah dan akan ditolak pada mode 'ketat'."
+  ]
+}

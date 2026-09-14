@@ -1,0 +1,10 @@
+{
+  "version": "1.0.20",
+  "releasedAt": "2026-09-11",
+  "required": true,
+  "notes": [
+    "Pengajuan Standby kini wajib menyertakan foto, dan fotonya harus diambil langsung dari kamera depan — tombol ganti kamera tidak lagi muncul pada form ini.",
+    "Foto Standby dicocokkan dengan wajah acuan karyawan seperti presensi Masuk & Pulang: hasil pencocokan tampil sebelum tombol Kirim ditekan, dan wajah yang bukan pemilik akun ditolak.",
+    "Tombol Kirim pada form Standby tidak aktif selama foto belum diambil atau wajah belum terverifikasi."
+  ]
+}

@@ -65,7 +65,12 @@ function _generateRandomSecret() {
 }
 
 function _getSecret() {
-  const s = PropertiesService.getScriptProperties().getProperty(AUTH_SECRET_KEY);
+  // Lewat memo per-eksekusi (Cache.gs). _getSecret() dipanggil di
+  // verifyAuthToken pada SETIAP request, dan sekali lagi di createAuthToken
+  // saat login.
+  const s = (typeof _propGetCepat_ === 'function')
+    ? _propGetCepat_(AUTH_SECRET_KEY)
+    : PropertiesService.getScriptProperties().getProperty(AUTH_SECRET_KEY);
   if (!s) {
     throw new Error(
       'AUTH_SECRET belum dibuat. Jalankan SETUP_GENERATE_SECRET() sekali di editor Apps Script.'

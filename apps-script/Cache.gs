@@ -55,6 +55,7 @@ const CACHE_TTL_DETIK = 600; // 10 menit
 const KUNCI_MASTERDATA = 'MASTERDATA_V2';
 const KUNCI_PETA_CUTI  = 'PETACUTI_V2';
 const KUNCI_GEOFENCE   = 'GEOFENCE_V2';
+const KUNCI_PENGUMUMAN = 'PENGUMUMAN_V1';
 
 const CACHE_PROP_AWALAN   = 'CACHESTORE_';
 const CACHE_PROP_POTONGAN = 8 * 1024;  // batas keras Apps Script 9 KB
@@ -88,7 +89,58 @@ function _propsSemua_() {
 }
 
 /** Wajib dipanggil setiap kali properti ditulis/dihapus. @private */
-function _propsLupakan_() { _CACHE_PROPS_MEMO = null; }
+function _propsLupakan_() { _CACHE_PROPS_MEMO = null; _PROP_MEMO_SATUAN = {}; }
+
+/**
+ * Memo per-properti untuk SATU eksekusi.
+ *
+ * KENAPA BUKAN _propsSemua_(). `getProperties()` menarik SELURUH isi
+ * Script Properties — termasuk potongan CACHESTORE_* (puluhan KB) dan
+ * ratusan kunci SESI_<userId>. Untuk request ringan yang cuma butuh satu
+ * kunci konfigurasi, itu justru lebih mahal daripada satu `getProperty`.
+ * Memo ini hanya menghapus PEMBACAAN BERULANG kunci yang sama di dalam
+ * satu eksekusi — dan itu memang terjadi: deviceMode() dibaca dua kali
+ * per login, faceMode() dua kali per absen.
+ *
+ * Kalau _propsSemua_() kebetulan sudah terisi (karena cache dibaca lewat
+ * Properties di eksekusi ini), nilainya diambil dari sana — nol round trip.
+ * @private
+ */
+let _PROP_MEMO_SATUAN = {};
+
+/**
+ * Baca satu Script Property lewat memo. Selalu mengembalikan String
+ * ('' bila kosong / gagal dibaca) supaya pemanggil tidak perlu menjaga null.
+ * @private
+ */
+function _propGetCepat_(kunci) {
+  if (_CACHE_PROPS_MEMO !== null) {
+    const v = _CACHE_PROPS_MEMO[kunci];
+    return (v === undefined || v === null) ? '' : String(v);
+  }
+  if (Object.prototype.hasOwnProperty.call(_PROP_MEMO_SATUAN, kunci)) {
+    return _PROP_MEMO_SATUAN[kunci];
+  }
+  let v = '';
+  try {
+    v = String(PropertiesService.getScriptProperties().getProperty(kunci) || '');
+  } catch (e) {
+    v = '';
+  }
+  _PROP_MEMO_SATUAN[kunci] = v;
+  return v;
+}
+
+/**
+ * Buang memo satuan. WAJIB dipanggil setiap kali sebuah properti ditulis
+ * atau dihapus di dalam eksekusi yang sama, kalau nilainya mungkin dibaca
+ * lagi sesudahnya.
+ * @private
+ */
+function _propLupakanSatuan_(kunci) {
+  if (kunci === undefined) { _PROP_MEMO_SATUAN = {}; return; }
+  try { delete _PROP_MEMO_SATUAN[kunci]; } catch (e) { _PROP_MEMO_SATUAN = {}; }
+}
 
 /** @private */
 function _cacheKompres_(json) {
@@ -318,6 +370,32 @@ function getGeofenceConfigCached() {
  * geofence disimpan (handleSaveGeofenceConfig di Code.gs) — kalau tidak,
  * perubahan admin baru terlihat user lain setelah masa berlaku habis.
  */
+/**
+ * Pengumuman aktif — dipakai di SETIAP login.
+ *
+ * Sheet Announcements berisi ~1.000 baris; `cariPengumumanAktif()` menyisir
+ * 4 kolomnya (±4.000 sel) hanya untuk mengambil SATU baris berstatus aktif.
+ * Isinya berubah paling sering beberapa kali sebulan, jadi biaya itu dibayar
+ * ratusan kali sehari tanpa alasan.
+ *
+ * KONSEKUENSI YANG DISENGAJA: pengumuman yang diubah LANGSUNG DI SHEET
+ * (bukan lewat Panel Admin) baru terlihat setelah TTL habis. Perubahan
+ * lewat Panel Admin membersihkan simpanan ini seketika.
+ *
+ * null disimpan sebagai { v: null } supaya "tidak ada pengumuman aktif"
+ * tetap bisa dibedakan dari "simpanan belum ada".
+ */
+function getPengumumanAktifCached() {
+  const hit = _ambilTahan_(KUNCI_PENGUMUMAN);
+  if (hit && typeof hit === 'object' && 'v' in hit) return hit.v;
+
+  const nilai = (typeof cariPengumumanAktif === 'function') ? cariPengumumanAktif() : null;
+  _simpanTahan_(KUNCI_PENGUMUMAN, { v: nilai === undefined ? null : nilai }, CACHE_TTL_DETIK);
+  return nilai;
+}
+
+function PENGUMUMAN_CACHE_BERSIHKAN() { _hapusTahan_(KUNCI_PENGUMUMAN); }
+
 function GEOFENCE_CACHE_BERSIHKAN() { _hapusTahan_(KUNCI_GEOFENCE); }
 
 /**
@@ -341,6 +419,11 @@ function CACHE_BERSIHKAN() {
   _hapusTahan_(KUNCI_MASTERDATA);
   _hapusTahan_(KUNCI_PETA_CUTI);
   _hapusTahan_(KUNCI_GEOFENCE);
+  _hapusTahan_(KUNCI_PENGUMUMAN);
+  _hapusTahan_(DEVICE_IDX_DEV);
+  _hapusTahan_(DEVICE_IDX_BIND);
+  _hapusTahan_(DEVICE_IDX_SESI);
+  _hapusTahan_(FACE_IDX_KUNCI);
   Logger.log('Simpanan dikosongkan. Pembacaan berikutnya mengambil data terbaru dari sheet.');
 }
 

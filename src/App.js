@@ -412,9 +412,22 @@ useEffect(() => {
     if (m) setMasterData(JSON.parse(m)); 
     setView('dashboard'); 
   } 
-  // Selalu cek versi saat link aplikasi dibuka, termasuk saat belum ada sesi
-  // tersimpan. Ini penting untuk user mobile yang membuka shortcut/link lama.
-  // Jika server lebih baru, overlay update tidak bisa ditutup atau dilewati.
+  // CEK VERSI BACKEND — HANYA SAAT SESI DIPULIHKAN.
+  //
+  // Dulu request ini ditembakkan pada SETIAP pembukaan aplikasi. Padahal
+  // saat belum ada sesi, layar berikutnya pasti layar login, dan respons
+  // login SUDAH membawa `version` (handleLogin memanggil cekVersi dengan
+  // nilai itu). Jadi untuk pembukaan dingin — bentuk pembukaan yang paling
+  // sering dialami karyawan — ini adalah satu eksekusi Apps Script PENUH
+  // yang berjalan berbarengan dengan login, mengantre di kuota eksekusi
+  // serentak yang sama, dan ikut menanggung risiko balasan HTML
+  // interstitial 1-dari-7. Membuangnya memotong separuh round trip
+  // backend saat membuka aplikasi.
+  //
+  // Bundle frontend yang basi TETAP terdeteksi tanpa request ini:
+  // cekVersiFrontend() di atas membaca update-manifest.json langsung dari
+  // hosting yang sama, tanpa menyentuh Apps Script sama sekali.
+  if (!u) return;
   fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })
     .then((response) => response.json())
     .then((data) => { if (data.result === 'success') cekVersi(data.version); })
@@ -4167,6 +4180,51 @@ function gambarStempelKanan(ctx, teks, xKanan, yBawah, fontSizeAwal, maxWidth, m
   return baris.length * tinggiBaris;
 }
 
+// ============================================================
+// UKURAN FOTO YANG DIKIRIM KE SERVER
+//
+// Kamera depan HP sekarang menghasilkan frame 1080p ke atas. Dikirim apa
+// adanya (JPEG 0,8 -> base64), satu foto absen berukuran ~400-900 KB.
+// Di jaringan seluler jam masuk, ITULAH bagian terlama dari menekan
+// "Kirim" — bukan pemrosesan di server; dan di sisi Apps Script berkas
+// sebesar itu harus di-decode lebih dulu sebelum disimpan ke Drive.
+//
+// 1280 px pada sisi terpanjang masih jauh di atas kebutuhan: foto absen
+// hanya dilihat sebagai bukti wajah + stempel waktu, di layar HP atau
+// laptop. Penghematannya biasanya 3-5 kali lipat.
+//
+// PENTING: pengecilan dikerjakan SETELAH seluruh pemeriksaan wajah.
+// Deteksi dan deskriptor wajah tetap dihitung dari frame resolusi penuh,
+// jadi ketelitian pencocokan tidak berubah sedikit pun.
+// ============================================================
+const FOTO_MAKS_SISI = 1280;
+const FOTO_MUTU_KIRIM = 0.8;
+const FOTO_MUTU_MENTAH = 0.9;
+
+function ukuranTerbatas(lebar, tinggi, maks) {
+  const terpanjang = Math.max(lebar, tinggi);
+  if (!terpanjang || terpanjang <= maks) return { lebar: lebar, tinggi: tinggi };
+  const rasio = maks / terpanjang;
+  return { lebar: Math.round(lebar * rasio), tinggi: Math.round(tinggi * rasio) };
+}
+
+// Ubah sebuah canvas menjadi dataURL JPEG, dikecilkan bila perlu.
+function kecilkanCanvas(sumber, mutu) {
+  try {
+    const uk = ukuranTerbatas(sumber.width, sumber.height, FOTO_MAKS_SISI);
+    if (uk.lebar === sumber.width && uk.tinggi === sumber.height) {
+      return sumber.toDataURL('image/jpeg', mutu);
+    }
+    const c = document.createElement('canvas');
+    c.width = uk.lebar;
+    c.height = uk.tinggi;
+    c.getContext('2d').drawImage(sumber, 0, 0, uk.lebar, uk.tinggi);
+    return c.toDataURL('image/jpeg', mutu);
+  } catch (e) {
+    return sumber.toDataURL('image/jpeg', mutu);
+  }
+}
+
 // Menggambar seluruh stempel (waktu + lokasi) pada sebuah context canvas.
 // Dipakai dua kali: saat foto dijepret, dan saat stempel digambar ULANG
 // setelah nama alamat tiba.
@@ -4196,13 +4254,17 @@ function buatFotoBerstempel(dataUrlMentah, timestampText, lokasiText) {
     const img = new Image();
     img.onload = () => {
       try {
+        const uk = ukuranTerbatas(img.naturalWidth, img.naturalHeight, FOTO_MAKS_SISI);
         const c = document.createElement('canvas');
-        c.width = img.naturalWidth;
-        c.height = img.naturalHeight;
+        c.width = uk.lebar;
+        c.height = uk.tinggi;
         const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, uk.lebar, uk.tinggi);
+        // Stempel digambar pada ukuran akhir, bukan diperkecil bersama
+        // gambarnya: fontSize dihitung dari lebar canvas, jadi teksnya
+        // tetap seproporsional aslinya dan tetap terbaca.
         gambarStempelFoto(ctx, c.width, c.height, timestampText, lokasiText);
-        resolve(c.toDataURL('image/jpeg', 0.8));
+        resolve(c.toDataURL('image/jpeg', FOTO_MUTU_KIRIM));
       } catch (e) {
         resolve(null); // gagal menggambar ulang: foto lama tetap dipakai
       }
@@ -4217,7 +4279,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const isEditMode = !!editItem;
 
   // KONFIGURASI TIPE ABSEN
-  const PHOTO_REQUIRED_TYPES = ['Hadir', 'Pulang', 'Dinas', 'Sakit'];
+  // 'Standby' ikut sejak 1.0.20: barisnya dipakai sebagai penanda
+  // kehadiran pada rekap (sekolom dengan Masuk/Pulang), jadi bukti
+  // fotonya harus setara — lihat wajibKameraDepan / wajibWajah di bawah.
+  const PHOTO_REQUIRED_TYPES = ['Hadir', 'Pulang', 'Standby', 'Dinas', 'Sakit'];
   const NO_GPS_TYPES = ['Ijin', 'Cuti', 'Dinas Luar', 'Sakit', 'Cuti EO', 'Tukar Shift'];
   // const NO_TIME_TYPES = ['Cuti', 'Dinas Luar', 'Sakit', 'Cuti EO']; // (Digantikan logic manual)
   const H3_REQUIRED_TYPES = ['Ijin', 'Tukar Shift'];
@@ -4233,6 +4298,12 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const isClockIn = type === 'Hadir';
   // DUA ATURAN YANG BERBEDA, SENGAJA DIPISAH.
   //
+  // Standby masuk KEDUA daftar (1.0.20). Alasannya sama dengan Hadir /
+  // Pulang, bukan dengan Dinas: Standby dicatat sebagai kehadiran orang
+  // itu sendiri di rekap, jadi fotonya harus berisi tepat satu wajah
+  // milik pemegang akun. Daftar yang sama WAJIB dicerminkan oleh
+  // FACE_TIPE_WAJIB di apps-script/FaceProfile.gs.
+  //
   // Sampai 1.0.19 keduanya menempel pada satu flag, sehingga "kunci kamera
   // depan" otomatis berarti "hanya boleh satu wajah". Untuk Dinas itu
   // salah: foto dinas memang sering berisi beberapa orang sekaligus,
@@ -4241,8 +4312,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   //   wajibKameraDepan -> kamera belakang ditolak, tombol ganti kamera hilang
   //   wajibWajah       -> verifikasi wajah penuh + liveness + pencocokan
   //                       identitas, dan karena itu HANYA SATU wajah
-  const wajibKameraDepan = ['Hadir', 'Pulang', 'Dinas'].includes(type);
-  const wajibWajah = ['Hadir', 'Pulang'].includes(type);
+  const wajibKameraDepan = ['Hadir', 'Pulang', 'Standby', 'Dinas'].includes(type);
+  const wajibWajah = ['Hadir', 'Pulang', 'Standby'].includes(type);
 
   const [selectedShift, setSelectedShift] = useState('');
   const availableShifts = masterData?.shifts || [];
@@ -4623,7 +4694,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
       // bukan jam saat alamat tiba.
       const pakaiAlamat = !!(alamatStatus === 'ada' && alamat);
       fotoMentahRef.current = {
-        dataUrl: canvas.toDataURL('image/jpeg', 0.92),
+        dataUrl: kecilkanCanvas(canvas, FOTO_MUTU_MENTAH),
         timestampText,
         pakaiAlamat
       };
@@ -4633,7 +4704,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
         ? alamat
         : (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : "No GPS");
       gambarStempelFoto(ctx, canvas.width, canvas.height, timestampText, lokasiText);
-      setPhoto(canvas.toDataURL('image/jpeg', 0.8));
+      setPhoto(kecilkanCanvas(canvas, FOTO_MUTU_KIRIM));
       setFotoTerverifikasi(true);
       if (trackerRef.current) {
         trackerRef.current.stop();

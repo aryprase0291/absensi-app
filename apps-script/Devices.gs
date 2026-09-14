@@ -53,6 +53,26 @@ const DEVICE_AUDIT_HEADERS = [
 const DEVICE_MODE_KEY = 'DEVICE_MODE';
 const DEVICE_SESI_PREFIX = 'SESI_';
 const DEVICE_KUOTA_DEFAULT = 1;
+
+// =======================================================
+// INDEKS BARIS (lihat Cache.gs) — PEMANGKAS UTAMA WAKTU LOGIN
+//
+// Sebelum ini, SETIAP login membaca tiga sheet UTUH hanya untuk
+// menemukan tiga nomor baris: Devices (~300x11), DeviceUser (~300x8),
+// dan SesiAktif (~300x8). Yang benar-benar dibutuhkan cuma
+// "baris berapa", dan itu tidak berubah kecuali ada perangkat /
+// ikatan / user baru.
+//
+// Indeks ini menyimpan pemetaan kunci -> nomor baris. Nomor barisnya
+// SELALU DIVERIFIKASI ulang dengan membaca baris itu sendiri sebelum
+// ditulisi, jadi indeks yang basi tidak pernah menimpa baris milik
+// orang lain — paling buruk ia meleset dan jatuh ke jalur lambat.
+// Karena itu pula indeks ini aman walau tidak sempat di-invalidasi.
+// =======================================================
+const DEVICE_IDX_DEV  = 'DEVIDX_DEV_V1';   // deviceId            -> baris
+const DEVICE_IDX_BIND = 'DEVIDX_BIND_V1';  // deviceId|userId     -> baris
+const DEVICE_IDX_SESI = 'DEVIDX_SESI_V1';  // userId              -> baris
+const DEVICE_IDX_TTL  = 6 * 60 * 60;       // 6 jam
 const DEVICE_AUDIT_MAKS_BARIS = 4000;
 
 // Tanda yang bisa menempel pada satu sesi / satu absen.
@@ -70,7 +90,12 @@ const DEVICE_TANDA = {
 
 function deviceMode() {
   try {
-    const v = String(PropertiesService.getScriptProperties().getProperty(DEVICE_MODE_KEY) || '').trim().toLowerCase();
+    // Lewat memo per-eksekusi (Cache.gs): deviceMode() dipanggil dua kali
+    // per login (deviceAktif + _deviceDaftarkan) dan sekali lagi di setiap
+    // absen. Tanpa memo itu tiga round trip PropertiesService.
+    const v = (typeof _propGetCepat_ === 'function')
+      ? String(_propGetCepat_(DEVICE_MODE_KEY)).trim().toLowerCase()
+      : String(PropertiesService.getScriptProperties().getProperty(DEVICE_MODE_KEY) || '').trim().toLowerCase();
     if (v === 'off' || v === 'ketat' || v === 'tandai') return v;
   } catch (e) { /* properties tidak terbaca: jatuh ke default */ }
   return 'tandai';
@@ -90,6 +115,7 @@ function deviceSetMode(mode) {
     throw new Error('Mode perangkat tidak dikenal: ' + mode);
   }
   PropertiesService.getScriptProperties().setProperty(DEVICE_MODE_KEY, m);
+  if (typeof _propLupakanSatuan_ === 'function') _propLupakanSatuan_(DEVICE_MODE_KEY);
   return m;
 }
 
@@ -122,6 +148,25 @@ function _devWaktu() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
 }
 
+/** Baca satu indeks baris dari simpanan. @return {Object} peta (kosong bila tidak ada). @private */
+function _devIdxAmbil(kunci) {
+  try {
+    const hit = (typeof _ambilTahan_ === 'function') ? _ambilTahan_(kunci) : null;
+    return (hit && typeof hit === 'object') ? hit : {};
+  } catch (e) { return {}; }
+}
+
+/** Simpan indeks baris. Kegagalan di sini hanya berarti jalur lambat dipakai lagi. @private */
+function _devIdxSimpan(kunci, peta) {
+  try { if (typeof _simpanTahan_ === 'function') _simpanTahan_(kunci, peta, DEVICE_IDX_TTL); }
+  catch (e) { /* indeks itu optimasi, bukan sumber kebenaran */ }
+}
+
+/** Buang indeks (dipakai setelah admin mengubah ikatan/status perangkat). @private */
+function _devIdxBuang(kunci) {
+  try { if (typeof _hapusTahan_ === 'function') _hapusTahan_(kunci); } catch (e) { /* abaikan */ }
+}
+
 // =======================================================
 // SESI TUNGGAL
 // =======================================================
@@ -137,6 +182,7 @@ function _devKunciSesi(userId) {
  */
 function deviceSesiBerlaku(userId) {
   try {
+    if (typeof _propGetCepat_ === 'function') return _devNormId(_propGetCepat_(_devKunciSesi(userId)));
     return _devNormId(PropertiesService.getScriptProperties().getProperty(_devKunciSesi(userId)));
   } catch (e) {
     return '';
@@ -147,6 +193,7 @@ function deviceTerbitkanSesi(userId) {
   const sid = Utilities.getUuid().replace(/-/g, '').substring(0, 20);
   try {
     PropertiesService.getScriptProperties().setProperty(_devKunciSesi(userId), sid);
+    if (typeof _propLupakanSatuan_ === 'function') _propLupakanSatuan_(_devKunciSesi(userId));
   } catch (e) {
     // Gagal menyimpan sesi TIDAK boleh menggagalkan login. Kalau ini
     // terjadi, sesi sebelumnya tetap berlaku dan token baru akan ditolak
@@ -162,6 +209,7 @@ function deviceTerbitkanSesi(userId) {
 function deviceCabutSesi(userId) {
   try {
     PropertiesService.getScriptProperties().deleteProperty(_devKunciSesi(userId));
+    if (typeof _propLupakanSatuan_ === 'function') _propLupakanSatuan_(_devKunciSesi(userId));
   } catch (e) { /* abaikan */ }
 }
 
@@ -208,6 +256,36 @@ function devicePeriksaLogin(u, data) {
     return hasil;
   }
 
+  // --- JALUR CEPAT (tanpa lock, tanpa pembacaan sheet penuh) ---------
+  // Dicoba lebih dulu karena inilah bentuk login sehari-hari: HP yang
+  // sudah dikenal, dipakai orang yang sama. Kalau indeksnya meleset,
+  // fungsinya mengembalikan null dan kita lanjut ke jalur lengkap.
+  try {
+    const cepat = _deviceDaftarkanCepat(u, data, deviceId);
+    if (cepat) {
+      hasil.tanda = cepat.tanda;
+      hasil.pemilik = cepat.pemilik;
+      if (cepat.diblokir) {
+        hasil.boleh = false;
+        hasil.pesan = cepat.pesan;
+        _deviceCatatAudit(u, deviceId, 'login_ditolak', cepat.tanda, cepat.pesan);
+        return hasil;
+      }
+      hasil.sessionId = deviceTerbitkanSesi(u.id);
+      _deviceTulisSesi(u, deviceId, hasil.sessionId, data, hasil.tanda);
+      return hasil;
+    }
+  } catch (e) {
+    // Fail-open sama seperti jalur lengkap: masalah di optimasi tidak
+    // boleh mengunci karyawan dari aplikasinya.
+    console.warn('Jalur cepat perangkat dilewati: ' + e.message);
+  }
+
+  // --- JALUR LENGKAP -------------------------------------------------
+  // Hanya dicapai kalau memang ada kemungkinan baris BARU ditulis
+  // (perangkat baru, ikatan baru, kuota penuh). Di sinilah lock benar-
+  // benar dibutuhkan, dan di sini pula frekuensinya rendah — jadi
+  // menunggu beberapa detik tidak lagi menjadi biaya semua orang.
   const lock = LockService.getScriptLock();
   let dapatLock = false;
   try {
@@ -245,6 +323,65 @@ function devicePeriksaLogin(u, data) {
 }
 
 /**
+ * JALUR CEPAT: perangkat sudah dikenal DAN sudah terikat ke akun ini.
+ *
+ * Inilah >95% login harian. Yang dilakukan hanya dua pembacaan SATU BARIS
+ * dan dua penulisan pembukuan (TerakhirLihat, TerakhirLogin+JumlahLogin) —
+ * tidak ada pembacaan sheet penuh, dan yang terpenting TIDAK ADA
+ * LockService: jalur ini tidak pernah menambah baris, jadi tidak ada yang
+ * perlu dilindungi dari balapan. Lock global 8 detik di jalur ini adalah
+ * penyebab utama antrean login di jam masuk — 300 karyawan yang login
+ * bersamaan saling menunggu padahal tidak ada satu pun baris baru.
+ *
+ * Nomor baris dari indeks SELALU diverifikasi terhadap isi barisnya
+ * sendiri. Indeks basi => fungsi ini mengembalikan null dan pemanggil
+ * jatuh ke _deviceDaftarkan() yang lengkap.
+ *
+ * @return {Object|null} hasil seperti _deviceDaftarkan, atau null bila
+ *                       tidak bisa dilayani dari indeks.
+ */
+function _deviceDaftarkanCepat(u, data, deviceId) {
+  const userId = _devNormId(u.id);
+  if (!deviceId || !userId) return null;
+
+  const idxDev = _devIdxAmbil(DEVICE_IDX_DEV);
+  const idxBind = _devIdxAmbil(DEVICE_IDX_BIND);
+  const barisDev = idxDev[deviceId];
+  const barisBind = idxBind[deviceId + '|' + userId];
+  if (!barisDev || !barisBind) return null;
+
+  const shDev = SS.getSheetByName(DEVICE_SHEET);
+  const shBind = SS.getSheetByName(DEVICE_USER_SHEET);
+  if (!shDev || !shBind) return null;
+  if (barisDev < 2 || barisDev > shDev.getLastRow()) return null;
+  if (barisBind < 2 || barisBind > shBind.getLastRow()) return null;
+
+  const rowDev = shDev.getRange(barisDev, 1, 1, DEVICE_HEADERS.length).getValues()[0];
+  if (_devNormId(rowDev[0]) !== deviceId) return null; // indeks basi
+
+  const status = _devNormId(rowDev[5]).toLowerCase();
+  if (status === 'diblokir') {
+    return {
+      diblokir: true,
+      tanda: 'perangkat_diblokir',
+      pemilik: '',
+      pesan: 'Perangkat ini diblokir oleh admin. Hubungi HRD untuk membukanya.'
+    };
+  }
+
+  const rowBind = shBind.getRange(barisBind, 1, 1, DEVICE_USER_HEADERS.length).getValues()[0];
+  if (_devNormId(rowBind[0]) !== deviceId) return null;          // indeks basi
+  if (_devNormId(rowBind[1]) !== userId) return null;            // indeks basi
+  if (_devNormId(rowBind[7]).toLowerCase() === 'dilepas') return null; // biar jalur lambat yang menilai
+
+  const waktu = _devWaktu();
+  shDev.getRange(barisDev, 8).setValue(waktu); // kolom H = TerakhirLihat
+  shBind.getRange(barisBind, 6, 1, 2).setValues([[waktu, (parseInt(rowBind[6], 10) || 0) + 1]]);
+
+  return { diblokir: false, tanda: DEVICE_TANDA.BERSIH, pemilik: '', pesan: '' };
+}
+
+/**
  * Daftarkan/perbarui perangkat dan ikatannya ke user.
  * @return {Object} { diblokir, pesan, tanda, pemilik }
  */
@@ -256,8 +393,14 @@ function _deviceDaftarkan(u, data, deviceId) {
 
   const rowsDev = bacaSheet(shDev, DEVICE_HEADERS.length);
   let barisDev = -1;
+  // Sheet sudah terbaca utuh di sini — sekalian susun indeksnya supaya
+  // login berikutnya tidak perlu mengulang pembacaan ini.
+  const petaDev = {};
   for (let i = 1; i < rowsDev.length; i++) {
-    if (_devNormId(rowsDev[i][0]) === deviceId) { barisDev = i; break; }
+    const idBaris = _devNormId(rowsDev[i][0]);
+    if (!idBaris) continue;
+    petaDev[idBaris] = i + 1; // nomor baris 1-based ala getRange
+    if (idBaris === deviceId && barisDev === -1) barisDev = i;
   }
 
   const platform = _devNormId(data.devicePlatform).substring(0, 120);
@@ -275,7 +418,10 @@ function _deviceDaftarkan(u, data, deviceId) {
       'Terdaftar otomatis saat login pertama.',
       _devNormId(u.id), waktu
     ]);
+    petaDev[deviceId] = shDev.getLastRow();
+    _devIdxSimpan(DEVICE_IDX_DEV, petaDev);
     _deviceIkat(shBind, deviceId, u, waktu);
+    _devIdxBuang(DEVICE_IDX_BIND); // ikatan baru: indeks lama sudah tidak lengkap
     return {
       diblokir: false,
       tanda: DEVICE_TANDA.PERANGKAT_BARU,
@@ -286,6 +432,8 @@ function _deviceDaftarkan(u, data, deviceId) {
 
   const status = _devNormId(rowsDev[barisDev][5]).toLowerCase();
   const kuota = Math.max(1, parseInt(rowsDev[barisDev][2], 10) || DEVICE_KUOTA_DEFAULT);
+
+  _devIdxSimpan(DEVICE_IDX_DEV, petaDev);
 
   // Kolom H (index 7) = TerakhirLihat.
   shDev.getRange(barisDev + 1, 8).setValue(waktu);
@@ -305,12 +453,20 @@ function _deviceDaftarkan(u, data, deviceId) {
   const rowsBind = bacaSheet(shBind, DEVICE_USER_HEADERS.length);
   const terikat = [];
   let barisIkatanSaya = -1;
+  // Indeks ikatan disusun untuk SELURUH perangkat, bukan hanya yang ini:
+  // pembacaannya sudah terlanjur penuh, dan login karyawan lain besok
+  // akan memanfaatkannya.
+  const petaBind = {};
   for (let i = 1; i < rowsBind.length; i++) {
-    if (_devNormId(rowsBind[i][0]) !== deviceId) continue;
+    const dvBaris = _devNormId(rowsBind[i][0]);
+    const usBaris = _devNormId(rowsBind[i][1]);
     if (_devNormId(rowsBind[i][7]).toLowerCase() === 'dilepas') continue;
-    terikat.push({ userId: _devNormId(rowsBind[i][1]), nama: _devNormId(rowsBind[i][2]) });
-    if (_devNormId(rowsBind[i][1]) === _devNormId(u.id)) barisIkatanSaya = i;
+    if (dvBaris && usBaris) petaBind[dvBaris + '|' + usBaris] = i + 1;
+    if (dvBaris !== deviceId) continue;
+    terikat.push({ userId: usBaris, nama: _devNormId(rowsBind[i][2]) });
+    if (usBaris === _devNormId(u.id)) barisIkatanSaya = i;
   }
+  _devIdxSimpan(DEVICE_IDX_BIND, petaBind);
 
   // Sudah terikat -> jalur normal, tidak ada tanda.
   if (barisIkatanSaya !== -1) {
@@ -322,6 +478,8 @@ function _deviceDaftarkan(u, data, deviceId) {
   // Masih ada kursi kosong (perangkat PIC dengan kuota > 1).
   if (terikat.length < kuota) {
     _deviceIkat(shBind, deviceId, u, waktu);
+    petaBind[deviceId + '|' + _devNormId(u.id)] = shBind.getLastRow();
+    _devIdxSimpan(DEVICE_IDX_BIND, petaBind);
     return {
       diblokir: false,
       tanda: terikat.length === 0 ? DEVICE_TANDA.PERANGKAT_BARU : DEVICE_TANDA.BERSIH,
@@ -347,6 +505,8 @@ function _deviceDaftarkan(u, data, deviceId) {
   // Mode 'tandai': tetap diloloskan, tapi ikatannya dicatat sebagai
   // melebihi kuota supaya terlihat jelas di Panel Admin.
   _deviceIkat(shBind, deviceId, u, waktu, 'melebihi_kuota');
+  petaBind[deviceId + '|' + _devNormId(u.id)] = shBind.getLastRow();
+  _devIdxSimpan(DEVICE_IDX_BIND, petaBind);
   return {
     diblokir: false,
     tanda: DEVICE_TANDA.PERANGKAT_ORANG_LAIN,
@@ -373,19 +533,43 @@ function _deviceIkat(shBind, deviceId, u, waktu, status) {
 function _deviceTulisSesi(u, deviceId, sessionId, data, tanda) {
   try {
     const sh = _devSheet(DEVICE_SESI_SHEET, DEVICE_SESI_HEADERS);
-    const rows = bacaSheet(sh, DEVICE_SESI_HEADERS.length);
     const waktu = _devWaktu();
+    const userId = _devNormId(u.id);
     const baris = [
-      _devNormId(u.id), _devNormId(u.nama), sessionId, deviceId,
+      userId, _devNormId(u.nama), sessionId, deviceId,
       waktu, waktu, _devNormId(data && data.devicePlatform).substring(0, 120), tanda || ''
     ];
-    for (let i = 1; i < rows.length; i++) {
-      if (_devNormId(rows[i][0]) === _devNormId(u.id)) {
-        sh.getRange(i + 1, 1, 1, baris.length).setValues([baris]);
+
+    // Jalur biasa: baris user sudah pernah ada, nomornya ada di indeks.
+    // Isinya tetap diperiksa dulu — indeks yang basi TIDAK BOLEH menimpa
+    // baris sesi milik karyawan lain.
+    const idx = _devIdxAmbil(DEVICE_IDX_SESI);
+    const tebakan = idx[userId];
+    if (tebakan && tebakan >= 2 && tebakan <= sh.getLastRow()) {
+      if (_devNormId(sh.getRange(tebakan, 1).getValue()) === userId) {
+        sh.getRange(tebakan, 1, 1, baris.length).setValues([baris]);
         return;
       }
     }
-    sh.appendRow(baris);
+
+    // Indeks belum ada / meleset: baca KOLOM A saja (bukan 8 kolom),
+    // lalu simpan indeksnya untuk login-login berikutnya.
+    const kolomA = bacaSheet(sh, 1);
+    const peta = {};
+    let ketemu = -1;
+    for (let i = 1; i < kolomA.length; i++) {
+      const uid = _devNormId(kolomA[i][0]);
+      if (!uid) continue;
+      peta[uid] = i + 1;
+      if (uid === userId) ketemu = i + 1;
+    }
+    if (ketemu !== -1) {
+      sh.getRange(ketemu, 1, 1, baris.length).setValues([baris]);
+    } else {
+      sh.appendRow(baris);
+      peta[userId] = sh.getLastRow();
+    }
+    _devIdxSimpan(DEVICE_IDX_SESI, peta);
   } catch (e) {
     console.warn('Gagal menulis SesiAktif: ' + e.message);
   }
@@ -589,6 +773,12 @@ function handleLepasDevice(data) {
   // Sesi yang sedang berjalan di perangkat itu ikut dicabut, kalau tidak
   // pelepasan baru terasa 12 jam kemudian saat token kedaluwarsa.
   if (targetUserId) deviceCabutSesi(targetUserId);
+
+  // deleteRow menggeser nomor baris di bawahnya, jadi indeks ikatan
+  // langsung usang. Verifikasi isi baris di jalur cepat sudah membuat
+  // indeks basi tidak berbahaya, tapi membuangnya di sini menghindarkan
+  // seluruh karyawan jatuh ke jalur lambat sampai TTL habis.
+  _devIdxBuang(DEVICE_IDX_BIND);
 
   _deviceCatatAudit({ id: data.userId, nama: 'admin' }, deviceId, 'lepas_ikatan', '',
     'target=' + (targetUserId || 'SEMUA') + ' jumlah=' + jml);
