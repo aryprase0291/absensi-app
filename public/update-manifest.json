@@ -1,7 +1,18 @@
 {
   "frontend": {
-    "currentVersion": "1.0.22",
+    "currentVersion": "1.0.23",
     "history": [
+      {
+        "file": "1.0.23.json",
+        "version": "1.0.23",
+        "releasedAt": "2026-09-15",
+        "required": true,
+        "notes": [
+          "Import data mesin tidak lagi gagal total hanya karena satu potongan kebetulan dibalas halaman oleh server Google: potongan itu kini dikirim ulang otomatis sampai tiga kali.",
+          "Import berukuran besar paling terasa manfaatnya — satu berkas 4.500 baris terpecah menjadi 12 potongan, dan sebelumnya cukup satu potongan bermasalah untuk membatalkan seluruhnya.",
+          "Bila ketiga percobaan tetap gagal, pesannya kini menyebutkan dengan pasti bahwa sheet tujuan belum tersentuh dan import aman diulang dari awal."
+        ]
+      },
       {
         "file": "1.0.22.json",
         "version": "1.0.22",
@@ -113,8 +124,21 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.22",
+    "currentVersion": "1.0.23",
     "history": [
+      {
+        "file": "1.0.23.json",
+        "version": "1.0.23",
+        "releasedAt": "2026-09-15",
+        "required": true,
+        "notes": [
+          "Potongan import kini idempoten: server mencatat potongan terakhir yang sudah diterapkan (chunkTerakhir), sehingga potongan yang dikirim ulang dijawab sukses tanpa ditulis dua kali.",
+          "Potongan yang datang meloncat ditolak dengan kode POTONGAN_LONCAT dan sesi dibersihkan, supaya tidak ada baris yang bolong tanpa disadari.",
+          "Sesi import yang sudah selesai menyimpan ringkasannya selama 2 jam, sehingga pengulangan potongan terakhir menjawab ringkasan yang sama alih-alih 'sesi tidak dikenal'.",
+          "Catatan sesi import yang basi disapu otomatis saat import baru dimulai, agar Script Properties tidak penuh diam-diam.",
+          "Balasan potongan membawa penanda idempoten. Klien hanya mengulang potongan setelah melihat penanda itu, sehingga bundle baru tetap aman menghadapi backend lama — urutan deploy bebas, tetapi tetap ikuti kebiasaan repo ini: frontend dulu, backend belakangan."
+        ]
+      },
       {
         "file": "1.0.22.json",
         "version": "1.0.22",

@@ -231,3 +231,74 @@ npx react-scripts test --testPathPattern=importDbAbsenParser --watchAll=false
 multi-file, penyaringan duplikat (termasuk NIK yang berubah sementara
 No.Akun tetap), dan baris rusak — semua kasusnya diambil dari file draft
 asli.
+
+---
+
+# Kenapa import besar hampir selalu gagal, dan apa yang diubah di 1.0.23
+
+15 Sep 2026. Laporan: import 2 berkas (3.159 + 1.404 baris) berhenti dengan
+**"Import data mesin gagal — Server Google membalas halaman, bukan data."**
+Sebelumnya tidak pernah muncul.
+
+## Ini bukan soal datanya
+
+Google membalas HALAMAN HTML alih-alih JSON pada sebagian request —
+terukur **~1 dari 7** (lihat catatan `fetchApi` di `src/App.js`). Untuk
+request tunggal itu tinggal diulang. Untuk import, konsekuensinya berbeda,
+karena satu import dipecah menjadi banyak potongan:
+
+| Baris | Potongan (400/potongan) | Peluang MINIMAL SATU kena balasan HTML |
+|---|---|---|
+| 800 | 2 | 1 − (6/7)² ≈ **26%** |
+| 1.600 | 4 | ≈ **46%** |
+| 4.562 | 12 | 1 − (6/7)¹² ≈ **84%** |
+
+Jadi "sebelumnya tidak pernah muncul" memang benar: import kecil biasanya
+lolos, import 4.562 baris nyaris pasti kena. Yang berubah bukan aplikasinya,
+melainkan **ukuran berkas yang diimpor**.
+
+Dulu klien sengaja TIDAK pernah mengulang, karena mengulang potongan yang
+sebenarnya sudah tertulis akan menggandakan barisnya di sheet sementara.
+Alasan itu benar — selama server tidak tahu potongan mana yang sudah masuk.
+
+## Yang diubah
+
+**Server sekarang mengingat potongan.** `handleImportDbAbsen` menyimpan
+`chunkTerakhir` di state sesi:
+
+- potongan yang **sudah pernah diterapkan** → dijawab sukses **tanpa
+  ditulis ulang** (`duplikat: true`);
+- potongan yang **meloncat** → ditolak (`POTONGAN_LONCAT`), sesi
+  dibersihkan, admin diminta mengulang dari awal. Lebih baik mengulang
+  daripada punya baris bolong yang tidak kelihatan;
+- sesi yang **sudah selesai** → ringkasannya disimpan 2 jam, jadi
+  pengulangan potongan terakhir menjawab ringkasan yang SAMA, bukan
+  "sesi tidak dikenal" yang memancing admin mengimpor ulang berkas yang
+  sebenarnya sudah masuk.
+
+**Klien boleh mengulang, sampai 3 kali per potongan.** Peluang gagal satu
+import 12 potongan turun dari ~84% menjadi di bawah 0,5%.
+
+**Urutan deploy tidak lagi mengikat.** Balasan potongan membawa penanda
+`idempoten: true`. Klien hanya mengulang potongan > 0 SETELAH melihat
+penanda itu; menghadapi backend lama ia berperilaku persis seperti dulu.
+Potongan 0 selalu boleh diulang, di backend mana pun, karena ia memang
+memulai sesi dari nol dan me-reset sheet sementara.
+
+## Yang TIDAK berubah, dan tidak boleh berubah
+
+- **Sheet tujuan hanya disentuh pada potongan TERAKHIR.** Semua potongan
+  sebelumnya hanya menumpuk di `_import_dbabsen_tmp`. Itulah sebabnya
+  kegagalan di tengah selalu aman diulang dari awal, dan kenapa pesan
+  gagalnya boleh mengatakan demikian dengan pasti.
+- **Pola pengulangan ini TIDAK boleh disalin ke action tulis lain.** Yang
+  membuatnya aman bukan kode di `ImportJobContext.js`, melainkan
+  pencatatan `chunkTerakhir` di sisi server.
+- Pengiriman tetap dari browser. Menutup atau me-reload tab tetap
+  memotong import.
+
+## Kalau tetap gagal 3 kali berturut-turut
+
+Pesannya sekarang menyebut dengan pasti: sheet tujuan belum tersentuh,
+aman diulang dari awal. Kalau berulang terus, curigai ukuran berkas
+(pecah per periode) atau gangguan jaringan, bukan isi datanya.

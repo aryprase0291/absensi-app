@@ -15,10 +15,29 @@
 // oleh server. Menutup tab atau me-reload halaman TETAP menghentikan
 // import di tengah jalan. Karena itu ada penjaga beforeunload di bawah.
 //
-// Catatan yang tidak boleh hilang: 'import_db_absen' adalah action TULIS.
-// Request yang gagal TIDAK BOLEH diulang otomatis — tulisnya mungkin
-// sudah berhasil di server dan hanya responsnya yang rusak. Itu sebabnya
-// file ini memakai fetch sendiri, bukan fetchApi() yang punya retry.
+// PENGULANGAN POTONGAN — BOLEH, TAPI HANYA UNTUK ACTION INI [15 Sep 2026]
+// -----------------------------------------------
+// Dulu file ini sengaja memakai fetch sendiri, bukan fetchApi(), supaya
+// TIDAK ada pengulangan otomatis: 'import_db_absen' adalah action TULIS,
+// dan mengulang tulisan yang sebenarnya sudah berhasil akan menggandakan
+// barisnya. Alasan itu benar — selama server tidak tahu potongan mana
+// yang sudah masuk.
+//
+// Masalahnya, tanpa pengulangan sama sekali, import besar nyaris pasti
+// gagal. Google membalas HALAMAN HTML alih-alih JSON pada ~1 dari 7
+// request. Satu import 4.562 baris = 12 potongan, jadi peluang MINIMAL
+// SATU potongan kena balasan HTML adalah 1 - (6/7)^12 ≈ 84%. Admin
+// melihatnya sebagai "import selalu gagal", padahal datanya tidak
+// bermasalah sedikit pun.
+//
+// Sejak 1.0.23 server MENGINGAT potongan terakhir yang sudah diterapkan
+// (`chunkTerakhir` di apps-script/ImportDbAbsen.gs): potongan yang
+// diulang dijawab sukses tanpa ditulis dua kali, dan sesi yang sudah
+// selesai menjawab ringkasan yang sama. Karena itu — dan HANYA karena
+// itu — pengulangan di bawah aman.
+//
+// JANGAN menyalin pola ini ke action tulis lain. Yang membuatnya aman
+// bukan kode di file ini, melainkan pencatatan di sisi server.
 //
 // SATU IMPORT, BEBERAPA SHEET TUJUAN [Agu 2026]
 // -----------------------------------------------
@@ -39,6 +58,12 @@ import { SCRIPT_URL } from '../config/constants';
 // 400 baris x 18 kolom masih jauh di bawah batas payload Apps Script,
 // dan cukup kecil supaya satu eksekusi tidak mendekati batas 6 menit.
 export const UKURAN_CHUNK = 400;
+
+// Berapa kali satu potongan boleh dikirim ulang saat Google membalas
+// halaman HTML (atau jaringan putus). Tiga sudah menurunkan peluang gagal
+// satu import 12 potongan dari ~84% menjadi di bawah 0,5%.
+const MAKS_KIRIM_ULANG = 3;
+const JEDA_ULANG_MS = 1200;
 
 const JOB_KOSONG = {
   status: 'idle',       // idle | berjalan | sukses | gagal
@@ -71,6 +96,8 @@ function buatSessionId() {
   return 'imp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
 }
 
+const jeda = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function kirimSekali(payload) {
   let token = '';
   try {
@@ -90,11 +117,50 @@ async function kirimSekali(payload) {
   try {
     return JSON.parse(teks);
   } catch (e) {
-    throw new Error(
-      'Server Google membalas halaman, bukan data. ' +
-      'JANGAN langsung mengulang — periksa dulu isi sheet dbabsen.'
-    );
+    const err = new Error('Server Google membalas halaman, bukan data.');
+    err.bukanJson = true;
+    throw err;
   }
+}
+
+/**
+ * Kirim satu potongan, ulangi bila Google membalas halaman atau jaringan
+ * putus. Aman HANYA karena server mencatat potongan terakhir yang sudah
+ * diterapkan — lihat catatan panjang di kepala file.
+ */
+async function kirimPotongan(payload, bolehUlang) {
+  // Potongan 0 SELALU aman diulang, bahkan pada backend lama: ia memulai
+  // sesi dari nol dan me-reset sheet sementara. Potongan berikutnya hanya
+  // aman kalau server sudah memasang penanda `idempoten` — lihat catatan
+  // di kepala file. Inilah yang membuat urutan deploy tidak mengikat.
+  const maks = (payload.chunkIndex === 0 || bolehUlang) ? MAKS_KIRIM_ULANG : 1;
+  let terakhir = null;
+  for (let percobaan = 1; percobaan <= maks; percobaan++) {
+    try {
+      return await kirimSekali(payload);
+    } catch (e) {
+      terakhir = e;
+      // Hanya dua keadaan ini yang layak diulang: balasan bukan JSON
+      // (halaman interstitial Google) dan kegagalan jaringan murni.
+      // Keduanya tidak memberi tahu apa pun tentang isi sheet — dan
+      // itulah yang membuat pencatatan di server jadi wajib.
+      if (percobaan < maks) {
+        console.warn(
+          `Potongan ${payload.chunkIndex + 1}/${payload.totalChunks} gagal ` +
+          `(percobaan ${percobaan}): ${e.message}. Mengulang…`
+        );
+        await jeda(JEDA_ULANG_MS * percobaan);
+        continue;
+      }
+    }
+  }
+  throw new Error(
+    (terakhir && terakhir.bukanJson
+      ? 'Server Google membalas halaman, bukan data' + (maks > 1 ? ' sebanyak ' + maks + ' kali berturut-turut' : '') + '. '
+      : 'Jaringan gagal' + (maks > 1 ? ' ' + maks + ' kali berturut-turut' : '') + '. ') +
+    'Sheet tujuan BELUM tersentuh — potongan hanya ditumpuk di sheet sementara sampai potongan terakhir. ' +
+    'Aman diulang dari awal.'
+  );
 }
 
 export function ImportJobProvider({ children }) {
@@ -180,10 +246,15 @@ export function ImportJobProvider({ children }) {
 
           setJob((j) => ({ ...j, kelompokAktif: labelTampil }));
 
+          // Diisi dari balasan potongan pertama. Backend < 1.0.23 tidak
+          // mengirimnya, dan di sana pengulangan potongan > 0 memang tidak
+          // aman — jadi tetap mati.
+          let serverIdempoten = false;
+
           for (let i = 0; i < totalChunkKelompok; i++) {
             const potongan = baris.slice(i * UKURAN_CHUNK, (i + 1) * UKURAN_CHUNK);
 
-            const res = await kirimSekali({
+            const res = await kirimPotongan({
               action: 'import_db_absen',
               sessionId,
               chunkIndex: i,
@@ -191,7 +262,9 @@ export function ImportJobProvider({ children }) {
               mode,
               targetSheet,
               rows: potongan
-            });
+            }, serverIdempoten);
+
+            if (res && res.idempoten === true) serverIdempoten = true;
 
             if (res.result !== 'success') {
               // Pesannya berbeda tergantung potongan ke berapa yang gagal,

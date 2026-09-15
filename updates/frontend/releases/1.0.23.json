@@ -1,0 +1,10 @@
+{
+  "version": "1.0.23",
+  "releasedAt": "2026-09-15",
+  "required": true,
+  "notes": [
+    "Import data mesin tidak lagi gagal total hanya karena satu potongan kebetulan dibalas halaman oleh server Google: potongan itu kini dikirim ulang otomatis sampai tiga kali.",
+    "Import berukuran besar paling terasa manfaatnya — satu berkas 4.500 baris terpecah menjadi 12 potongan, dan sebelumnya cukup satu potongan bermasalah untuk membatalkan seluruhnya.",
+    "Bila ketiga percobaan tetap gagal, pesannya kini menyebutkan dengan pasti bahwa sheet tujuan belum tersentuh dan import aman diulang dari awal."
+  ]
+}

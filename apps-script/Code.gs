@@ -63,7 +63,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.22";
+const APP_VERSION = "1.0.23";
 // 1.0.19 — penguncian perangkat (Devices.gs) + pencocokan wajah acuan
 //          (FaceProfile.gs). WAJIB naik versi: token terbitan 1.0.18 tidak
 //          punya SessionID, dan authorizeRequest menolaknya sebagai sesi

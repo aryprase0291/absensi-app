@@ -88,6 +88,36 @@ const IMPORT_IDX_TANGGAL = 4;    // kolom E
 // Batas wajar supaya satu sheet tidak meledak karena file salah.
 const IMPORT_MAX_ROWS = 60000;
 
+// =======================================================
+// KENAPA POTONGAN IMPORT HARUS IDEMPOTEN (15 Sep 2026)
+//
+// Google membalas HALAMAN HTML, bukan JSON, pada sebagian request —
+// terukur ~1 dari 7 (lihat catatan fetchApi di src/App.js). Untuk satu
+// request itu tinggal diulang. Untuk import, TIDAK: satu import 4.562
+// baris terpecah jadi 12 potongan, dan peluang MINIMAL SATU di antaranya
+// kena balasan HTML adalah 1 - (6/7)^12 ≈ 84%. Artinya import sebesar itu
+// nyaris PASTI gagal, dan bukan karena datanya salah.
+//
+// Dulu klien sengaja tidak pernah mengulang, karena mengulang potongan
+// yang sebenarnya SUDAH tertulis akan menggandakan barisnya di sheet
+// sementara. Itu benar — selama server tidak tahu potongan mana yang
+// sudah masuk.
+//
+// Sekarang server mengingatnya (`chunkTerakhir` di state sesi):
+//   - potongan yang sudah pernah diterapkan -> dijawab sukses TANPA
+//     ditulis ulang (`duplikat: true`);
+//   - potongan yang meloncat -> ditolak, harus diulang dari awal;
+//   - sesi yang SUDAH selesai -> ringkasannya disimpan sebentar, jadi
+//     pengulangan potongan terakhir menjawab ringkasan yang sama alih-alih
+//     "sesi tidak dikenal".
+// Dengan begitu klien boleh mengulang, dan balasan HTML tidak lagi
+// membatalkan pekerjaan 12 potongan.
+// =======================================================
+
+// Berapa lama catatan sesi yang SUDAH selesai disimpan, supaya
+// pengulangan potongan terakhir masih bisa dijawab dengan ringkasannya.
+const IMPORT_SESI_SELESAI_UMUR_MS = 2 * 60 * 60 * 1000; // 2 jam
+
 // Sheet sistem yang TIDAK BOLEH jadi target import. `targetSheet` datang
 // dari input admin (lewat MasterData atau layar Import) dan dipakai
 // langsung sebagai nama sheet Google — tanpa daftar ini, salah ketik atau
@@ -160,13 +190,18 @@ function handleImportDbAbsen(data) {
     const propKey = IMPORT_PROP_PREFIX + sessionId;
 
     if (chunkIndex === 0) {
+      // Potongan 0 selalu memulai ulang dari nol — termasuk kalau ia
+      // sendiri yang diulang karena balasannya hilang. Itu membuatnya
+      // idempoten dengan sendirinya: sheet sementara di-reset di bawah.
       const mode = (data.mode === 'replace' || data.mode === 'periode')
         ? data.mode
         : 'upsert';
+      _importSapuSesiBasi(props, propKey);
       props.setProperty(propKey, JSON.stringify({
         mode: mode,
         targetSheet: targetSheet,
         totalChunks: totalChunks,
+        chunkTerakhir: -1,   // potongan terakhir yang SUDAH diterapkan
         mulai: new Date().getTime()
       }));
     }
@@ -180,6 +215,47 @@ function handleImportDbAbsen(data) {
       });
     }
     const state = JSON.parse(stateRaw);
+
+    // --- A. Sesi ini sudah SELESAI ---------------------------------
+    // Potongan terakhir sudah dipindahkan ke sheet tujuan, hanya
+    // balasannya yang hilang di jalan. Jawab ringkasan yang sama supaya
+    // klien tidak mengimpor ulang seluruh berkas.
+    if (state.selesai && state.ringkasan) {
+      const ulang = state.ringkasan;
+      ulang.result = 'success';
+      ulang.stage = 'done';
+      ulang.duplikat = true;
+      return responseJSON(ulang);
+    }
+
+    const sudah = isFinite(Number(state.chunkTerakhir)) ? Number(state.chunkTerakhir) : -1;
+
+    // --- B. Potongan ini SUDAH pernah diterapkan --------------------
+    // Balasannya yang hilang, bukan datanya. Jangan ditulis dua kali.
+    if (chunkIndex > 0 && chunkIndex <= sudah) {
+      const shAda = SS.getSheetByName(IMPORT_TMP_SHEET);
+      return responseJSON({
+        result: 'success',
+        stage: 'chunk',
+        chunkIndex: chunkIndex,
+        duplikat: true,
+        idempoten: true,
+        tertampung: shAda ? shAda.getLastRow() : 0
+      });
+    }
+
+    // --- C. Potongan MELONCAT --------------------------------------
+    // Ada potongan di tengah yang tidak pernah sampai. Menulis yang ini
+    // akan membuat barisnya bolong tanpa ada yang menyadarinya.
+    if (chunkIndex > sudah + 1) {
+      _importBersihkan(propKey);
+      return responseJSON({
+        result: 'error',
+        code: 'POTONGAN_LONCAT',
+        message: 'Urutan potongan import terputus (menunggu potongan ' + (sudah + 1) +
+                 ', yang datang potongan ' + chunkIndex + '). Sheet tujuan BELUM tersentuh — ulangi import dari awal.'
+      });
+    }
 
     const tmp = _importSiapkanSheetSementara(chunkIndex === 0);
 
@@ -196,12 +272,23 @@ function handleImportDbAbsen(data) {
       tmp.getRange(terpakai + 1, 1, mapped.length, DBABSEN_TOTAL_COLS).setValues(mapped);
     }
 
+    // Potongan ini sudah benar-benar masuk sheet sementara. Dicatat SETELAH
+    // penulisan, bukan sebelum: kalau setValues gagal, catatannya tidak
+    // boleh terlanjur mengaku sukses — pengulangannya harus menulis ulang.
+    state.chunkTerakhir = chunkIndex;
+    props.setProperty(propKey, JSON.stringify(state));
+
     // Belum potongan terakhir — cukup laporkan progres.
     if (chunkIndex < totalChunks - 1) {
       return responseJSON({
         result: 'success',
         stage: 'chunk',
         chunkIndex: chunkIndex,
+        // Penanda kemampuan, dibaca klien 1.0.23+. Selama belum melihat
+        // penanda ini, klien TIDAK akan mengulang potongan > 0 — itulah
+        // yang membuat bundle baru tetap aman menghadapi backend lama,
+        // sehingga urutan deploy tidak lagi mengikat.
+        idempoten: true,
         tertampung: tmp.getLastRow()
       });
     }
@@ -212,11 +299,37 @@ function handleImportDbAbsen(data) {
     // mengganti targetSheet di tengah sesi, punya sesi yang menang).
     const namaTarget = state.targetSheet || targetSheet;
     const hasil = _importCommit(tmp, state.mode, namaTarget);
-    _importBersihkan(propKey);
+
+    const ringkasan = {
+      mode: state.mode,
+      targetSheet: namaTarget,
+      barisBaru: hasil.barisBaru,
+      barisDitimpa: hasil.barisDitimpa,
+      barisDiperbarui: hasil.barisDiperbarui,
+      barisDitambahkan: hasil.barisDitambahkan,
+      barisDipertahankan: hasil.barisDipertahankan,
+      periodeAwal: hasil.periodeAwal,
+      periodeAkhir: hasil.periodeAkhir,
+      totalBaris: hasil.totalBaris,
+      lastUpdate: hasil.lastUpdate
+    };
+
+    // Sheet sementara dibuang, TAPI catatan sesinya disimpan sebentar.
+    // Kalau balasan potongan terakhir ini hilang di jalan dan klien
+    // mengulanginya, jawabannya adalah ringkasan yang SAMA — bukan
+    // 'sesi tidak dikenal' yang memancing admin mengimpor ulang berkas
+    // yang sebenarnya sudah masuk.
+    _importBuangSheetSementara();
+    props.setProperty(propKey, JSON.stringify({
+      selesai: true,
+      ringkasan: ringkasan,
+      waktu: new Date().getTime()
+    }));
 
     return responseJSON({
       result: 'success',
       stage: 'done',
+      idempoten: true,
       mode: state.mode,
       targetSheet: namaTarget,
       barisBaru: hasil.barisBaru,
@@ -305,6 +418,52 @@ function _importNormalisasiJam(rows) {
     }
   }
   return rows;
+}
+
+/**
+ * Buang sheet sementara saja, catatan sesinya dibiarkan.
+ * Dipakai saat import SELESAI: sheet-nya tidak diperlukan lagi, tetapi
+ * ringkasannya masih dibutuhkan untuk menjawab pengulangan potongan
+ * terakhir.
+ */
+function _importBuangSheetSementara() {
+  try {
+    const sh = SS.getSheetByName(IMPORT_TMP_SHEET);
+    if (sh) SS.deleteSheet(sh);
+  } catch (e) { /* abaikan */ }
+}
+
+/**
+ * Buang catatan sesi import yang sudah lewat umurnya.
+ *
+ * Tanpa ini, setiap import meninggalkan satu properti selamanya dan
+ * Script Properties (batas 500 KB untuk seluruh skrip) pelan-pelan penuh
+ * — yang gagalnya diam-diam, persis jenis kegagalan yang paling mahal
+ * di proyek ini.
+ *
+ * @param {Object} props    PropertiesService.getScriptProperties()
+ * @param {string} kecuali  propKey yang sedang dipakai, jangan disapu
+ * @private
+ */
+function _importSapuSesiBasi(props, kecuali) {
+  try {
+    const semua = props.getProperties();
+    const sekarang = new Date().getTime();
+    Object.keys(semua).forEach(function (k) {
+      if (k.indexOf(IMPORT_PROP_PREFIX) !== 0) return;
+      if (k === kecuali) return;
+      let umurOk = false;
+      try {
+        const st = JSON.parse(semua[k]);
+        const stempel = Number(st && (st.waktu || st.mulai)) || 0;
+        umurOk = stempel > 0 && (sekarang - stempel) < IMPORT_SESI_SELESAI_UMUR_MS;
+      } catch (e) {
+        umurOk = false; // catatan rusak: buang saja
+      }
+      if (!umurOk) props.deleteProperty(k);
+    });
+    if (typeof _propsLupakan_ === 'function') _propsLupakan_();
+  } catch (e) { /* penyapuan itu kebersihan, bukan syarat import */ }
 }
 
 function _importBersihkan(propKey) {
