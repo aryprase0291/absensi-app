@@ -63,7 +63,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.21";
+const APP_VERSION = "1.0.22";
 // 1.0.19 — penguncian perangkat (Devices.gs) + pencocokan wajah acuan
 //          (FaceProfile.gs). WAJIB naik versi: token terbitan 1.0.18 tidak
 //          punya SessionID, dan authorizeRequest menolaknya sebagai sesi
@@ -282,9 +282,29 @@ function handleAbsen(data) {
   // Dijalankan SEBELUM keputusan apa pun supaya percobaan yang gagal
   // geofence pun tetap meninggalkan jejak forensik. Dibungkus typeof
   // agar Code.gs tetap jalan bila AntiFakeGps.gs belum ter-deploy.
-  const analisaGps = (typeof analisaIntegritasGps === 'function')
-    ? analisaIntegritasGps(data, geofenceCheck)
-    : { skor: 0, level: 'AMAN', blokir: false, alasan: [], detail: {} };
+  // PENGECUALIAN GERBANG GPS (lihat gpsBebasDaftar di atas).
+  //
+  // analisaIntegritasGps memblokir absen Hadir/Pulang tanpa koordinat
+  // dengan skor 100 — benar untuk HP, tapi mematikan untuk staf kantor
+  // yang memang tidak punya sumber lokasi sama sekali di PC-nya.
+  //
+  // Kelonggaran ini SENGAJA SESEMPIT MUNGKIN:
+  //   - hanya untuk UserID yang didaftarkan admin;
+  //   - hanya ketika koordinatnya benar-benar KOSONG. Kalau karyawan yang
+  //     sama absen dari HP dan mengirim koordinat, analisanya berjalan
+  //     penuh seperti biasa — tidak ada tiket bebas Fake GPS;
+  //   - absennya tetap dicatat ke audit GPS dengan keputusan tersendiri
+  //     ('DITERIMA-TANPA-LOKASI') supaya HRD bisa melihat siapa saja yang
+  //     absen tanpa lokasi, kapan, dan seberapa sering.
+  const bebasGerbangGps = (typeof gpsBebasUntuk === 'function') && gpsBebasUntuk(data.userId);
+  const tanpaKoordinat = !String(data.lokasi === null || data.lokasi === undefined ? '' : data.lokasi).trim();
+  const lewatiGerbangGps = bebasGerbangGps && tanpaKoordinat;
+
+  const analisaGps = lewatiGerbangGps
+    ? { skor: 0, level: 'TANPA-LOKASI', blokir: false, alasan: ['Karyawan dikecualikan dari gerbang GPS dan tidak mengirim koordinat'], detail: {} }
+    : ((typeof analisaIntegritasGps === 'function')
+        ? analisaIntegritasGps(data, geofenceCheck)
+        : { skor: 0, level: 'AMAN', blokir: false, alasan: [], detail: {} });
   const catatGps = function (keputusan, uuidRef) {
     if (typeof catatAuditGps === 'function') {
       try { catatAuditGps(data, analisaGps, keputusan, uuidRef); } catch (e) { /* audit tidak boleh menggagalkan absen */ }
@@ -541,7 +561,11 @@ function handleAbsen(data) {
   // Semua absen ber-GPS dicatat ke sheet GpsAudit, bukan hanya yang
   // mencurigakan: tanpa baseline yang normal, HRD tidak punya pembanding
   // saat menilai satu kasus.
-  catatGps(analisaGps.level === 'AMAN' ? 'DITERIMA' : 'DITERIMA-DITANDAI', uuid);
+  catatGps(
+    lewatiGerbangGps ? 'DITERIMA-TANPA-LOKASI'
+      : (analisaGps.level === 'AMAN' ? 'DITERIMA' : 'DITERIMA-DITANDAI'),
+    uuid
+  );
 
   // --- NAMA ALAMAT DARI KOORDINAT (lihat Geocode.gs) ---
   // Ditulis ke kolom "Alamat", BUKAN menimpa kolom Lokasi: geofence dan
@@ -1561,6 +1585,59 @@ function _susunKonfigurasiGeofence_() {
   return map;
 }
 
+// =====================================================================
+// PENGECUALIAN GERBANG GPS (per karyawan)
+//
+// KENAPA ADA. Gerbang "lokasi wajib" dirancang untuk HP karyawan
+// lapangan. Di PC kantor gerbang itu tidak bisa dipenuhi sama sekali:
+// komputer tidak punya cip GPS — Chrome memintanya ke server Google
+// berdasarkan daftar WiFi di sekitar, dan PC kabel tanpa adapter WiFi
+// (atau jaringan yang memblokir www.googleapis.com) selalu berakhir
+// TIMEOUT. Staf kantor jadi tidak bisa absen sama sekali.
+//
+// KENAPA PER KARYAWAN, BUKAN "SEMUA DESKTOP LOLOS". Kalau aplikasi
+// sekadar meloloskan setiap desktop, karyawan lapangan tinggal membuka
+// aplikasinya di laptop untuk menghindari GPS. Daftar ini ditentukan
+// admin, isinya sedikit, dan setiap absen tanpa lokasi tetap DITANDAI.
+//
+// DISIMPAN DI SCRIPT PROPERTIES, BUKAN SHEET. Nilainya dibaca di setiap
+// login; satu properti lebih murah daripada satu sheet lagi, dan lewat
+// memo Cache.gs biayanya nol untuk request yang sudah membaca properti.
+// Isinya: daftar UserID dipisah koma.
+// =====================================================================
+const GPS_BEBAS_KEY = 'GPS_GERBANG_BEBAS';
+
+function gpsBebasDaftar() {
+  let mentah = '';
+  try {
+    mentah = (typeof _propGetCepat_ === 'function')
+      ? _propGetCepat_(GPS_BEBAS_KEY)
+      : String(PropertiesService.getScriptProperties().getProperty(GPS_BEBAS_KEY) || '');
+  } catch (e) { mentah = ''; }
+  return String(mentah || '')
+    .split(',')
+    .map(function (v) { return String(v).trim(); })
+    .filter(function (v) { return v !== ''; });
+}
+
+function gpsBebasUntuk(userId) {
+  const id = String(userId === null || userId === undefined ? '' : userId).trim();
+  if (!id) return false;
+  return gpsBebasDaftar().indexOf(id) !== -1;
+}
+
+function gpsBebasSet(userId, bebas) {
+  const id = String(userId === null || userId === undefined ? '' : userId).trim();
+  if (!id) return gpsBebasDaftar();
+  const daftar = gpsBebasDaftar().filter(function (v) { return v !== id; });
+  if (bebas) daftar.push(id);
+  const props = PropertiesService.getScriptProperties();
+  if (daftar.length) props.setProperty(GPS_BEBAS_KEY, daftar.join(','));
+  else props.deleteProperty(GPS_BEBAS_KEY);
+  if (typeof _propLupakanSatuan_ === 'function') _propLupakanSatuan_(GPS_BEBAS_KEY);
+  return daftar;
+}
+
 function _ambilGeofenceUser(userId) {
   const map = _ambilKonfigurasiGeofence();
   return map[String(userId)] || { required: false, areas: [] };
@@ -1613,7 +1690,12 @@ function handleGetGeofenceConfig(data) {
   if (role !== 'admin' && role !== 'hrd') return responseJSON({ result: 'error', message: 'Akses Ditolak.' });
   const rowsUsers = bacaSheet(SS.getSheetByName(SHEET_USERS), 6);
   const users = rowsUsers.slice(1).map(row => ({ id: row[0], username: row[1], nama: row[3], divisi: row[4], role: row[5] })).filter(u => u.id !== '' && u.id !== null && u.id !== undefined);
-  return responseJSON({ result: 'success', users: users, configs: _ambilKonfigurasiGeofence() });
+  return responseJSON({
+    result: 'success',
+    users: users,
+    configs: _ambilKonfigurasiGeofence(),
+    gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : []
+  });
 }
 
 function handleSaveGeofenceConfig(data) {
@@ -1624,6 +1706,24 @@ function handleSaveGeofenceConfig(data) {
   const userRow = userRows.slice(1).find(row => String(row[0]).trim() === userId);
   if (!userRow) return responseJSON({ result: 'error', message: 'Karyawan tidak ditemukan.' });
   const required = _normalisasiBooleanGeofence(data.required, false);
+
+  // --- PENGECUALIAN GERBANG GPS ------------------------------------
+  // Dikerjakan SEBELUM validasi area, supaya admin tetap bisa menyalakan
+  // pengecualian untuk karyawan yang memang tidak punya area kantor.
+  // undefined = klien lama yang belum tahu field ini; jangan disentuh.
+  let gpsBebasBaru = null;
+  if (data.gpsGerbangBebas !== undefined && data.gpsGerbangBebas !== null) {
+    gpsBebasBaru = _normalisasiBooleanGeofence(data.gpsGerbangBebas, false);
+    if (gpsBebasBaru && required) {
+      return responseJSON({
+        result: 'error',
+        message: 'Tidak bisa keduanya: karyawan yang dikecualikan dari gerbang GPS berarti lokasinya tidak dapat dibaca, '
+               + 'jadi geofence area kantor mustahil dipenuhi. Matikan salah satu.'
+      });
+    }
+    if (typeof gpsBebasSet === 'function') gpsBebasSet(userId, gpsBebasBaru);
+  }
+
   const incomingAreas = Array.isArray(data.areas) ? data.areas : [];
   const areas = incomingAreas.map(area => ({ nama: String(area.nama || 'Area kantor').trim() || 'Area kantor', lat: Number(area.lat), lng: Number(area.lng), radius: Number(area.radius), aktif: area.aktif !== false })).filter(area => area.aktif && isFinite(area.lat) && isFinite(area.lng) && area.lat >= -90 && area.lat <= 90 && area.lng >= -180 && area.lng <= 180 && isFinite(area.radius) && area.radius > 0).map(area => ({ nama: area.nama, lat: area.lat, lng: area.lng, radius: Math.min(Math.round(area.radius), 100000), aktif: true }));
   if (required && !areas.length) return responseJSON({ result: 'error', message: 'Tambahkan minimal satu area aktif jika geofence diwajibkan.' });
@@ -1638,7 +1738,17 @@ function handleSaveGeofenceConfig(data) {
     try { GEOFENCE_CACHE_BERSIHKAN(); } catch (e) { console.warn('Gagal bersihkan cache geofence: ' + e.message); }
   }
 
-  return responseJSON({ result: 'success', message: required ? 'Geofence diwajibkan dan disimpan.' : 'Geofence opsional dan disimpan.', config: { required: required, areas: areas } });
+  const pesanBebas = gpsBebasBaru === null ? ''
+    : (gpsBebasBaru
+        ? ' Karyawan ini DIKECUALIKAN dari gerbang GPS — absennya akan tercatat tanpa lokasi dan ditandai di audit.'
+        : ' Pengecualian gerbang GPS dimatikan untuk karyawan ini.');
+
+  return responseJSON({
+    result: 'success',
+    message: (required ? 'Geofence diwajibkan dan disimpan.' : 'Geofence opsional dan disimpan.') + pesanBebas,
+    config: { required: required, areas: areas },
+    gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : []
+  });
 }
 
 // ==========================================
@@ -1778,6 +1888,11 @@ function handleLogin(data) {
           lokasi: foundUser[13] || 'All',
           geofenceRequired: geofence.required,
           geofenceAreas: geofence.areas,
+
+          // Dikecualikan dari gerbang "lokasi wajib" (lihat gpsBebasDaftar).
+          // Dipakai frontend untuk melewati GpsGateScreen DAN untuk tidak
+          // menahan tombol Kirim pada form yang biasanya butuh koordinat.
+          gpsGerbangBebas: gpsBebasUntuk(foundUser[0]),
 
           // TOKEN AUTENTIKASI (lihat Auth.gs)
           // Frontend menyimpannya bersama data user dan mengirimkannya

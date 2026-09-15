@@ -628,6 +628,11 @@ const gpsOkTerakhirRef = useRef(0);
 
 const periksaGerbangGps = useCallback(async (opsi) => {
   const diam = !!(opsi && opsi.diam);
+  // `bebas` = karyawan ini dikecualikan admin dari gerbang GPS (PC kantor
+  // tanpa sumber lokasi). Posisinya TETAP dibaca — kalau suatu saat ia
+  // membuka aplikasi dari HP, titiknya tetap terkirim ke Dashboard GPS.
+  // Yang berbeda cuma satu: kegagalan membaca tidak pernah menahan menu.
+  const bebas = !!(opsi && opsi.bebas);
   // Mode diam: menu sudah terbuka, pemeriksaan berjalan di belakang layar.
   // Jangan menampilkan "Memeriksa Lokasi…" — itu justru yang membuat
   // karyawan merasa ditanyai ulang padahal izinnya sudah lama diberikan.
@@ -650,6 +655,13 @@ const periksaGerbangGps = useCallback(async (opsi) => {
   // terus mencoba membuka menu lebih dulu dan baru menabrak gerbang.
   if (hasil.status === GPS_STATUS.DITOLAK) lupakanIzin();
 
+  if (bebas) {
+    // Tetap lolos. Statusnya disimpan apa adanya supaya tetap terlihat di
+    // log kalau suatu saat perlu ditelusuri, tapi menu tidak ditahan.
+    setGpsGate({ status: hasil.status, pesan: hasil.pesan, lolos: true, memeriksa: false });
+    return hasil;
+  }
+
   setGpsGatePercobaan((n) => n + 1);
   setGpsGate({ status: hasil.status, pesan: hasil.pesan, lolos: false, memeriksa: false });
   return hasil;
@@ -668,14 +680,19 @@ useEffect(() => {
     // Posisinya tetap dibaca — hanya saja di latar belakang, tanpa layar
     // pemeriksaan. Gerbang baru muncul kalau pembacaan itu benar-benar
     // gagal (izin dicabut, atau layanan lokasi perangkat dimatikan).
-    const sudahIzin = await izinSudahDiberikan();
+    // Karyawan yang dikecualikan admin (mis. staf kantor yang bekerja di
+    // PC tanpa GPS) tidak pernah melihat gerbang sama sekali. Lihat
+    // gpsBebasDaftar di apps-script/Code.gs untuk alasan lengkapnya.
+    const bebasGerbang = user.gpsGerbangBebas === true;
+
+    const sudahIzin = bebasGerbang || (await izinSudahDiberikan());
     if (batal) return;
     if (sudahIzin) {
       gpsOkTerakhirRef.current = Date.now();
       setGpsGate({ status: GPS_STATUS.OK, pesan: '', lolos: true, memeriksa: false });
     }
 
-    const hasil = await periksaGerbangGps({ diam: sudahIzin });
+    const hasil = await periksaGerbangGps({ diam: sudahIzin, bebas: bebasGerbang });
     if (batal || !hasil || hasil.status !== GPS_STATUS.OK) return;
     // Titik pertama dikirim dari posisi yang BARU SAJA dibaca gerbang —
     // tanpa membaca GPS untuk kedua kalinya. Inilah yang membuat setiap
@@ -701,7 +718,7 @@ useEffect(() => {
     if (Date.now() - gpsOkTerakhirRef.current < 15 * 60 * 1000) return;
     // Diam: karyawan sedang memakai aplikasi, jangan disela layar
     // pemeriksaan kalau pada akhirnya posisinya memang terbaca.
-    periksaGerbangGps({ diam: true });
+    periksaGerbangGps({ diam: true, bebas: user.gpsGerbangBebas === true });
   };
   document.addEventListener('visibilitychange', saatKembali);
   return () => document.removeEventListener('visibilitychange', saatKembali);
@@ -4289,7 +4306,14 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const UPLOAD_ALLOWED_TYPES = ['Dinas Luar', 'Cuti', 'Cuti EO', 'Ijin']; 
 
   const isPhotoRequired = PHOTO_REQUIRED_TYPES.includes(type);
-  const isGpsRequired = !NO_GPS_TYPES.includes(type);
+  // Karyawan yang dikecualikan admin dari gerbang GPS (staf kantor di PC
+  // tanpa sumber lokasi) juga tidak boleh tertahan di tombol Kirim —
+  // kalau tidak, gerbangnya lolos tapi formnya tetap buntu.
+  // Server ikut tahu: handleAbsen melewati gerbang Fake GPS HANYA untuk
+  // karyawan ini dan HANYA ketika koordinatnya memang kosong, lalu
+  // menandai absennya 'DITERIMA-TANPA-LOKASI' di audit.
+  const bebasGerbangGps = user && user.gpsGerbangBebas === true;
+  const isGpsRequired = !NO_GPS_TYPES.includes(type) && !bebasGerbangGps;
   const isGeofenceRequired = !isEditMode && ['Hadir', 'Pulang'].includes(type) && user.geofenceRequired === true;
   const isH3Required = H3_REQUIRED_TYPES.includes(type);
   const isUploadAllowed = UPLOAD_ALLOWED_TYPES.includes(type);
@@ -6612,6 +6636,11 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [geofenceConfigs, setGeofenceConfigs] = useState({});
   const [geofenceUserId, setGeofenceUserId] = useState('');
   const [geofenceRequired, setGeofenceRequired] = useState(false);
+  // Daftar UserID yang dikecualikan dari gerbang GPS (lihat gpsBebasDaftar
+  // di apps-script/Code.gs). Disimpan sebagai array dari server, dipakai
+  // untuk mencentang kotaknya saat karyawan dipilih.
+  const [gpsBebasList, setGpsBebasList] = useState([]);
+  const [gpsBebasUser, setGpsBebasUser] = useState(false);
   const [geofenceAreas, setGeofenceAreas] = useState([]);
   const [loadingGeofence, setLoadingGeofence] = useState(false);
   // PERIODE ABSENSI — sejak Agu 2026 berupa DAFTAR, bukan satu periode.
@@ -6967,10 +6996,11 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     finally { setSavingPeriod(false); }
   };
 
-  const applyGeofenceUser = (userId, configs = geofenceConfigs) => {
+  const applyGeofenceUser = (userId, configs = geofenceConfigs, bebasList = gpsBebasList) => {
     const cfg = configs[String(userId)] || { required: false, areas: [] };
     setGeofenceUserId(String(userId || ''));
     setGeofenceRequired(!!cfg.required);
+    setGpsBebasUser((bebasList || []).indexOf(String(userId || '')) !== -1);
     setGeofenceAreas((cfg.areas || []).map(area => ({
       nama: area.nama || 'Area kantor', lat: area.lat, lng: area.lng,
       radius: area.radius || 150, aktif: area.aktif !== false
@@ -6985,8 +7015,9 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       if (data.result === 'success') {
         const users = data.users || [];
         const configs = data.configs || {};
-        setGeofenceUsers(users); setGeofenceConfigs(configs);
-        if (users.length) applyGeofenceUser(geofenceUserId || users[0].id, configs);
+        const bebas = (data.gpsBebas || []).map(String);
+        setGeofenceUsers(users); setGeofenceConfigs(configs); setGpsBebasList(bebas);
+        if (users.length) applyGeofenceUser(geofenceUserId || users[0].id, configs, bebas);
       } else alert(data.message || 'Gagal memuat konfigurasi geofence.');
     } catch (e) { alert('Gagal koneksi saat memuat geofence.'); }
     finally { setLoadingGeofence(false); }
@@ -6999,11 +7030,13 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const handleSaveGeofence = async () => {
     if (!geofenceUserId) return alert('Pilih karyawan terlebih dahulu.');
     if (geofenceRequired && geofenceAreas.length === 0) return alert('Tambahkan minimal satu area aktif.');
+    if (gpsBebasUser && geofenceRequired) return alert('Tidak bisa keduanya: karyawan yang dikecualikan dari gerbang GPS tidak punya lokasi untuk dicocokkan dengan area kantor.');
+    if (gpsBebasUser && !window.confirm('Karyawan ini akan bisa absen TANPA lokasi sama sekali.\n\nPakai ini hanya untuk staf yang memang bekerja di PC tanpa GPS. Setiap absennya akan ditandai "tanpa lokasi" di Audit GPS.\n\nLanjutkan?')) return;
     setLoading(true);
     try {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
         action: 'save_geofence_config', roleRequester: user.role, userId: geofenceUserId,
-        required: geofenceRequired, areas: geofenceAreas
+        required: geofenceRequired, areas: geofenceAreas, gpsGerbangBebas: gpsBebasUser
       }) });
       const data = await res.json();
       if (data.result === 'success') { alert(data.message); fetchGeofenceConfig(); }
@@ -7637,6 +7670,17 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                 <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
                   <input type="checkbox" checked={geofenceRequired} onChange={e => setGeofenceRequired(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
                   <span><span className="block text-[13px] font-semibold text-slate-800">Wajib berada di area geofence</span><span className="block mt-0.5 text-[11px] leading-relaxed text-slate-500">Hanya berlaku untuk absen online Hadir dan Pulang. User tanpa centang tetap dapat absen dari lokasi mana saja.</span></span>
+                </label>
+                <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer ${gpsBebasUser ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-100'}`}>
+                  <input type="checkbox" checked={gpsBebasUser} onChange={e => setGpsBebasUser(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500/20" />
+                  <span>
+                    <span className="block text-[13px] font-semibold text-slate-800">Kecualikan dari gerbang GPS (staf PC)</span>
+                    <span className="block mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                      Untuk karyawan yang bekerja di komputer tanpa sumber lokasi — PC kabel tanpa WiFi selalu gagal membaca GPS.
+                      Menu terbuka tanpa menunggu lokasi, dan tombol Kirim tidak lagi menahan. Absennya tercatat tanpa koordinat
+                      dan <strong>ditandai "tanpa lokasi" di Audit GPS</strong>. Jangan dipakai untuk karyawan lapangan.
+                    </span>
+                  </span>
                 </label>
               </div>
 

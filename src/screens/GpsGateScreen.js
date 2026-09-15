@@ -62,6 +62,7 @@ export default function GpsGateScreen({ status, pesan, memeriksa, onPeriksaUlang
     status === GPS_STATUS.PERANGKAT_MATI ? 'GPS Perangkat Tidak Aktif' :
     status === GPS_STATUS.TIDAK_AMAN ? 'Koneksi Tidak Aman' :
     status === GPS_STATUS.TIDAK_DIDUKUNG ? 'Browser Tidak Mendukung Lokasi' :
+    status === GPS_STATUS.TAK_DIJAWAB ? 'Izin Lokasi Belum Dijawab' :
     'Memeriksa Lokasi';
 
   return (
@@ -152,7 +153,13 @@ export default function GpsGateScreen({ status, pesan, memeriksa, onPeriksaUlang
             </button>
           )}
 
-          {!memeriksa && (
+          {/* Tombol keluar SENGAJA ikut tampil selama memeriksa.
+              Pemeriksaan bisa memakan ~27 detik (12 detik akurasi tinggi,
+              lalu 15 detik lokasi jaringan). Tanpa tombol ini, layar itu
+              tidak punya satu pun kendali yang bisa ditekan dan terasa
+              seperti aplikasi menggantung — itulah yang dilaporkan dari
+              PC pada 15 Sep 2026. */}
+          {(
             <button
               onClick={onKeluar}
               className="flex w-full items-center justify-center gap-2 py-2.5 text-[12px] font-semibold text-slate-400 transition-colors hover:text-slate-200"

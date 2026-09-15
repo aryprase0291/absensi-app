@@ -1,0 +1,11 @@
+{
+  "version": "1.0.22",
+  "releasedAt": "2026-09-15",
+  "required": true,
+  "notes": [
+    "Pengecualian gerbang GPS per karyawan, disimpan di Script Properties (GPS_GERBANG_BEBAS) dan diatur dari Panel Admin > Geofence.",
+    "Presensi dari karyawan yang dikecualikan diterima tanpa koordinat dan dicatat di Audit GPS dengan keputusan 'DITERIMA-TANPA-LOKASI'. Bila karyawan yang sama mengirim koordinat, pemeriksaan Fake GPS tetap berjalan penuh seperti biasa.",
+    "Pengecualian gerbang GPS dan kewajiban geofence tidak dapat dinyalakan bersamaan; kombinasi itu ditolak dengan penjelasan.",
+    "Respons login membawa gpsGerbangBebas. Tidak ada sheet baru. Urutan deploy: frontend dulu, backend belakangan."
+  ]
+}

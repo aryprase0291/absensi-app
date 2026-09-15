@@ -34,12 +34,58 @@ export const GPS_STATUS = {
   DITOLAK: 'ditolak',             // izin lokasi ditolak user/browser
   PERANGKAT_MATI: 'perangkat_mati', // layanan lokasi perangkat mati / tak ada sinyal
   TIDAK_DIDUKUNG: 'tidak_didukung', // browser tanpa Geolocation API
-  TIDAK_AMAN: 'tidak_aman'        // halaman bukan HTTPS -> API dimatikan browser
+  TIDAK_AMAN: 'tidak_aman',       // halaman bukan HTTPS -> API dimatikan browser
+  TAK_DIJAWAB: 'tak_dijawab'      // browser tidak pernah menjawab sama sekali
 };
+
+// =====================================================================
+// BATAS KERAS — KENAPA `timeout` MILIK BROWSER TIDAK CUKUP
+//
+// Opsi `timeout` pada getCurrentPosition TIDAK berjalan selama dialog
+// izin masih menggantung. Spesifikasinya memang begitu: penghitung waktu
+// baru dimulai SETELAH pemakai menjawab dialog. Akibatnya, kalau dialog
+// itu tidak pernah dijawab — diabaikan, ditutup dengan Esc, atau Chrome
+// menekannya sendiri menjadi ikon kecil di kolom alamat karena situs ini
+// pernah diblokir — maka callback sukses MAUPUN gagal tidak pernah
+// dipanggil. Promise-nya menggantung selamanya, `memeriksa` tetap true,
+// dan karyawan menatap "Memeriksa Lokasi…" tanpa ujung, tanpa tombol
+// apa pun yang bisa ditekan.
+//
+// Ini terjadi nyata di PC (15 Sep 2026). Karena itu setiap pembacaan
+// dibungkus batas waktu milik KITA SENDIRI, yang jalan apa pun yang
+// dilakukan browser.
+// =====================================================================
+const BATAS_KERAS_TAMBAHAN_MS = 3000;
 
 const bacaPosisi = (opsi) =>
   new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, opsi);
+    let selesai = false;
+    const batas = (opsi && opsi.timeout ? opsi.timeout : 15000) + BATAS_KERAS_TAMBAHAN_MS;
+
+    const jamPengaman = setTimeout(() => {
+      if (selesai) return;
+      selesai = true;
+      const e = new Error('Browser tidak menjawab permintaan lokasi.');
+      e.code = 3;               // TIMEOUT, supaya pemanggil lama tetap benar
+      e.takMenjawab = true;     // penanda khusus: bukan timeout biasa
+      reject(e);
+    }, batas);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (selesai) return;
+        selesai = true;
+        clearTimeout(jamPengaman);
+        resolve(pos);
+      },
+      (err) => {
+        if (selesai) return;
+        selesai = true;
+        clearTimeout(jamPengaman);
+        reject(err);
+      },
+      opsi
+    );
   });
 
 /**
@@ -153,14 +199,41 @@ export async function periksaGpsWajib(opsi) {
     return { status: GPS_STATUS.DITOLAK, posisi: null, kode: 1, pesan: 'Izin akses lokasi ditolak.' };
   }
 
+  // Browser tidak pernah menjawab sama sekali — bukan timeout biasa.
+  // Hampir selalu berarti dialog izin masih menggantung atau Chrome
+  // menekannya menjadi ikon kecil di kolom alamat.
+  if (galat && galat.takMenjawab) {
+    return {
+      status: GPS_STATUS.TAK_DIJAWAB,
+      posisi: null,
+      kode: 3,
+      pesan: 'Browser tidak pernah menjawab permintaan lokasi. Biasanya dialog izin belum dijawab, ' +
+             'atau izin lokasi untuk situs ini sedang diblokir. Klik ikon lokasi/gembok di kolom alamat, ' +
+             'pilih Izinkan, lalu muat ulang halaman.'
+    };
+  }
+
   // code 2 = POSITION_UNAVAILABLE (layanan lokasi perangkat mati)
   // code 3 = TIMEOUT (sinyal tidak ketemu)
+  //
+  // Di KOMPUTER, code 3 hampir selalu berarti hal yang berbeda dari di HP:
+  // PC tidak punya cip GPS, jadi Chrome menanyakan posisinya ke server
+  // Google berdasarkan daftar WiFi di sekitar. PC kabel tanpa adapter
+  // WiFi — atau jaringan kantor yang memblokir www.googleapis.com —
+  // selalu berakhir di sini, berapa kali pun dicoba. Kalimatnya dibedakan
+  // supaya karyawan tidak disuruh "mencari sinyal GPS" pada perangkat
+  // yang memang tidak punya GPS.
+  const diKomputer = jenisPerangkat() === 'desktop';
   return {
     status: GPS_STATUS.PERANGKAT_MATI,
     posisi: null,
     kode: galat ? galat.code : null,
     pesan: galat && galat.code === 3
-      ? 'Waktu pencarian lokasi habis. Sinyal GPS belum ditemukan.'
+      ? (diKomputer
+          ? 'Komputer ini tidak dapat menentukan lokasinya. Komputer tidak punya GPS — posisinya ditebak dari ' +
+            'jaringan WiFi di sekitar, dan PC berkabel tanpa WiFi tidak punya data itu. Hubungi Admin/IT untuk ' +
+            'dikecualikan dari gerbang lokasi, atau absen lewat HP.'
+          : 'Waktu pencarian lokasi habis. Sinyal GPS belum ditemukan.')
       : 'Layanan lokasi perangkat tidak aktif atau tidak dapat dibaca.'
   };
 }
