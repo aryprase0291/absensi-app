@@ -64,6 +64,11 @@ export const UKURAN_CHUNK = 400;
 // satu import 12 potongan dari ~84% menjadi di bawah 0,5%.
 const MAKS_KIRIM_ULANG = 3;
 const JEDA_ULANG_MS = 1200;
+// Jeda lebih panjang untuk error sementara dari server (mis. "Waktu
+// layanan Spreadsheet habis"): spreadsheet sedang sibuk, mengulang dalam
+// 1 detik biasanya kena lagi.
+const MAKS_ULANG_SEMENTARA = 4;
+const JEDA_SEMENTARA_MS = 4000;
 
 const JOB_KOSONG = {
   status: 'idle',       // idle | berjalan | sukses | gagal
@@ -133,27 +138,52 @@ async function kirimPotongan(payload, bolehUlang) {
   // sesi dari nol dan me-reset sheet sementara. Potongan berikutnya hanya
   // aman kalau server sudah memasang penanda `idempoten` — lihat catatan
   // di kepala file. Inilah yang membuat urutan deploy tidak mengikat.
-  const maks = (payload.chunkIndex === 0 || bolehUlang) ? MAKS_KIRIM_ULANG : 1;
+  const maksJaringan = (payload.chunkIndex === 0 || bolehUlang) ? MAKS_KIRIM_ULANG : 1;
+  let gagalJaringan = 0;
+  let gagalSementara = 0;
   let terakhir = null;
-  for (let percobaan = 1; percobaan <= maks; percobaan++) {
+
+  for (;;) {
+    let res;
     try {
-      return await kirimSekali(payload);
+      res = await kirimSekali(payload);
     } catch (e) {
       terakhir = e;
+      gagalJaringan += 1;
       // Hanya dua keadaan ini yang layak diulang: balasan bukan JSON
       // (halaman interstitial Google) dan kegagalan jaringan murni.
-      // Keduanya tidak memberi tahu apa pun tentang isi sheet — dan
-      // itulah yang membuat pencatatan di server jadi wajib.
-      if (percobaan < maks) {
+      if (gagalJaringan < maksJaringan) {
         console.warn(
           `Potongan ${payload.chunkIndex + 1}/${payload.totalChunks} gagal ` +
-          `(percobaan ${percobaan}): ${e.message}. Mengulang…`
+          `(percobaan ${gagalJaringan}): ${e.message}. Mengulang…`
         );
-        await jeda(JEDA_ULANG_MS * percobaan);
+        await jeda(JEDA_ULANG_MS * gagalJaringan);
         continue;
       }
+      break;
     }
+
+    // ERROR SEMENTARA DARI SERVER [16 Sep 2026]
+    // Server membalas JSON yang sah, tapi isinya error seperti
+    // "Waktu layanan Spreadsheet habis saat mengakses dokumen" atau kunci
+    // import masih dipegang eksekusi sebelumnya. Server hanya memasang
+    // `sementara: true` bila commit ke sheet tujuan BELUM dimulai dan
+    // posisi tulis sheet sementara dijaga dari state sesi — jadi
+    // mengulang potongan yang sama tidak menggandakan baris.
+    if (res && res.result !== 'success' && res.sementara === true &&
+        gagalSementara + 1 < MAKS_ULANG_SEMENTARA) {
+      gagalSementara += 1;
+      console.warn(
+        `Potongan ${payload.chunkIndex + 1}/${payload.totalChunks}: server sibuk ` +
+        `(${res.message}). Mengulang ke-${gagalSementara}…`
+      );
+      await jeda(JEDA_SEMENTARA_MS * gagalSementara);
+      continue;
+    }
+    return res;
   }
+
+  const maks = maksJaringan;
   throw new Error(
     (terakhir && terakhir.bukanJson
       ? 'Server Google membalas halaman, bukan data' + (maks > 1 ? ' sebanyak ' + maks + ' kali berturut-turut' : '') + '. '

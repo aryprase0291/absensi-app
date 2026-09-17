@@ -181,9 +181,18 @@ function handleImportDbAbsen(data) {
   if (!lock.tryLock(30000)) {
     return responseJSON({
       result: 'error',
-      message: 'Ada proses import lain yang sedang berjalan. Coba lagi sebentar.'
+      message: 'Ada proses import lain yang sedang berjalan. Coba lagi sebentar.',
+      // Paling sering ini eksekusi potongan SEBELUMNYA yang masih jalan di
+      // server walau balasannya sudah hilang — jadi layak diulang klien.
+      sementara: true,
+      idempoten: true
     });
   }
+
+  // Dipakai di catch: selama commit ke sheet tujuan BELUM dimulai, error
+  // apa pun (termasuk 'Waktu layanan Spreadsheet habis') aman diulang.
+  let commitDimulai = false;
+  const potonganTerakhir = (chunkIndex === totalChunks - 1);
 
   try {
     const props = PropertiesService.getScriptProperties();
@@ -202,6 +211,7 @@ function handleImportDbAbsen(data) {
         targetSheet: targetSheet,
         totalChunks: totalChunks,
         chunkTerakhir: -1,   // potongan terakhir yang SUDAH diterapkan
+        barisTmp: 0,         // jumlah baris sah di sheet sementara
         mulai: new Date().getTime()
       }));
     }
@@ -232,7 +242,12 @@ function handleImportDbAbsen(data) {
 
     // --- B. Potongan ini SUDAH pernah diterapkan --------------------
     // Balasannya yang hilang, bukan datanya. Jangan ditulis dua kali.
-    if (chunkIndex > 0 && chunkIndex <= sudah) {
+    // PENGECUALIAN: potongan TERAKHIR yang sudah tertulis tapi commit-nya
+    // gagal (mis. Spreadsheet timeout) harus lanjut ke commit, bukan
+    // dijawab 'chunk' — kalau tidak, klien mengira selesai padahal sheet
+    // tujuan belum pernah diisi.
+    const sudahDitulis = chunkIndex > 0 && chunkIndex <= sudah;
+    if (sudahDitulis && !potonganTerakhir) {
       const shAda = SS.getSheetByName(IMPORT_TMP_SHEET);
       return responseJSON({
         result: 'success',
@@ -259,24 +274,39 @@ function handleImportDbAbsen(data) {
 
     const tmp = _importSiapkanSheetSementara(chunkIndex === 0);
 
-    if (rows.length > 0) {
-      const terpakai = tmp.getLastRow();
-      if (terpakai + rows.length > IMPORT_MAX_ROWS) {
-        _importBersihkan(propKey);
-        return responseJSON({
-          result: 'error',
-          message: 'Data melebihi batas ' + IMPORT_MAX_ROWS + ' baris. Import per periode saja.'
-        });
+    if (!sudahDitulis) {
+      // POSISI TULIS DARI STATE, BUKAN getLastRow() [16 Sep 2026]
+      // 'Waktu layanan Spreadsheet habis' bisa dilempar SETELAH setValues
+      // sebenarnya sudah masuk. Kalau posisinya diambil dari getLastRow(),
+      // pengulangan potongan itu menumpuk barisnya dua kali. Dengan
+      // barisTmp dari state, sisa tulisan setengah jadi dibuang dulu lalu
+      // ditulis ulang di posisi yang sama — hasilnya identik.
+      const awal = (chunkIndex === 0) ? 0
+        : (isFinite(Number(state.barisTmp)) ? Number(state.barisTmp) : tmp.getLastRow());
+      const lastTmp = tmp.getLastRow();
+      if (lastTmp > awal) {
+        tmp.getRange(awal + 1, 1, lastTmp - awal, DBABSEN_TOTAL_COLS).clearContent();
       }
-      const mapped = rows.map(_importPetakanBaris);
-      tmp.getRange(terpakai + 1, 1, mapped.length, DBABSEN_TOTAL_COLS).setValues(mapped);
-    }
 
-    // Potongan ini sudah benar-benar masuk sheet sementara. Dicatat SETELAH
-    // penulisan, bukan sebelum: kalau setValues gagal, catatannya tidak
-    // boleh terlanjur mengaku sukses — pengulangannya harus menulis ulang.
-    state.chunkTerakhir = chunkIndex;
-    props.setProperty(propKey, JSON.stringify(state));
+      if (rows.length > 0) {
+        if (awal + rows.length > IMPORT_MAX_ROWS) {
+          _importBersihkan(propKey);
+          return responseJSON({
+            result: 'error',
+            message: 'Data melebihi batas ' + IMPORT_MAX_ROWS + ' baris. Import per periode saja.'
+          });
+        }
+        const mapped = rows.map(_importPetakanBaris);
+        tmp.getRange(awal + 1, 1, mapped.length, DBABSEN_TOTAL_COLS).setValues(mapped);
+      }
+
+      // Potongan ini sudah benar-benar masuk sheet sementara. Dicatat SETELAH
+      // penulisan, bukan sebelum: kalau setValues gagal, catatannya tidak
+      // boleh terlanjur mengaku sukses — pengulangannya harus menulis ulang.
+      state.chunkTerakhir = chunkIndex;
+      state.barisTmp = awal + rows.length;
+      props.setProperty(propKey, JSON.stringify(state));
+    }
 
     // Belum potongan terakhir — cukup laporkan progres.
     if (chunkIndex < totalChunks - 1) {
@@ -298,7 +328,8 @@ function handleImportDbAbsen(data) {
     // terakhir — keduanya seharusnya sama, tapi kalau klien nakal
     // mengganti targetSheet di tengah sesi, punya sesi yang menang).
     const namaTarget = state.targetSheet || targetSheet;
-    const hasil = _importCommit(tmp, state.mode, namaTarget);
+    commitDimulai = true;
+    const hasil = _importCommit(tmp, state.mode, namaTarget, state.barisTmp);
 
     const ringkasan = {
       mode: state.mode,
@@ -344,7 +375,17 @@ function handleImportDbAbsen(data) {
     });
 
   } catch (e) {
-    return responseJSON({ result: 'error', message: 'Import gagal: ' + e.toString() });
+    // Error SEBELUM commit (mis. 'Waktu layanan Spreadsheet habis' saat
+    // menulis sheet sementara) tidak menyentuh sheet tujuan dan state sesi
+    // belum maju — jadi klien boleh mengulang potongan yang sama.
+    // Error SESUDAH commit dimulai TIDAK ditandai: sheet tujuan mungkin
+    // sudah setengah dikosongkan, dan mengulang bisa menghapus data lama.
+    return responseJSON({
+      result: 'error',
+      message: 'Import gagal: ' + e.toString(),
+      sementara: !commitDimulai,
+      idempoten: true
+    });
   } finally {
     lock.releaseLock();
   }
@@ -678,12 +719,16 @@ function _importBuatSheetTujuan(nama) {
  * `targetSheet` boleh sheet mana pun yang lolos _importNamaSheetValid —
  * default dbabsen kalau kosong. Dibuat otomatis kalau belum ada.
  */
-function _importCommit(tmp, mode, targetSheet) {
+function _importCommit(tmp, mode, targetSheet, barisTmp) {
   const namaTarget = targetSheet || SHEET_DB_ABSEN;
   let db = SS.getSheetByName(namaTarget);
   if (!db) db = _importBuatSheetTujuan(namaTarget);
 
-  const nBaru = tmp.getLastRow();
+  // Pakai jumlah baris sah dari state sesi bila ada — getLastRow() bisa
+  // ikut menghitung sisa tulisan setengah jadi dari potongan yang timeout.
+  const nBaru = (isFinite(Number(barisTmp)) && Number(barisTmp) > 0)
+    ? Math.min(Number(barisTmp), tmp.getLastRow())
+    : tmp.getLastRow();
   if (nBaru < 1) throw new Error('Tidak ada baris yang bisa diimpor.');
 
   const baru = tmp.getRange(1, 1, nBaru, DBABSEN_TOTAL_COLS).getValues();

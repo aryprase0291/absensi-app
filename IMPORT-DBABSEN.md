@@ -302,3 +302,32 @@ memulai sesi dari nol dan me-reset sheet sementara.
 Pesannya sekarang menyebut dengan pasti: sheet tujuan belum tersentuh,
 aman diulang dari awal. Kalau berulang terus, curigai ukuran berkas
 (pecah per periode) atau gangguan jaringan, bukan isi datanya.
+
+---
+
+# "Waktu layanan Spreadsheet habis saat mengakses dokumen" (16 Sep 2026)
+
+Beda dengan balasan HTML di atas: di sini server membalas JSON yang sah,
+tetapi isinya error `Exception: Service Spreadsheets timed out`. Penyebabnya
+spreadsheet `absen` sedang sibuk (dokumen besar, trigger/formula lain, atau
+eksekusi potongan sebelumnya masih jalan) — bukan isi datanya. Klien
+1.0.23 hanya mengulang balasan non-JSON, jadi error JSON ini langsung
+menggagalkan seluruh import.
+
+Yang diubah:
+
+- **Server menandai error yang aman diulang** dengan `sementara: true`:
+  error apa pun sebelum commit ke sheet tujuan dimulai, dan kunci import
+  yang masih dipegang. Error SESUDAH commit dimulai tidak ditandai.
+- **Posisi tulis sheet sementara diambil dari state sesi (`barisTmp`)**,
+  bukan `getLastRow()`. Timeout bisa terjadi setelah `setValues` sebenarnya
+  masuk; sisa tulisan itu dibersihkan lalu ditulis ulang di posisi sama,
+  jadi pengulangan tidak menggandakan baris. Commit juga membaca tepat
+  `barisTmp` baris.
+- **Potongan terakhir yang diulang tetap di-commit.** Sebelumnya bila
+  potongan terakhir sudah tertulis tapi commit gagal, pengulangannya
+  dijawab `stage: 'chunk'` dan klien mengira import selesai.
+- **Klien mengulang error `sementara` sampai 4 kali** dengan jeda 4 s, 8 s,
+  12 s.
+
+Wajib deploy ulang Apps Script (versi baru) DAN build frontend.
