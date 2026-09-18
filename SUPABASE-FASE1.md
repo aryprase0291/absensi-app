@@ -328,6 +328,51 @@ yang berbeda dengan milik Apps Script — buktikan dengan
 `SUPABASE_UJI_LOGIN()`.
 
 
+## 6c. Tambalan 18 Sep 2026 — sheet Users tetap sumber kebenaran
+
+**Yang perlu diluruskan lebih dulu.** Sheet `Users` **masih** satu-satunya
+tempat data karyawan ditulis. Tabel `karyawan` di Postgres adalah cermin
+baca-saja: `sinkron_master` melakukan `on conflict do update` plus
+`delete from karyawan where id not in (...)`, jadi setiap suntingan manual
+di Supabase akan **ditimpa atau dihapus** pada putaran berikutnya. Jangan
+mengedit tabel itu langsung.
+
+**Celah yang ditutup.** Kata sandi kini diperiksa di Postgres
+(`login_periksa`) tetapi diubah di sheet. Selama satu putaran sinkronisasi
+(10 menit):
+
+- karyawan baru **tidak bisa login sama sekali**;
+- kata sandi baru belum berlaku, kata sandi lama masih diterima.
+
+Dan tidak ada jaring pengaman: Edge Function menjawab
+`"Username/Password salah!"` yang tegas, bukan `FALLBACK_APPS_SCRIPT`,
+sehingga jalur Apps Script tidak ikut dicoba.
+
+**Tambalannya.** `SUPABASE_SINKRON_SEGERA()` di `SupabaseSync.gs`, dipanggil
+tepat setelah sheet ditulis oleh empat handler di `Code.gs`:
+
+| Handler | Aksi |
+|---|---|
+| `handleTambahUser` | `tambah_user` |
+| `handleGantiPassword` | `ganti_password` |
+| `handleResetPasswordMandiri` | `reset_password_mandiri` |
+| `handleResetPasswordUser` | `reset_password_user` |
+
+Tiga hal yang membuatnya aman:
+
+1. `SpreadsheetApp.flush()` dipanggil lebih dulu. Tanpa itu penulisan bisa
+   masih mengantre saat sheet dibaca ulang, dan yang terkirim ke Postgres
+   justru nilai lama — persis kegagalan yang hendak dicegah.
+2. Kegagalan sinkronisasi **tidak** menggagalkan aksinya. Perubahan tetap
+   tersimpan di sheet, dan pengguna menerima catatan bahwa perubahan
+   berlaku paling lama 10 menit lagi.
+3. Kalau Supabase belum dipasang di skrip, fungsi ini diam saja.
+
+Keempat aksi itu jarang, jadi satu sinkronisasi penuh di dalamnya tidak
+membebani apa pun. Ia sengaja tidak dipanggil dari jalur panas mana pun.
+Trigger 10 menitan tetap jalan sebagai jaring pengaman.
+
+
 ## 7. Yang BELUM dikerjakan
 
 Fase ini sengaja berhenti di login. Yang berikutnya, urut dari yang paling

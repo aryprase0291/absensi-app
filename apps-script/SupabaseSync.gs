@@ -242,6 +242,53 @@ function SUPABASE_TARIK_SESI() {
 }
 
 // =====================================================================
+// SINKRON SEGERA — dipanggil dari handler yang MENGUBAH sheet Users
+//
+// KENAPA ADA. Sejak login pindah, kata sandi diperiksa di Postgres
+// (RPC login_periksa) tetapi diubah di sheet. Tanpa fungsi ini, ada jeda
+// sampai 10 menit — satu putaran SUPABASE_SINKRON_MASTER — di mana:
+//
+//   - karyawan yang BARU ditambahkan belum bisa login sama sekali;
+//   - kata sandi yang baru diganti belum berlaku, dan yang LAMA masih
+//     bisa dipakai.
+//
+// Dan jeda itu tidak punya jaring pengaman: Edge Function menjawab
+// "Username/Password salah!" yang tegas, bukan FALLBACK_APPS_SCRIPT,
+// jadi jalur lama tidak ikut dicoba.
+//
+// Aksi-aksi ini jarang — beberapa kali sehari — jadi satu sinkronisasi
+// penuh di dalamnya tidak membebani apa pun. Ia sengaja TIDAK dipanggil
+// dari jalur panas mana pun.
+//
+// @return {string} '' bila selaras (atau Supabase memang belum dipakai),
+//                  atau catatan siap-tempel untuk pesan ke pengguna.
+// =====================================================================
+
+const SUPABASE_PESAN_TERTUNDA =
+  ' (Catatan: penyelarasan ke server login belum berhasil. Perubahan sudah '
+  + 'tersimpan dan akan berlaku paling lama 10 menit lagi.)';
+
+function SUPABASE_SINKRON_SEGERA(alasan) {
+  try {
+    // WAJIB: handler memanggil ini tepat setelah setValue/appendRow.
+    // Tanpa flush, penulisan bisa masih mengantre saat sheet dibaca
+    // ulang oleh SUPABASE_SINKRON_MASTER — dan yang terkirim ke Postgres
+    // justru nilai LAMA, persis kegagalan yang hendak dicegah.
+    SpreadsheetApp.flush();
+    SUPABASE_SINKRON_MASTER();
+    console.log('Sinkron segera OK — ' + alasan);
+    return '';
+  } catch (e) {
+    const pesan = String(e && e.message ? e.message : e);
+    // Supabase memang belum dipasang di skrip ini: bukan kegagalan,
+    // dan tidak perlu mengganggu pengguna dengan catatan apa pun.
+    if (pesan.indexOf('belum disiapkan') !== -1) return '';
+    console.warn('Sinkron segera GAGAL (' + alasan + '): ' + pesan);
+    return SUPABASE_PESAN_TERTUNDA;
+  }
+}
+
+// =====================================================================
 // PEMASANGAN & PENGUJIAN
 // =====================================================================
 

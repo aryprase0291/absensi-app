@@ -2062,7 +2062,17 @@ function handleTambahUser(data) {
     data.statusKaryawan || '', data.emailAtasan || '',
     data.lokasi || 'Surabaya'
   ]);
-  return responseJSON({ result: 'success', message: 'User berhasil ditambahkan' });
+
+  // Selaraskan ke Postgres SEKARANG, jangan menunggu trigger 10 menitan:
+  // sejak Fase 1, login memeriksa kata sandi di sana. Lihat
+  // SUPABASE_SINKRON_SEGERA di SupabaseSync.gs.
+  const _catatanSinkron = (typeof SUPABASE_SINKRON_SEGERA === 'function')
+    ? SUPABASE_SINKRON_SEGERA('tambah_user') : '';
+
+  return responseJSON({
+    result: 'success',
+    message: 'User berhasil ditambahkan' + _catatanSinkron
+  });
 }
 
 function handleTambahMaster(data) {
@@ -2093,7 +2103,17 @@ function handleGantiPassword(data) {
   for (let i = 1; i < rows.length; i++) { 
       if (String(rows[i][0]) === userId && String(rows[i][2]) === String(data.oldPassword)) { 
           sheet.getRange(i + 1, 3).setValue(newPassword);
-          return responseJSON({ result: 'success', message: 'Password berhasil diubah!' }); 
+
+          // Selaraskan ke Postgres SEKARANG, jangan menunggu trigger 10 menitan:
+          // sejak Fase 1, login memeriksa kata sandi di sana. Lihat
+          // SUPABASE_SINKRON_SEGERA di SupabaseSync.gs.
+          const _catatanSinkron = (typeof SUPABASE_SINKRON_SEGERA === 'function')
+            ? SUPABASE_SINKRON_SEGERA('ganti_password') : '';
+
+          return responseJSON({
+            result: 'success',
+            message: 'Password berhasil diubah!' + _catatanSinkron
+          }); 
       } 
   }
   return responseJSON({ result: 'error', message: 'Kata sandi lama salah.' });
@@ -2123,9 +2143,16 @@ function handleResetPasswordMandiri(data) {
 
     if (rowUsername === username.toLowerCase() && rowPayroll === noPayroll) {
       sheet.getRange(i + 1, 3).setValue(newPassword);
+
+      // Selaraskan ke Postgres SEKARANG, jangan menunggu trigger 10 menitan:
+      // sejak Fase 1, login memeriksa kata sandi di sana. Lihat
+      // SUPABASE_SINKRON_SEGERA di SupabaseSync.gs.
+      const _catatanSinkron = (typeof SUPABASE_SINKRON_SEGERA === 'function')
+        ? SUPABASE_SINKRON_SEGERA('reset_password_mandiri') : '';
+
       return responseJSON({
         result: 'success',
-        message: `Kata sandi untuk ${rows[i][3]} berhasil direset. Silakan login.`
+        message: `Kata sandi untuk ${rows[i][3]} berhasil direset. Silakan login.` + _catatanSinkron
       });
     }
   }
@@ -4022,8 +4049,18 @@ function handleResetPasswordUser(data) {
     // Cek jika UUID cocok (Kolom A / Index 0)
     if (String(rows[i][0]) === String(targetUuid)) {
       // Set Password (Kolom C / Index 2) menjadi "123"
-      sheet.getRange(i + 1, 3).setValue("123"); 
-      return responseJSON({ result: 'success', message: `Password untuk ${rows[i][3]} berhasil direset menjadi "123"` });
+      sheet.getRange(i + 1, 3).setValue("123");
+
+      // Selaraskan ke Postgres SEKARANG, jangan menunggu trigger 10 menitan:
+      // sejak Fase 1, login memeriksa kata sandi di sana. Lihat
+      // SUPABASE_SINKRON_SEGERA di SupabaseSync.gs.
+      const _catatanSinkron = (typeof SUPABASE_SINKRON_SEGERA === 'function')
+        ? SUPABASE_SINKRON_SEGERA('reset_password_user') : '';
+
+      return responseJSON({
+        result: 'success',
+        message: `Password untuk ${rows[i][3]} berhasil direset menjadi "123"` + _catatanSinkron
+      });
     }
   }
 
