@@ -54,6 +54,7 @@
 
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import { SCRIPT_URL } from '../config/constants';
+import { kirimPotonganSupabase, supabaseBolehUntuk } from '../utils/imporDbAbsenSupabase';
 
 // 400 baris x 18 kolom masih jauh di bawah batas payload Apps Script,
 // dan cukup kecil supaya satu eksekusi tidak mendekati batas 6 menit.
@@ -281,20 +282,51 @@ export function ImportJobProvider({ children }) {
           // aman — jadi tetap mati.
           let serverIdempoten = false;
 
+          // FASE 2 — JALUR SUPABASE.
+          //
+          // Dipilih SEKALI di awal kelompok, bukan per potongan. Sheet
+          // tujuan selain `dbabsen` tidak punya padanan di Postgres dan
+          // tetap lewat Apps Script.
+          let pakaiSupabase = supabaseBolehUntuk(targetSheet);
+
           for (let i = 0; i < totalChunkKelompok; i++) {
             const potongan = baris.slice(i * UKURAN_CHUNK, (i + 1) * UKURAN_CHUNK);
 
-            const res = await kirimPotongan({
-              action: 'import_db_absen',
-              sessionId,
-              chunkIndex: i,
-              totalChunks: totalChunkKelompok,
-              mode,
-              targetSheet,
-              rows: potongan
-            }, serverIdempoten);
+            let res = null;
 
-            if (res && res.idempoten === true) serverIdempoten = true;
+            if (pakaiSupabase) {
+              try {
+                res = await kirimPotonganSupabase({
+                  sesi: sessionId,
+                  baris: potongan,
+                  mode,
+                  terakhir: (i === totalChunkKelompok - 1)
+                });
+              } catch (e) {
+                // Jatuh ke Apps Script HANYA selama belum ada satu
+                // potongan pun yang diterima Supabase. Sesudah itu,
+                // berpindah jalur di tengah jalan akan memecah satu
+                // import ke dua penyimpanan yang berbeda — jauh lebih
+                // buruk daripada gagal terang-terangan.
+                if (i > 0) throw e;
+                console.warn('Import lewat Supabase gagal di potongan pertama, kembali ke Apps Script: ' + e.message);
+                pakaiSupabase = false;
+              }
+            }
+
+            if (!pakaiSupabase) {
+              res = await kirimPotongan({
+                action: 'import_db_absen',
+                sessionId,
+                chunkIndex: i,
+                totalChunks: totalChunkKelompok,
+                mode,
+                targetSheet,
+                rows: potongan
+              }, serverIdempoten);
+
+              if (res && res.idempoten === true) serverIdempoten = true;
+            }
 
             if (res.result !== 'success') {
               // Pesannya berbeda tergantung potongan ke berapa yang gagal,

@@ -82,22 +82,55 @@ menyala. Tidak ada satu pun yang melempar error ke karyawan.
 
 ---
 
-## Yang BELUM — dan kenapa sakelarnya jangan dinyalakan dulu
+## Jalur import — sudah pindah
 
-Layar Import masih mengirim potongan ke Apps Script
-(`ImportJobContext.js` → `action: 'import_db_absen'`), yang menulisnya ke
-sheet.
+`src/utils/imporDbAbsenSupabase.js` mengirim potongan langsung ke Edge
+Function; `ImportJobContext.js` memilih jalurnya **sekali di awal tiap
+kelompok**, bukan per potongan.
 
-Kalau sakelar dinyalakan sekarang, urutannya jadi berbahaya:
+Tiga batas yang dijaga:
 
-1. Admin mengimpor → Apps Script menulis hasilnya ke **sheet**.
+- Sheet tujuan selain `dbabsen` (mis. `shift`) tidak punya padanan di
+  Postgres, jadi tetap lewat Apps Script.
+- Kalau potongan **pertama** gagal, seluruh kelompok itu jatuh ke Apps
+  Script dari awal. Kalau yang gagal potongan berikutnya, error dilempar
+  apa adanya — berpindah jalur di tengah jalan akan memecah satu import
+  ke dua penyimpanan, dan itu jauh lebih buruk daripada gagal
+  terang-terangan.
+- Ukuran potongan tetap 400 baris supaya perhitungan progres tidak
+  berubah. Yang menghemat waktu bukan potongan yang lebih besar,
+  melainkan hilangnya eksekusi Apps Script dan commit ke sheet di setiap
+  potongan.
+
+Balasan commit sengaja memakai **nama field yang sama persis** dengan
+`_importCommit` di Apps Script (`barisDitambahkan`, `barisDiperbarui`,
+`barisDitimpa`, `barisDipertahankan`, `periodeAwal`, `periodeAkhir`),
+jadi layar hasil dan notifikasi tidak perlu tahu import lewat jalur yang
+mana.
+
+Pengulangan potongan aman di sini, tapi **alasannya berbeda** dengan
+jalur lama. Di Apps Script yang membuatnya aman adalah pencatatan
+`chunkTerakhir` di server. Di sini potongan hanya ditumpuk ke tabel
+sementara dan baru disaring saat commit (`distinct on (kunci, tanggal)
+order by urut desc`), jadi kiriman kembar menghasilkan hasil akhir yang
+identik. Commit sendiri tidak pernah diulang.
+
+---
+
+## DUA sakelar, dan urutannya tidak boleh terbalik
+
+| Sakelar | Di mana | Yang dinyalakan |
+|---|---|---|
+| `REACT_APP_SUPABASE_IMPOR=1` | build frontend | import menulis ke Postgres |
+| `SUPABASE_DBABSEN` = `'1'` | Script Properties | pembacaan + cermin sheet |
+
+**Import dulu, baru baca.** Kalau sakelar Apps Script dinyalakan lebih
+dulu sementara import masih lewat Apps Script, urutannya jadi:
+
+1. admin mengimpor → Apps Script menulis hasilnya ke **sheet**;
 2. `SUPABASE_TARIK_DBABSEN` berjalan → menulis ulang sheet dari
-   **Postgres**, yang belum tahu apa-apa soal import barusan.
-3. Hasil import hilang.
-
-**Jadi: selesaikan dulu pemindahan jalur import, baru nyalakan
-sakelarnya.** Sampai saat itu, `SUPABASE_DBABSEN` tetap kosong/'0' dan
-semuanya berjalan persis seperti sebelumnya.
+   **Postgres**, yang belum tahu apa-apa soal import barusan;
+3. hasil import hilang.
 
 ---
 
@@ -118,7 +151,11 @@ semuanya berjalan persis seperti sebelumnya.
    Anon key bukan rahasia: ia memang dirancang untuk sisi klien dan sudah
    ikut terkirim ke setiap HP karyawan di dalam bundle aplikasi. Penjaga
    isinya tetap RLS dan `SINKRON_RAHASIA`.
-3. **Pindahkan jalur import** (belum dikerjakan).
+3. **Nyalakan import Supabase**: build frontend dengan
+   `REACT_APP_SUPABASE_IMPOR=1`, lalu impor satu file kecil dan buktikan
+   barisnya masuk — `SUPABASE_UJI_ANON()` akan menyebut jumlah barisnya.
+   Selama langkah ini, sheet masih diisi jalur lama, jadi tidak ada yang
+   bisa hilang.
 4. `SUPABASE_SEMAI_DBABSEN()` — sekali, manual. Menyalin isi sheet yang
    ada sekarang ke Postgres dengan mode `replace`, jadi aman diulang
    kalau gagal di tengah.

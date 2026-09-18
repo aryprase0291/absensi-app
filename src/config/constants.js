@@ -75,6 +75,31 @@ export const SUPABASE_AKTIF = !!(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_L
 // jalur baru tidak lebih cepat dari ini, tidak ada gunanya ditunggu.
 export const SUPABASE_BATAS_MS = 6000;
 
+// ============================================================
+// SUPABASE (FASE 2 — IMPORT dbabsen)
+//
+// SAKELAR TERPISAH dari login, dan itu disengaja: keduanya dinyalakan
+// pada waktu yang berbeda, dan mematikan yang satu tidak boleh ikut
+// mematikan yang lain.
+//
+// Menyala  = potongan file dikirim langsung ke Postgres lewat Edge
+//            Function `dbabsen`. Apps Script keluar dari jalur import,
+//            dan di sanalah seluruh kelambatannya selama ini berada.
+// Mati/'0' = persis seperti sebelumnya, lewat Apps Script ke sheet.
+//
+// URUTAN YANG WAJIB DIPATUHI (lihat SUPABASE-FASE2.md):
+//   1. nyalakan sakelar INI, buktikan barisnya masuk ke Postgres;
+//   2. BARU jalankan SUPABASE_DBABSEN_NYALAKAN() di Apps Script.
+//
+// Kalau terbalik, cermin sheet akan menulis ulang `dbabsen` dari
+// Postgres yang belum tahu apa-apa soal import terakhir — dan hasil
+// import itu hilang.
+//
+// Cara menyalakan: ganti `false` di bawah menjadi `true`, lalu build
+// seperti biasa. Tidak perlu mengetik variabel apa pun di baris perintah.
+export const SUPABASE_IMPOR_AKTIF_SAKELAR =
+  process.env.REACT_APP_SUPABASE_IMPOR === '1' || false;
+
 // true jika sedang memakai backend selain produksi.
 // Dipakai untuk menandai dengan jelas bahwa data yang tampil bukan data asli.
 export const IS_TEST_BACKEND = SCRIPT_URL !== PRODUCTION_SCRIPT_URL;
