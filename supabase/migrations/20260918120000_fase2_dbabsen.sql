@@ -213,7 +213,14 @@ begin
   select min(tanggal), max(tanggal) into v_min, v_maks from _final;
 
   if v_mode = 'replace' then
-    delete from db_absen;
+    -- WHERE-nya WAJIB, bukan sekadar gaya penulisan: Supabase menolak
+    -- DELETE tanpa WHERE dengan "DELETE requires a WHERE clause".
+    -- Pelajaran yang sama sudah dibayar sekali di sinkron_master
+    -- (commit a4d3857) — dan terulang di sini pada percobaan
+    -- SUPABASE_SEMAI_DBABSEN yang pertama.
+    --
+    -- `tanggal` NOT NULL, jadi syarat ini mencakup SELURUH baris.
+    delete from db_absen where tanggal is not null;
     get diagnostics v_hapus = row_count;
 
   elsif v_mode = 'periode' then

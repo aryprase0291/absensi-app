@@ -854,13 +854,34 @@ function SUPABASE_TARIK_DBABSEN() {
 // dinyalakan — kalau ada yang berbeda, ia mencetak selisihnya, bukan
 // sekadar berkata gagal.
 // ---------------------------------------------------------------------
-function SUPABASE_UJI_DBABSEN() {
-  const periode = getPeriodeAbsenAktif_();
-  const idxSheet = _susunIndeksDbAbsen(periode);
-  const nikSemua = Object.keys(idxSheet);
+function SUPABASE_UJI_DBABSEN(periodeDipaksa) {
+  let periode = periodeDipaksa || getPeriodeAbsenAktif_();
+  let idxSheet = _susunIndeksDbAbsen(periode);
+  let nikSemua = Object.keys(idxSheet);
+
+  // Periode aktif bisa saja BARU berganti, sementara isi dbabsen masih
+  // periode sebelumnya — misalnya dijalankan sehari setelah periode
+  // bergulir, sebelum import berikutnya masuk. Membandingkan periode
+  // yang memang belum punya data bukan kegagalan, tapi hasilnya nol dan
+  // membingungkan. Jadi kalau itu terjadi, pembandingan dipindahkan ke
+  // rentang yang BENAR-BENAR ada isinya di Postgres.
+  if (!nikSemua.length && !periodeDipaksa) {
+    Logger.log('Periode aktif (' + periode.mulai + ' .. ' + periode.selesai + ') belum punya data di sheet.');
+    Logger.log('Beralih membandingkan SELURUH isi dbabsen, tanpa batas periode.');
+
+    // Rentang selebar mungkin, bukan rentang yang dicari-cari. Kedua
+    // sisi memakai batas yang SAMA, jadi perbandingannya tetap adil —
+    // dan kalau lebar, ia justru menguji lebih banyak baris daripada
+    // satu periode saja.
+    periode = { mulai: '1970-01-01', selesai: '2999-12-31' };
+    idxSheet = _susunIndeksDbAbsen(periode);
+    nikSemua = Object.keys(idxSheet);
+  }
 
   if (!nikSemua.length) {
-    Logger.log('Indeks sheet kosong untuk periode ini — tidak ada yang bisa dibandingkan.');
+    Logger.log('Indeks sheet kosong — tidak ada yang bisa dibandingkan.');
+    Logger.log('Kalau dbabsen memang berisi periode lain, panggil dengan rentang eksplisit:');
+    Logger.log("  SUPABASE_UJI_DBABSEN({ mulai: '2026-08-20', selesai: '2026-09-18' })");
     return;
   }
 
