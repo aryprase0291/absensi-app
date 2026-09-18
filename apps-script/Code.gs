@@ -1428,16 +1428,41 @@ function _sbBarisMesin(nik) {
  * @private
  */
 function _sbSemuaBarisMesin() {
+  // Jumlah yang SEHARUSNYA didapat, diambil lebih dulu. Tanpa patokan
+  // ini, penarikan yang kurang sempurna tidak menghasilkan error apa
+  // pun — ia cuma menghasilkan rekap yang angkanya lebih kecil, dan
+  // tidak ada yang tahu sampai seseorang membandingkannya dengan
+  // dbabsen.
+  const seharusnya = Number((_sbDbAbsen('versi', {}) || {}).total || 0);
+
   const kumpulan = [];
   let offset = 0;
   for (;;) {
     const hal = _sbDbAbsen('semua', { offset: offset, batas: 2000 });
     const baris = hal.baris || [];
     for (let i = 0; i < baris.length; i++) kumpulan.push(baris[i]);
-    if (hal.habis || !baris.length) break;
+
+    // BERHENTI HANYA PADA HALAMAN KOSONG.
+    //
+    // Sebelumnya berhenti begitu satu halaman berisi kurang dari yang
+    // diminta. Itu keliru: PostgREST punya batas baris per permintaan
+    // (bawaannya 1.000), jadi permintaan 2.000 baris dijawab 1.000 —
+    // lebih sedikit dari yang diminta, padahal masih ada sisanya.
+    // Akibatnya penarikan berhenti di baris ke-1.000 tanpa error, dan
+    // rekap hanya menghitung seperlima data.
+    if (!baris.length) break;
     offset += baris.length;
     if (offset > 200000) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
   }
+
+  // Jaring terakhir. Lebih baik rekap menolak tampil daripada tampil
+  // dengan angka yang salah — angka ini dipakai untuk menghitung gaji.
+  if (seharusnya > 0 && kumpulan.length !== seharusnya) {
+    throw new Error('Penarikan dbabsen TIDAK LENGKAP: dapat ' + kumpulan.length
+      + ' dari ' + seharusnya + ' baris. Rekap sengaja tidak ditampilkan '
+      + 'daripada menampilkan angka yang kurang.');
+  }
+
   return _sbKeBentukSheet(kumpulan);
 }
 

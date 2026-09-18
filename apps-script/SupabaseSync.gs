@@ -797,7 +797,13 @@ function SUPABASE_TARIK_DBABSEN(paksa) {
     const hal = _sbDbAbsen('semua', { offset: offset, batas: SB_DBABSEN_POTONGAN });
     const baris = hal.baris || [];
     for (let i = 0; i < baris.length; i++) semua.push(baris[i]);
-    if (hal.habis || !baris.length) break;
+
+    // Berhenti HANYA pada halaman kosong — bukan pada halaman yang lebih
+    // kecil dari yang diminta. PostgREST membatasi baris per permintaan
+    // (bawaannya 1.000), jadi halaman yang "kurang" adalah hal biasa,
+    // bukan tanda sudah habis. Lihat catatan panjang di
+    // _sbSemuaBarisMesin (Code.gs).
+    if (!baris.length) break;
     offset += baris.length;
     if (offset > 200000) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
   }
@@ -805,6 +811,14 @@ function SUPABASE_TARIK_DBABSEN(paksa) {
   if (!semua.length) {
     Logger.log('Postgres kosong — sheet TIDAK dikosongkan. Jalankan SUPABASE_SEMAI_DBABSEN() dulu.');
     return 0;
+  }
+
+  // Patokannya sudah ada di tangan: `versi.total` yang dibaca di atas.
+  // Kalau yang tertarik tidak sebanyak itu, sheet JANGAN ditulis —
+  // menulis separuh isi ke cermin sama saja membuang separuhnya.
+  if (semua.length !== Number(versi.total)) {
+    throw new Error('Penarikan TIDAK LENGKAP: dapat ' + semua.length + ' dari '
+      + versi.total + ' baris. Sheet tidak disentuh.');
   }
 
   const keluar = new Array(semua.length);
