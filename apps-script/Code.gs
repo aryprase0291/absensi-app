@@ -63,10 +63,16 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.26";
+const APP_VERSION = "1.0.27";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
+// 1.0.27 — GpsTracking.gs dipindah ke lapisan simpanan yang benar-benar
+//          bekerja (CacheService mati di skrip ini), sehingga sheet
+//          GpsTrackConfig tidak lagi dibaca ulang di setiap login dan
+//          setiap ping — terukur 540 ms per pemanggilan. MasterData &
+//          Geofence disimpan lebih lama karena punya pembersihan
+//          eksplisit di titik tulisnya.
 // 1.0.26 — pencarian batas jendela Absensi diganti: pencarian biner
 //          (banyak panggilan, sedikit sel) ternyata arah yang salah,
 //          karena biaya baca sheet hampir seluruhnya ongkos PER

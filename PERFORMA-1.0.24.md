@@ -459,3 +459,89 @@ Dua koreksi berturut-turut di dokumen ini punya bentuk yang sama:
 padahal yang ditunggu karyawan adalah layar. Bagian 8 menghitung sel
 padahal yang dibayar adalah panggilan. Keduanya baru ketahuan setelah
 ada angka dari spreadsheet yang sebenarnya — bukan dari penalaran.
+
+---
+
+## 9. HASIL PENGUKURAN SEBENARNYA (`PROFILE_MASUK`, 18 Sep 2026)
+
+Dijalankan di spreadsheet produksi, akun admin, simpanan dalam keadaan
+kedaluwarsa (kondisi terburuk):
+
+| Bagian | ms | Keterangan |
+|---|---|---|
+| `bacaSheet(Users,14)` | 187 | 306 baris |
+| `getMasterDataCached` | 588 | 54 entri |
+| `getPetaCutiCached` | 756 | 325 NIK |
+| `_ambilGeofenceUser` | 220 | |
+| `getPengumumanAktifCached` | 369 | |
+| `getSemuaPeriode_` | 44 | |
+| **`_ringkasGpsTracking_`** | **540** | hanya membaca SATU nilai konfigurasi |
+| `getIndeksDbAbsen` | 89 | 219 NIK |
+| **`jendela sheet Absensi`** | **2.112** | **3.340 dari 3.433 baris** |
+| `hitungStats` (utuh) | 2.009 | |
+| `_susunApprovalList_` | 933 | 500 pengajuan pending |
+
+Empat hal langsung terbaca, dan tiga di antaranya sudah diperbaiki.
+
+### 9.1 `_ringkasGpsTracking_` 540 ms — CacheService yang terlewat
+
+540 ms untuk membaca satu nilai konfigurasi. Sebabnya: `GpsTracking.gs`
+masih memakai **CacheService langsung**, padahal `DIAGNOSA-LAMBAT-LAGI.md`
+sudah membuktikan CacheService di skrip ini menerima tulisan lalu
+membuangnya. `Cache.gs` dan `StatsIndex.gs` sudah dipindahkan waktu itu;
+**`GpsTracking.gs` terlewat.**
+
+Artinya sheet `GpsTrackConfig` dibaca ulang pada SETIAP pemanggilan —
+bukan hanya saat login, tetapi juga pada **setiap ping posisi**: 300
+karyawan, tiap lima menit. Diperbaiki di 1.0.27.
+
+Nomor baris "posisi terakhir" sekalian diubah menjadi **satu peta**, bukan
+satu properti per karyawan: 300 kunci tambahan di Script Properties akan
+memperlambat semua pembacaan simpanan di seluruh skrip.
+
+### 9.2 Jendela Absensi memuat 3.340 dari 3.433 baris — praktis tidak memotong apa pun
+
+Jendela mulai di **baris 95**. Dengan margin 180 hari, ia menjangkau
+hampir ke awal sheet: **97% baris tetap dibaca.** Biayanya tetap dibayar,
+manfaatnya nyaris nol.
+
+Angka 2.112 ms itu juga masih memakai pencarian biner versi 1.0.25 —
+1.0.26 sudah memangkasnya menjadi paling banyak dua panggilan. Tetapi
+sisanya, pembacaan 3.340 baris itu sendiri, **hanya bisa dipotong dengan
+mempersempit margin.**
+
+Inilah **satu-satunya lever besar yang tersisa**, dan angkanya tidak boleh
+ditebak. `JENDELA_UJI()` mencetak **"selisih terjauh sebenarnya"** — dari
+semua baris yang jatuh di dalam periode aktif, berapa hari paling awal
+sebuah baris pernah diinput sebelum periode itu dimulai. Itulah margin
+minimum yang sah untuk data ini.
+
+Kalau angkanya, misalnya, 20 hari, maka `JENDELA_MARGIN_HARI` boleh
+diturunkan ke 90 dan jendelanya menyempit dari 3.340 baris menjadi sekitar
+sepertiganya — **tanpa kehilangan satu baris pun**, dan itu bisa dibuktikan
+dengan menjalankan `JENDELA_UJI()` lagi (harus tetap `TERLEWAT: 0`).
+
+### 9.3 MasterData & Geofence: 10 menit terlalu pendek
+
+588 ms dan 220 ms, dibayar ulang setiap sepuluh menit seumur hidup
+aplikasi, untuk data yang nyaris tidak pernah berubah — dan keduanya
+sudah punya pembersihan eksplisit di titik tulisnya. Masa berlakunya
+dinaikkan menjadi 6 jam dan 1 jam.
+
+`MASTER-CUTI` (756 ms) dan Pengumuman (369 ms) **sengaja tetap 10 menit**:
+keduanya lazim disunting langsung di sheet, dan angka cuti yang basi jauh
+lebih berbahaya daripada lambat.
+
+### 9.4 500 pengajuan berstatus Pending
+
+`_susunApprovalList_` memakan 933 ms, dan sebab terbesarnya bukan kode:
+ada **500 pengajuan yang tidak pernah disetujui atau ditolak**. Itu
+persoalan proses, bukan performa — tetapi selama tumpukannya dibiarkan,
+biayanya dibayar setiap kali seorang penyetuju membuka aplikasi.
+
+### 9.5 Yang masih belum diukur
+
+`devicePeriksaLogin` tidak ikut terukur karena memanggilnya berarti
+menerbitkan SessionID baru dan menggusur sesi karyawan. Kalau setelah
+semua perbaikan di atas login masih terasa berat, di situlah tempat
+berikutnya yang harus dilihat.

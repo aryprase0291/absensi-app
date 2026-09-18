@@ -50,6 +50,34 @@
 
 const CACHE_TTL_DETIK = 600; // 10 menit
 
+// MASA BERLAKU PER JENIS DATA (disetel 18 Sep 2026)
+//
+// Sepuluh menit untuk semuanya ternyata terlalu pendek untuk dua data
+// yang PUNYA pembersihan eksplisit di titik tulisnya. Terukur lewat
+// PROFILE_MASUK() pada simpanan yang sudah kedaluwarsa:
+//
+//     getMasterDataCached   588 ms
+//     _ambilGeofenceUser    220 ms
+//
+// Biaya itu dibayar ulang setiap sepuluh menit, seumur hidup aplikasi,
+// untuk data yang nyaris tidak pernah berubah.
+//
+// SYARAT yang membuat perpanjangan ini aman — dan yang harus tetap benar
+// kalau kelak ada yang mengubahnya:
+//   MasterData  dibersihkan handleTambahMaster (Code.gs)
+//   Geofence    dibersihkan handleSaveGeofenceConfig (Code.gs)
+// Perubahan lewat Panel Admin tetap terlihat SEKETIKA.
+//
+// KONSEKUENSI YANG DISENGAJA: menyunting kedua sheet itu LANGSUNG di
+// spreadsheet tidak lagi terlihat dalam sepuluh menit. Jalankan
+// CACHE_BERSIHKAN() sesudahnya, atau lakukan lewat Panel Admin.
+//
+// MASTER-CUTI dan Pengumuman SENGAJA tetap 10 menit: keduanya memang
+// lazim disunting langsung di sheet (MASTER-CUTI juga oleh SyncCuti),
+// dan angka cuti yang basi jauh lebih berbahaya daripada lambat.
+const CACHE_TTL_MASTERDATA = 6 * 60 * 60; // 6 jam
+const CACHE_TTL_GEOFENCE   = 60 * 60;     // 1 jam
+
 // V2: format simpanan berubah (terkompresi + berstempel waktu, di
 // Properties). Kunci dinaikkan supaya sisa format lama tidak terbaca.
 const KUNCI_MASTERDATA = 'MASTERDATA_V2';
@@ -294,7 +322,7 @@ function getMasterDataCached() {
       })
     : [];
 
-  const s = _simpanTahan_(KUNCI_MASTERDATA, hasil, CACHE_TTL_DETIK);
+  const s = _simpanTahan_(KUNCI_MASTERDATA, hasil, CACHE_TTL_MASTERDATA);
   if (!s.ok) console.warn('MasterData gagal disimpan: ' + s.alasan);
   return hasil;
 }
@@ -355,7 +383,7 @@ function getGeofenceConfigCached() {
 
   const map = _susunKonfigurasiGeofence_();
 
-  const s = _simpanTahan_(KUNCI_GEOFENCE, map, CACHE_TTL_DETIK);
+  const s = _simpanTahan_(KUNCI_GEOFENCE, map, CACHE_TTL_GEOFENCE);
   if (!s.ok) console.warn('Konfigurasi geofence gagal disimpan: ' + s.alasan);
   return map;
 }

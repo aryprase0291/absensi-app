@@ -98,6 +98,14 @@ const GPS_ANTRIAN = {
 
 const GPS_TRACK_CACHE_CFG = 'GPSTRACK_CFG_V1';
 const GPS_TRACK_CACHE_USER = 'GPSTRACK_USER_V1';
+// Nomor baris "posisi terakhir" untuk SEMUA karyawan dalam satu simpanan.
+//
+// Dulu satu kunci per karyawan ('GPSTRACK_ROW_<userId>'). Itu tidak
+// masalah selama simpanannya CacheService — tetapi sekarang isinya
+// tinggal di Script Properties, dan 300 kunci tambahan ikut tertarik
+// setiap kali getProperties() dipanggil, memperlambat SEMUA pembacaan
+// simpanan di seluruh skrip. Satu peta jauh lebih murah.
+const GPS_TRACK_CACHE_BARIS = 'GPSTRACK_BARIS_V1';
 const GPS_TRACK_CACHE_TTL = 600;
 
 // ---------------------------------------------------------------------
@@ -142,20 +150,62 @@ function _gpsTrackBoolean(nilai, bawaan) {
   return !!bawaan;
 }
 
+// =====================================================================
+// SIMPANAN (diperbaiki 18 Sep 2026)
+//
+// Ketiga fungsi di bawah dulu memakai CacheService LANGSUNG. Di skrip
+// ini CacheService terbukti menerima tulisan lalu membuangnya — sudah
+// dibuktikan dan didokumentasikan di DIAGNOSA-LAMBAT-LAGI.md, dan
+// Cache.gs serta StatsIndex.gs sudah dipindahkan ke Script Properties
+// karena itu. File ini terlewat.
+//
+// Akibatnya terukur lewat PROFILE_MASUK() di spreadsheet produksi:
+//
+//     _ringkasGpsTracking_   540 ms   "tidak dilacak"
+//
+// 540 ms untuk membaca satu nilai konfigurasi — karena simpanannya tidak
+// pernah ada, sheet GpsTrackConfig dibaca ULANG setiap kali. Dan itu
+// terjadi bukan cuma saat login, melainkan pada SETIAP ping posisi:
+// 300 karyawan, tiap lima menit.
+//
+// Sekarang memakai lapisan yang sama dengan Cache.gs (_ambilTahan_ /
+// _simpanTahan_ / _hapusTahan_), yang di dalamnya masih mencoba
+// CacheService lebih dulu — jadi kalau Google memperbaikinya, lapisan
+// cepat itu langsung terpakai lagi tanpa mengubah file ini.
+//
+// typeof: supaya file ini tetap jalan bila Cache.gs versi lama yang
+// terpasang di editor Apps Script.
+// =====================================================================
+
 function _gpsTrackCacheAmbil(kunci) {
-  try {
-    const isi = CacheService.getScriptCache().get(kunci);
-    return isi ? JSON.parse(isi) : null;
-  } catch (e) { return null; }
+  if (typeof _ambilTahan_ !== 'function') {
+    try {
+      const isi = CacheService.getScriptCache().get(kunci);
+      return isi ? JSON.parse(isi) : null;
+    } catch (e) { return null; }
+  }
+  try { return _ambilTahan_(kunci); } catch (e) { return null; }
 }
 
 function _gpsTrackCacheSimpan(kunci, obj) {
+  if (typeof _simpanTahan_ !== 'function') {
+    try {
+      CacheService.getScriptCache().put(kunci, JSON.stringify(obj), GPS_TRACK_CACHE_TTL);
+    } catch (e) { /* abaikan */ }
+    return;
+  }
   try {
-    CacheService.getScriptCache().put(kunci, JSON.stringify(obj), GPS_TRACK_CACHE_TTL);
-  } catch (e) { /* cache penuh: bukan kegagalan yang perlu dilaporkan */ }
+    const hasil = _simpanTahan_(kunci, obj, GPS_TRACK_CACHE_TTL);
+    if (!hasil.ok) console.warn('Simpanan GPS "' + kunci + '" gagal: ' + hasil.alasan);
+  } catch (e) {
+    console.warn('Simpanan GPS "' + kunci + '" gagal: ' + e.message);
+  }
 }
 
 function _gpsTrackCacheHapus(kunci) {
+  if (typeof _hapusTahan_ === 'function') {
+    try { _hapusTahan_(kunci); return; } catch (e) { /* lanjut */ }
+  }
   try { CacheService.getScriptCache().remove(kunci); } catch (e) { /* abaikan */ }
 }
 
@@ -321,15 +371,26 @@ function _gpsTrackAlamat(lat, lng, jarakDariSebelumnya, sumber, alamatLama) {
 // pembacaan sheet yang bisa dihemat pada SETIAP ping.
 // ---------------------------------------------------------------------
 
-function _gpsTrackCariBaris(sheet, userId) {
-  const kunciCache = 'GPSTRACK_ROW_' + userId;
-  const target = String(userId);
+/** Mencatat nomor baris seorang karyawan ke peta bersama. @private */
+function _gpsTrackSimpanBaris(userId, baris) {
+  const peta = _gpsTrackCacheAmbil(GPS_TRACK_CACHE_BARIS) || {};
+  peta[String(userId)] = baris;
+  _gpsTrackCacheSimpan(GPS_TRACK_CACHE_BARIS, peta);
+}
 
-  const tersimpan = _gpsTrackCacheAmbil(kunciCache);
-  if (tersimpan && tersimpan.baris > 1) {
+function _gpsTrackCariBaris(sheet, userId) {
+  const target = String(userId);
+  const peta = _gpsTrackCacheAmbil(GPS_TRACK_CACHE_BARIS) || {};
+  const tersimpan = Number(peta[target]);
+
+  // INVARIAN KEAMANAN: nomor baris dari simpanan SELALU diverifikasi
+  // dengan membaca baris itu sendiri sebelum dipakai. Simpanan basi tidak
+  // pernah menimpa baris milik karyawan lain — paling buruk ia meleset
+  // dan jatuh ke pemindaian di bawah.
+  if (isFinite(tersimpan) && tersimpan > 1) {
     try {
-      const nilai = sheet.getRange(tersimpan.baris, 1, 1, GPS_LAST_HEADERS.length).getValues()[0];
-      if (String(nilai[0]) === target) return { baris: tersimpan.baris, nilai: nilai };
+      const nilai = sheet.getRange(tersimpan, 1, 1, GPS_LAST_HEADERS.length).getValues()[0];
+      if (String(nilai[0]) === target) return { baris: tersimpan, nilai: nilai };
     } catch (e) { /* baris tergeser: jatuh ke pemindaian di bawah */ }
   }
 
@@ -339,7 +400,8 @@ function _gpsTrackCariBaris(sheet, userId) {
   for (let i = 0; i < kolomId.length; i++) {
     if (String(kolomId[i][0]) === target) {
       const baris = i + 2;
-      _gpsTrackCacheSimpan(kunciCache, { baris: baris });
+      peta[target] = baris;
+      _gpsTrackCacheSimpan(GPS_TRACK_CACHE_BARIS, peta);
       return { baris: baris, nilai: sheet.getRange(baris, 1, 1, GPS_LAST_HEADERS.length).getValues()[0] };
     }
   }
@@ -525,7 +587,7 @@ function handleTrackGpsPing(data) {
       sheetLast.getRange(sebelumnya.baris, 1, 1, GPS_LAST_HEADERS.length).setValues([barisNilai]);
     } else {
       sheetLast.appendRow(barisNilai);
-      _gpsTrackCacheSimpan('GPSTRACK_ROW_' + userId, { baris: sheetLast.getLastRow() });
+      _gpsTrackSimpanBaris(userId, sheetLast.getLastRow());
     }
   } catch (e) {
     return responseJSON({ result: 'error', message: 'Gagal menyimpan posisi: ' + e.message });
@@ -769,7 +831,7 @@ function handleTrackGpsAntrian(data) {
         curLogLat === null ? terbaru.lat : curLogLat,
         curLogLng === null ? terbaru.lng : curLogLng
       ]);
-      _gpsTrackCacheSimpan('GPSTRACK_ROW_' + userId, { baris: sheetLast.getLastRow() });
+      _gpsTrackSimpanBaris(userId, sheetLast.getLastRow());
     } else if (lebihBaru) {
       const alamat = _gpsTrackAlamat(terbaru.lat, terbaru.lng, jarakTerakhirM, 'antrian', alamatLama);
       // Kolom log hanya boleh maju. Kalau baris jejak terakhir yang
@@ -1334,6 +1396,7 @@ function PANGKAS_JEJAK_GPS(hari) {
 function GPSTRACK_CACHE_BERSIHKAN() {
   _gpsTrackCacheHapus(GPS_TRACK_CACHE_CFG);
   _gpsTrackCacheHapus(GPS_TRACK_CACHE_USER);
+  _gpsTrackCacheHapus(GPS_TRACK_CACHE_BARIS);
   Logger.log('Cache pelacakan GPS dibersihkan.');
 }
 

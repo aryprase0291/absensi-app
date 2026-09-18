@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.26",
+    "currentVersion": "1.0.27",
     "history": [
+      {
+        "file": "1.0.27.json",
+        "version": "1.0.27",
+        "releasedAt": "2026-09-18",
+        "required": false,
+        "notes": [
+          "Tidak ada perubahan pada aplikasi. Versi dinaikkan mengikuti perbaikan di sisi server."
+        ]
+      },
       {
         "file": "1.0.26.json",
         "version": "1.0.26",
@@ -156,8 +165,19 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.26",
+    "currentVersion": "1.0.27",
     "history": [
+      {
+        "file": "1.0.27.json",
+        "version": "1.0.27",
+        "releasedAt": "2026-09-18",
+        "required": true,
+        "notes": [
+          "GpsTracking.gs masih memakai CacheService langsung, padahal di skrip ini CacheService terbukti menerima tulisan lalu membuangnya. Akibatnya sheet GpsTrackConfig dibaca ulang pada SETIAP pemanggilan — terukur 540 ms hanya untuk membaca satu nilai konfigurasi, dan itu terjadi di setiap login maupun setiap ping posisi. Kini memakai lapisan penyimpanan yang sama dengan Cache.gs.",
+          "Nomor baris posisi terakhir disimpan sebagai SATU peta, bukan satu properti per karyawan: 300 kunci tambahan akan memperlambat semua pembacaan simpanan di seluruh skrip. Verifikasi baris tetap dilakukan sebelum ditulis.",
+          "MasterData disimpan 6 jam dan Geofence 1 jam, bukan 10 menit — keduanya punya pembersihan eksplisit di titik tulisnya, jadi perubahan lewat Panel Admin tetap terlihat seketika. MASTER-CUTI dan Pengumuman sengaja tetap 10 menit karena lazim disunting langsung di sheet."
+        ]
+      },
       {
         "file": "1.0.26.json",
         "version": "1.0.26",
