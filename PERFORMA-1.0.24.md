@@ -545,3 +545,74 @@ biayanya dibayar setiap kali seorang penyetuju membuka aplikasi.
 menerbitkan SessionID baru dan menggusur sesi karyawan. Kalau setelah
 semua perbaikan di atas login masih terasa berat, di situlah tempat
 berikutnya yang harus dilihat.
+
+---
+
+## 10. VONIS UNTUK JENDELA ABSENSI (`JENDELA_UJI`, 18 Sep 2026)
+
+```
+Sheet Absensi : 3433 baris data
+Periode aktif : 2026-08-21 s/d 2026-09-20  (842 baris di dalamnya)
+
+Baca PENUH    : 3433 baris,  785 ms
+Baca JENDELA  : 3340 baris (97%), 1943 ms, mulai baris 95
+Hemat         : -1158 ms
+
+Baris periode yang TERLEWAT : 0
+Kolom B kosong/tak terbaca  : 0
+Margin terpakai sekarang    : 180 hari
+Selisih terjauh sebenarnya  : 14 hari
+```
+
+**Jendela yang saya buat lebih lambat 1.158 ms daripada membaca penuh.**
+Bukan sedikit lebih lambat — dua setengah kali lipat.
+
+### Kenapa
+
+Aritmetika sederhana yang tidak saya lakukan sebelum menulis kodenya:
+
+- Mencari batas jendela memakan **satu panggilan tersendiri** (~250 ms).
+- Penghematannya hanya sebanding dengan baris yang **berhasil dipotong**.
+- Dengan margin 180 hari, yang terpotong cuma 93 dari 3.433 baris.
+
+Membayar 250 ms untuk memotong 2,7% baris. Itu bukan optimasi.
+
+Dan bahkan dengan margin yang benar pun ia belum menang di ukuran ini:
+selisih terjauh yang sah adalah 14 hari, tetapi margin 60 hari masih
+menyisakan ~2.500 baris dari 3.433 — potongannya belum cukup besar untuk
+menutup ongkos pencarian batasnya.
+
+### Keputusannya: jendela dimatikan sampai sheet cukup panjang
+
+`bacaAbsensiPeriode_` sekarang **membaca penuh selama sheet masih di
+bawah 6.000 baris**, dan beralih ke jendela dengan sendirinya di atas itu.
+Tidak ada yang perlu diubah nanti.
+
+Yang membuat jendela tetap layak ada: **isinya tidak ikut tumbuh.**
+Jendela selalu memuat satu periode + 60 hari — sekitar 2.500 baris,
+berapa pun panjang sheetnya. Baca penuh tumbuh tanpa batas.
+
+| Ukuran sheet | Baca penuh | Jendela |
+|---|---|---|
+| 3.433 baris (sekarang) | **785 ms** | 1.943 ms |
+| ~20.000 baris | ~4,5 detik | **~0,8 detik** |
+
+Margin juga diturunkan **180 → 60 hari**, berdasarkan angka terukur
+(selisih terjauh 14 hari, kelonggaran 4×). `JENDELA_UJI()` memperingatkan
+bila suatu saat selisih terjauh mulai mendekati margin.
+
+### Dampak langsung
+
+`hitungStats` tidak lagi membayar 1.943 ms untuk membaca Absensi,
+melainkan 785 ms. Itu **sekitar 1,15 detik** hilang dari pengisian
+dashboard, tanpa satu baris pun berubah hasilnya.
+
+### Pelajaran ketiga, bentuknya sama lagi
+
+Bagian 7: menghitung request, padahal yang ditunggu karyawan adalah layar.
+Bagian 8: menghitung sel, padahal yang dibayar adalah panggilan.
+Bagian 10: mengira memotong baris selalu menghemat, padahal memotongnya
+sendiri ada harganya — dan harga itu tetap, sedangkan keuntungannya tidak.
+
+Tiga-tiganya baru ketahuan setelah ada angka dari spreadsheet yang
+sebenarnya. Tidak satu pun bisa disimpulkan dari membaca kode.

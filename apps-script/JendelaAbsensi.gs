@@ -52,23 +52,63 @@
 // Margin mundur untuk hitungStats & cek duplikat.
 //
 // Sebuah baris bisa jatuh di dalam periode aktif walaupun waktu inputnya
-// jauh lebih awal — cuti yang diajukan berbulan-bulan sebelumnya adalah
-// contohnya. Margin inilah yang menjamin baris seperti itu tetap terbaca.
+// lebih awal — cuti yang diajukan jauh hari adalah contohnya. Margin
+// inilah yang menjamin baris seperti itu tetap terbaca.
+//
+// ANGKA INI DIUKUR, BUKAN DITEBAK (18 Sep 2026). JENDELA_UJI() di
+// spreadsheet produksi melaporkan:
+//
+//     Selisih terjauh sebenarnya : 14 hari
+//
+// yaitu jarak terjauh yang PERNAH terjadi antara waktu input sebuah
+// baris dan awal periode yang memuatnya. 60 hari memberi kelonggaran
+// empat kali lipat dari itu.
 //
 // MENAIKKAN angka ini selalu aman (hanya membaca lebih banyak).
 // MENURUNKANNYA berisiko: pengajuan yang dikirim lebih awal dari margin
-// akan hilang dari statistik tanpa error apa pun.
-//
-// JANGAN menebak saat mengubahnya. JENDELA_UJI() melaporkan jarak
-// terjauh yang BENAR-BENAR pernah terjadi di spreadsheet ini
-// ("selisih terjauh"), dan angka itulah dasar yang sah.
-const JENDELA_MARGIN_HARI = 180;
+// akan hilang dari statistik tanpa error apa pun. Jalankan JENDELA_UJI()
+// lagi setelah mengubahnya — dan juga setelah import data besar atau
+// perubahan aturan pengajuan, karena "selisih terjauh" bisa berubah.
+const JENDELA_MARGIN_HARI = 60;
 
 const JENDELA_MS_HARI = 24 * 60 * 60 * 1000;
 
 // Berapa baris ekor yang dibaca pada percobaan pertama saat mencari
 // batas jendela. Lihat catatan biaya di jendelaBarisAbsensi_.
-const JENDELA_EKOR_AWAL = 1500;
+//
+// Dipilih supaya batasnya hampir selalu ketemu dalam SATU panggilan:
+// satu periode (~31 hari) ditambah margin 60 hari, pada laju sekitar
+// 27 baris/hari, adalah ~2.500 baris. 4.000 memberi kelonggaran tanpa
+// membuat pembacaannya mahal — 4.000 sel kolom B hanya ~50 ms di atas
+// ongkos tetap per panggilan.
+const JENDELA_EKOR_AWAL = 4000;
+
+// AMBANG PEMAKAIAN JENDELA — di bawah ini sheet dibaca PENUH.
+//
+// Diukur di spreadsheet produksi (3.433 baris), dan hasilnya membantah
+// dugaan saya sendiri:
+//
+//     Baca PENUH   : 3.433 baris,   785 ms
+//     Baca JENDELA : 3.340 baris, 1.943 ms
+//     Hemat        : -1.158 ms          <-- jendela LEBIH LAMBAT
+//
+// Sebabnya aritmetika sederhana. Mencari batas jendela sendiri memakan
+// satu panggilan (~250 ms), dan penghematannya hanya sebanding dengan
+// baris yang BERHASIL dipotong. Pada sheet yang belum panjang, potongan
+// itu belum cukup besar untuk menutup ongkos pencariannya.
+//
+// Titik impasnya sekitar 3.500-4.000 baris dengan margin 60 hari.
+// Ambang 6.000 dipilih supaya jendela baru dipakai ketika untungnya
+// sudah jelas, bukan sekadar impas.
+//
+// Yang membuat jendela tetap layak ada: isinya TIDAK ikut tumbuh.
+// Jendela selalu memuat "satu periode + 60 hari" — kira-kira 2.500 baris,
+// berapa pun panjang sheetnya. Baca penuh tumbuh tanpa batas. Pada
+// 20.000 baris perbandingannya menjadi ~4,5 detik lawan ~0,8 detik.
+//
+// Peralihannya otomatis: tidak ada yang perlu diubah nanti. JENDELA_UJI()
+// menyebutkan mode mana yang sedang dipakai.
+const JENDELA_MINIMUM_BARIS = 6000;
 
 /**
  * Nilai kolom Waktu menjadi milidetik. null kalau tidak bisa dibaca.
@@ -217,19 +257,32 @@ function bacaAbsensiSejak_(sheet, tanggalYmd, jmlKolom) {
  * Jendela untuk sebuah periode absensi, sudah termasuk margin mundur.
  * Inilah yang dipakai hitungStats dan cek duplikat handleAbsen.
  */
-function bacaAbsensiPeriode_(sheet, periode, jmlKolom) {
-  let tanggal = '';
+/**
+ * Tanggal batas bawah jendela sebuah periode: awal periode dikurangi
+ * margin. '' kalau periodenya tidak terbaca.
+ * @private
+ */
+function _jabTanggalMarginPeriode_(periode) {
   try {
     const mulai = periode && periode.mulai ? String(periode.mulai) : '';
     const d = new Date(mulai + 'T00:00:00Z');
-    if (!isNaN(d.getTime())) {
-      tanggal = new Date(d.getTime() - JENDELA_MARGIN_HARI * JENDELA_MS_HARI)
-        .toISOString().slice(0, 10);
-    }
-  } catch (e) { tanggal = ''; }
+    if (isNaN(d.getTime())) return '';
+    return new Date(d.getTime() - JENDELA_MARGIN_HARI * JENDELA_MS_HARI)
+      .toISOString().slice(0, 10);
+  } catch (e) {
+    return '';
+  }
+}
+
+function bacaAbsensiPeriode_(sheet, periode, jmlKolom) {
+  // Sheet masih pendek: membaca penuh terbukti lebih cepat daripada
+  // mencari batas jendelanya. Lihat JENDELA_MINIMUM_BARIS di atas.
+  if (sheet && (sheet.getLastRow() - 1) < JENDELA_MINIMUM_BARIS) {
+    return { baris: bacaSheet(sheet, jmlKolom).slice(1), offsetBaris: 2 };
+  }
 
   // Periode tidak terbaca -> baca penuh, sama seperti sebelum ada file ini.
-  return bacaAbsensiSejak_(sheet, tanggal, jmlKolom);
+  return bacaAbsensiSejak_(sheet, _jabTanggalMarginPeriode_(periode), jmlKolom);
 }
 
 /**
@@ -269,7 +322,11 @@ function JENDELA_UJI() {
   const t0 = new Date().getTime();
   const penuh = bacaSheet(sheet, 13);
   const t1 = new Date().getTime();
-  const jendela = bacaAbsensiPeriode_(sheet, periode, 13);
+  // Sengaja lewat bacaAbsensiSejak_, BUKAN bacaAbsensiPeriode_: kalau
+  // sheetnya masih di bawah ambang, bacaAbsensiPeriode_ akan membaca
+  // penuh dan perbandingan di bawah jadi membandingkan dua hal yang sama.
+  // Yang ingin diketahui justru "seandainya jendela dipakai sekarang".
+  const jendela = bacaAbsensiSejak_(sheet, _jabTanggalMarginPeriode_(periode), 13);
   const t2 = new Date().getTime();
 
   // --- Pemeriksaan 1: adakah baris periode yang terlewat? -----------
@@ -328,8 +385,13 @@ function JENDELA_UJI() {
 
   const persen = lastRow > 1
     ? Math.round(jendela.baris.length * 100 / (lastRow - 1)) : 0;
+  const pakaiJendela = (lastRow - 1) >= JENDELA_MINIMUM_BARIS;
 
   console.log(
+    'MODE SEKARANG : ' + (pakaiJendela
+      ? 'JENDELA (sheet sudah melewati ' + JENDELA_MINIMUM_BARIS + ' baris)'
+      : 'BACA PENUH (sheet belum mencapai ' + JENDELA_MINIMUM_BARIS + ' baris — '
+        + 'pada ukuran ini membaca penuh memang lebih cepat)') + '\n' +
     'Sheet Absensi : ' + (lastRow - 1) + ' baris data\n' +
     'Periode aktif : ' + periode.mulai + ' s/d ' + periode.selesai +
       '  (' + jumlahDiPeriode + ' baris di dalamnya)\n' +
@@ -362,17 +424,20 @@ function JENDELA_UJI() {
   }
 
   console.log('>>> BENAR: tidak ada baris periode yang terlewat.');
-  if (selisihTerjauh + 60 < JENDELA_MARGIN_HARI) {
-    console.log('>>> Margin ' + JENDELA_MARGIN_HARI + ' hari jauh lebih lebar daripada');
-    console.log('>>> yang dibutuhkan data ini (' + selisihTerjauh + ' hari). Menurunkannya ke');
-    console.log('>>> ' + (selisihTerjauh + 60) + ' hari akan mempersempit jendela tanpa kehilangan');
-    console.log('>>> satu baris pun — tetapi ingat angka itu hanya berlaku');
-    console.log('>>> untuk data yang ADA SEKARANG. Sisakan kelonggaran untuk');
-    console.log('>>> pengajuan yang lebih maju dari apa pun yang pernah terjadi.');
+
+  if (selisihTerjauh * 4 > JENDELA_MARGIN_HARI) {
+    console.log('');
+    console.log('>>> PERHATIAN: selisih terjauh (' + selisihTerjauh + ' hari) sudah mendekati');
+    console.log('>>> margin yang dipakai (' + JENDELA_MARGIN_HARI + ' hari). Naikkan');
+    console.log('>>> JENDELA_MARGIN_HARI menjadi minimal ' + (selisihTerjauh * 4) + ' supaya');
+    console.log('>>> pengajuan yang lebih maju dari ini tidak hilang dari statistik.');
   }
-  if ((t1 - t0) - (t2 - t1) < 100) {
-    console.log('>>> CATATAN: penghematannya masih kecil. Pada ukuran sheet');
-    console.log('>>> sekarang itu wajar — nilai jendela ini terutama menahan');
-    console.log('>>> biaya agar tidak ikut tumbuh saat sheet makin panjang.');
+
+  if (!pakaiJendela) {
+    console.log('');
+    console.log('>>> Jendela BELUM dipakai, jadi angka "Hemat" di atas hanya');
+    console.log('>>> simulasi: itulah yang AKAN terjadi bila dipaksa sekarang.');
+    console.log('>>> Angka negatif berarti keputusan membaca penuh sudah benar.');
+    console.log('>>> Peralihan ke jendela terjadi sendiri di ' + JENDELA_MINIMUM_BARIS + ' baris.');
   }
 }

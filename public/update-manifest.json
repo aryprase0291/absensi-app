@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.27",
+    "currentVersion": "1.0.28",
     "history": [
+      {
+        "file": "1.0.28.json",
+        "version": "1.0.28",
+        "releasedAt": "2026-09-18",
+        "required": false,
+        "notes": [
+          "Tidak ada perubahan pada aplikasi. Versi dinaikkan mengikuti perbaikan di sisi server."
+        ]
+      },
       {
         "file": "1.0.27.json",
         "version": "1.0.27",
@@ -165,8 +174,20 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.27",
+    "currentVersion": "1.0.28",
     "history": [
+      {
+        "file": "1.0.28.json",
+        "version": "1.0.28",
+        "releasedAt": "2026-09-18",
+        "required": true,
+        "notes": [
+          "Jendela sheet Absensi tidak lagi dipakai selama sheetnya masih di bawah 6.000 baris. JENDELA_UJI() di spreadsheet produksi membuktikan jendela justru LEBIH LAMBAT pada ukuran sekarang: baca penuh 785 ms, baca jendela 1.943 ms — mencari batas jendela sendiri memakan satu panggilan, dan potongan barisnya belum cukup besar untuk menutupinya.",
+          "Peralihan ke jendela terjadi otomatis begitu sheet melewati 6.000 baris, jadi tidak ada yang perlu diubah nanti. Isi jendela tidak ikut tumbuh (selalu satu periode + 60 hari), sementara baca penuh tumbuh tanpa batas.",
+          "Margin jendela diturunkan dari 180 menjadi 60 hari, berdasarkan pengukuran: selisih terjauh yang PERNAH terjadi antara waktu input sebuah baris dan awal periode yang memuatnya adalah 14 hari. 60 memberi kelonggaran empat kali lipat.",
+          "JENDELA_UJI() kini menyebutkan mode yang sedang aktif, tetap mensimulasikan jendela walau modenya baca penuh, dan memperingatkan bila selisih terjauh mulai mendekati margin."
+        ]
+      },
       {
         "file": "1.0.27.json",
         "version": "1.0.27",

@@ -63,10 +63,15 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.27";
+const APP_VERSION = "1.0.28";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
+// 1.0.28 — jendela sheet Absensi dimatikan otomatis selama sheetnya di
+//          bawah 6.000 baris: terukur jendela LEBIH LAMBAT pada ukuran
+//          sekarang (785 ms baca penuh lawan 1.943 ms baca jendela).
+//          Margin turun 180 -> 60 hari berdasarkan selisih terjauh yang
+//          benar-benar pernah terjadi (14 hari).
 // 1.0.27 — GpsTracking.gs dipindah ke lapisan simpanan yang benar-benar
 //          bekerja (CacheService mati di skrip ini), sehingga sheet
 //          GpsTrackConfig tidak lagi dibaca ulang di setiap login dan
