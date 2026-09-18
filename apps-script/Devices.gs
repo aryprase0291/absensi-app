@@ -204,6 +204,32 @@ function deviceTerbitkanSesi(userId) {
 }
 
 /**
+ * Catat SessionID yang SUDAH diterbitkan di tempat lain (Edge Function
+ * login di Supabase). Bedanya dengan deviceTerbitkanSesi: fungsi ini
+ * tidak membuat ID baru, ia hanya menyelaraskan Script Properties dengan
+ * ID yang sudah sah.
+ *
+ * Dipakai authorizeRequest saat menemukan token BARU yang belum sempat
+ * ditarik SUPABASE_TARIK_SESI. Tanpa ini, aturan satu-perangkat
+ * sepenuhnya bergantung pada trigger 1 menitan; dengan ini, penarikan
+ * itu tinggal jaring pengaman.
+ */
+function deviceCatatSesi(userId, sessionId) {
+  const sid = _devNormId(sessionId);
+  if (!sid) return '';
+  try {
+    PropertiesService.getScriptProperties().setProperty(_devKunciSesi(userId), sid);
+    if (typeof _propLupakanSatuan_ === 'function') _propLupakanSatuan_(_devKunciSesi(userId));
+  } catch (e) {
+    // Sama seperti deviceTerbitkanSesi: kegagalan menulis tidak boleh
+    // menggagalkan request. Paling buruk, penyelarasan diulang pada
+    // request berikutnya atau oleh SUPABASE_TARIK_SESI.
+    console.warn('Gagal menyelaraskan SessionID: ' + e.message);
+  }
+  return sid;
+}
+
+/**
  * Cabut sesi seorang user (dipakai admin: "paksa logout").
  */
 function deviceCabutSesi(userId) {

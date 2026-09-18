@@ -21,6 +21,14 @@
 const AUTH_SECRET_KEY = 'AUTH_SECRET';
 const TOKEN_LIFETIME_MS = 12 * 60 * 60 * 1000; // 12 jam
 
+// Ambang "token ini baru saja terbit". Lihat authorizeRequest: login
+// lewat Supabase menerbitkan SessionID di Postgres, dan Script
+// Properties baru menyusul lewat SUPABASE_TARIK_SESI (trigger 1 menit).
+// Di dalam jendela itu token yang BENAR tampak kedaluwarsa. Nilainya
+// harus lebih besar dari periode trigger, dan sekecil mungkin selebihnya:
+// selama jendela ini sesi lama di perangkat lain masih ikut hidup.
+const SESI_TOLERANSI_BARU_MS = 2 * 60 * 1000; // 2 menit
+
 // =======================================================
 // SETUP — JALANKAN SEKALI
 // =======================================================
@@ -337,7 +345,33 @@ function authorizeRequest(data) {
       return { ok: false, message: 'SESI_HABIS' };
     }
     if (sesiBerlaku && sesiToken !== sesiBerlaku) {
-      return { ok: false, message: 'SESI_DIGANTI' };
+      // -----------------------------------------------------------
+      // JANGAN LANGSUNG MENGGUSUR TOKEN YANG BARU SAJA TERBIT.
+      //
+      // Sejak login pindah ke Edge Function Supabase, SessionID baru
+      // lahir di Postgres — BUKAN di sini. Script Properties baru
+      // mengetahuinya setelah SUPABASE_TARIK_SESI berjalan. Sepanjang
+      // jeda itu perbandingan di atas membaca nilai LAMA, sehingga yang
+      // tergusur justru sesi yang baru dan benar: karyawan login,
+      // beberapa detik kemudian dilempar kembali ke layar login.
+      //
+      // Umur token dihitung dari `e` (= waktu terbit + TOKEN_LIFETIME_MS),
+      // jadi tidak ada field baru dan token terbitan Supabase maupun
+      // Apps Script sama-sama terbaca.
+      // -----------------------------------------------------------
+      const umurToken = TOKEN_LIFETIME_MS - (Number(auth.e) - new Date().getTime());
+      const masihBaru = umurToken >= 0 && umurToken < SESI_TOLERANSI_BARU_MS;
+
+      if (!masihBaru) {
+        return { ok: false, message: 'SESI_DIGANTI' };
+      }
+
+      // Selaraskan sekarang juga, jangan menunggu trigger. Inilah yang
+      // membuat perangkat LAMA tergusur seketika pada request
+      // berikutnya — tokennya sudah lewat ambang, jadi jatuh ke cabang
+      // di atas. Biayanya satu penulisan properti, dan hanya sekali per
+      // login, bukan per request.
+      if (typeof deviceCatatSesi === 'function') deviceCatatSesi(auth.u, sesiToken);
     }
   }
 

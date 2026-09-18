@@ -287,6 +287,47 @@ sudah pernah berhasil.
 
 ---
 
+## 6b. Tambalan 18 Sep 2026 — "Akun Anda dipakai login di perangkat lain"
+
+**Gejalanya.** Login berhasil dan terasa cepat. Beberapa detik kemudian
+muncul alert `SESI_DIGANTI`, halaman dimuat ulang, dan karyawan kembali ke
+layar login. Berulang setiap kali login.
+
+**Sebabnya.** Sejak login pindah, SessionID lahir di Postgres
+(`login/index.ts`), sementara `authorizeRequest` di `Auth.gs` masih
+membandingkannya dengan Script Property `SESI_<userId>` — dan property itu
+baru menyusul lewat `SUPABASE_TARIK_SESI()`, trigger 1 menitan. Di dalam
+jeda itu perbandingan membaca SessionID **lama**.
+
+Catatan di bagian 3 menyebut konsekuensinya sebagai "penggusuran telat 60
+detik, satu akun bisa hidup di dua perangkat". Itu keliru arah:
+perbandingannya satu sisi, jadi yang tergusur justru **sesi baru yang
+benar**, sedangkan sesi lama tetap sah. Login pertama setelah fitur
+dinyalakan lolos (property masih kosong); setiap login sesudahnya kena.
+
+**Tambalannya.** Di `Auth.gs`, token yang umurnya di bawah
+`SESI_TOLERANSI_BARU_MS` (2 menit, dihitung dari field `e`) tidak langsung
+digusur saat SessionID-nya tidak cocok. Sebagai gantinya ia
+**menyelaraskan** property lewat `deviceCatatSesi()` yang baru di
+`Devices.gs`.
+
+Dua akibat yang disengaja:
+
+- Perangkat **lama** tergusur pada request berikutnya, bukan setelah
+  menunggu penarikan — tokennya sudah lewat ambang 2 menit.
+- `SUPABASE_TARIK_SESI()` turun pangkat menjadi jaring pengaman. Aturan
+  satu-perangkat tetap berjalan walau triggernya belum terpasang.
+
+Biayanya satu penulisan properti per login, bukan per request. Jendela
+dua-perangkat menyempit dari 60 detik menjadi selisih waktu antara login
+dan request pertama.
+
+**Kalau gejalanya kembali muncul setelah tambalan ini**, yang pertama
+dicurigai bukan lagi jeda penarikan, melainkan `AUTH_SECRET` di Supabase
+yang berbeda dengan milik Apps Script — buktikan dengan
+`SUPABASE_UJI_LOGIN()`.
+
+
 ## 7. Yang BELUM dikerjakan
 
 Fase ini sengaja berhenti di login. Yang berikutnya, urut dari yang paling
