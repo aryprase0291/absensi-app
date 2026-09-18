@@ -94,8 +94,9 @@ Setiap bagiannya dibungkus `try/catch` sendiri. Satu bagian yang gagal
 mengambil bagian itu sendiri seperti dulu — bukan menjatuhkan seluruh
 pembukaan aplikasi.
 
-`handleLogin` juga ikut membawa `stats`, `gpsTracking`, dan `approval`,
-sehingga **login pun tidak lagi disusul request apa pun**.
+`handleLogin` ikut membawa `gpsTracking` — murni Script Properties,
+tidak menyentuh sheet. Statistik dan angka approval **sengaja tidak
+ikut**; alasannya di bagian 7.
 
 **Frontend** — `bootAwal` menampung jawaban itu, dan `bootMenunggu`
 menahan layar-layar di bawah supaya tidak menembak request sendiri
@@ -105,7 +106,12 @@ selama jawabannya masih di perjalanan.
 |---|---|---|
 | Sesi dipulihkan (karyawan biasa) | 4 request | **1** |
 | Sesi dipulihkan (penyetuju) | 5 request | **1** |
-| Login baru | 1 login + 3-4 susulan | **1** |
+| Login baru | 1 login + 3-4 susulan | **1 login + 1 latar belakang** |
+
+> **Dikoreksi di 1.0.25 — lihat bagian 7.** Versi pertama dokumen ini
+> menulis "login baru: 1 request", karena statistik dan angka approval
+> ikut dititipkan di respons login. Hitungan requestnya benar, tetapi
+> yang dirasakan karyawan justru memburuk.
 
 Angka lonceng approval sengaja dikirim **hanya jumlahnya**, bukan
 daftarnya: layar Approval mengambil daftar lengkap sendiri saat
@@ -288,3 +294,93 @@ Urut dari yang paling layak dikerjakan lebih dulu:
    `GEOCACHE_PETA_MAKS_ENTRI`, simpanannya berhenti dipakai dan sheet
    dibaca lagi setiap kali. Log akan menyebutkannya lebih dulu, jadi ini
    tidak akan menjadi kejutan.
+
+---
+
+## 7. KOREKSI (1.0.25) — kenapa statistik dikeluarkan lagi dari respons login
+
+Ditambahkan 18 Sep 2026, setelah laporan: **"login butuh ~10 detik baru
+masuk dashboard."**
+
+### Apa yang salah
+
+1.0.24 menitipkan `stats` dan angka lonceng approval di respons login,
+dengan alasan menghemat satu request. Hitungan requestnya benar. Yang
+diabaikan adalah **apa yang sebenarnya ditunggu karyawan**.
+
+| | Sebelum 1.0.24 | 1.0.24 |
+|---|---|---|
+| Yang dikerjakan respons login | baca Users + simpanan | + `hitungStats` + (penyetuju) sisir sheet Absensi |
+| Layar dashboard muncul setelah | respons login | respons login **dan** seluruh perhitungan selesai |
+| Angka statistik muncul setelah | request kedua (layar sudah terlihat) | bersamaan dengan layar |
+
+Jadi 1.0.24 menukar **satu request** dengan **layar yang muncul lebih
+lambat**. Total kerja server memang turun; yang naik justru satu-satunya
+angka yang diperhatikan karyawan — berapa lama menatap layar kosong.
+
+Untuk akun **admin/HRD** efeknya paling parah: `_susunApprovalList_`
+menyisir sheet `Absensi` untuk SEMUA orang, dan itu ikut ditunggu
+sebelum dashboard-nya muncul.
+
+### Aturannya sekarang
+
+Yang boleh ikut di respons login hanyalah yang **dibutuhkan untuk
+menggambar layar** DAN **tidak menyentuh sheet besar**:
+
+| Boleh | Tidak boleh |
+|---|---|
+| `masterData`, `pengumuman`, `periode` (dari simpanan) | `stats` — menyisir jendela `Absensi` + indeks `dbabsen` |
+| `gpsTracking` (Script Properties) | `approval` — menyisir `Absensi` untuk semua orang |
+
+Statistik dan angka approval diambil Dashboard lewat **satu** request
+`buka_aplikasi` di **latar belakang** — layar sudah terlihat, angkanya
+menyusul. Empat request lama tetap menjadi satu; yang berubah hanya
+kapan ia dijalankan.
+
+Aturan ini ditulis sebagai komentar panjang di dua tempat yang paling
+mungkin dilanggar lagi: nomor 6 di `handleLogin` (`Code.gs`) dan
+`handleLogin` di `src/App.js`.
+
+### Pelajarannya
+
+**Menghitung request bukan mengukur kecepatan.** Yang diukur karyawan
+adalah jarak antara menekan tombol dan melihat layar. Menggabungkan dua
+request menjadi satu hanya membantu kalau keduanya memang sama-sama
+ditunggu; kalau yang satu tadinya berjalan di belakang layar,
+menggabungkannya justru memindahkan biayanya ke depan mata.
+
+### Cara mengukurnya sekarang
+
+`Profiler.gs` punya dua fungsi baru:
+
+- **`PROFILE_MASUK()`** — merinci waktu SETIAP bagian jalur masuk
+  (baca Users, simpanan, indeks dbabsen, jendela Absensi, `hitungStats`,
+  daftar approval) dalam satu tabel, lengkap dengan bagian terberatnya.
+  Tanpa efek samping: tidak menerbitkan SessionID, tidak menulis sel.
+- **`PROFILE_MASUK_DINGIN()`** — sama, tetapi seluruh simpanan dibuang
+  lebih dulu, sehingga yang terukur adalah kondisi terburuk: karyawan
+  pertama yang login sesudah import data mesin.
+
+Dari sisi HP, buka console browser lalu login — ada baris
+`[absensi] request login: N ms`. Itu memisahkan tiga kemungkinan yang
+sering tertukar:
+
+| Yang terlihat | Artinya |
+|---|---|
+| angka besar | server atau jaringan |
+| angka kecil, dashboard tetap lama | pengisian dashboard, atau **gerbang GPS** |
+
+Gerbang GPS layak dicurigai lebih dulu daripada yang terlihat. Pada
+login pertama di sebuah perangkat (izin lokasi belum pernah diberikan),
+`src/utils/gpsWajib.js` mencoba **GPS presisi tinggi dengan batas 12
+detik** sebelum jatuh ke lokasi jaringan. Di dalam gedung, percobaan
+pertama itu hampir selalu habis waktunya — dan selama itu layar
+dashboard ditutup lapisan "Memeriksa Lokasi…". Karyawan yang izinnya
+SUDAH diberikan tidak mengalaminya, karena gerbangnya berjalan diam-diam
+di belakang layar.
+
+**Ongkos tetap Apps Script tidak bisa dihilangkan dari kode.** Setiap
+POST ke web app dijawab redirect 302 lalu diikuti GET kedua, ditambah
+boot container — biasanya 1-3 detik. Jadi target "3 detik" hanya masuk
+akal kalau kerja servernya sendiri di bawah ~1 detik. `PROFILE_MASUK()`
+yang akan memberi tahu apakah sudah begitu.

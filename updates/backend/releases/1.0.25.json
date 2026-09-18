@@ -1,0 +1,11 @@
+{
+  "version": "1.0.25",
+  "releasedAt": "2026-09-18",
+  "required": true,
+  "notes": [
+    "Koreksi 1.0.24: statistik dashboard dan angka approval TIDAK lagi dititipkan di respons login. Keduanya menyisir sheet, dan menahannya di respons login membuat layar dashboard baru muncul setelah perhitungan selesai — jumlah request berkurang, tetapi yang dirasakan karyawan justru lebih lama.",
+    "Respons login sekarang hanya membawa yang dibutuhkan untuk menggambar layar dan yang biayanya tidak menyentuh sheet besar: masterData, pengumuman, periode, dan status pelacakan GPS.",
+    "Action `buka_aplikasi` tetap menggabungkan empat permintaan pengisi dashboard menjadi satu, kini dijalankan di latar belakang untuk jalur login maupun sesi dipulihkan.",
+    "Profiler.gs: PROFILE_MASUK() merinci waktu tiap bagian jalur masuk tanpa efek samping, dan PROFILE_MASUK_DINGIN() mengukur kondisi terburuk setelah simpanan dibuang."
+  ]
+}

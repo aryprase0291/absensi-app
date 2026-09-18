@@ -1,0 +1,10 @@
+{
+  "version": "1.0.25",
+  "releasedAt": "2026-09-18",
+  "required": true,
+  "notes": [
+    "Layar dashboard kini muncul segera setelah login dijawab, tidak lagi menunggu seluruh statistik selesai dihitung di server.",
+    "Angka statistik, pengumuman, dan lonceng approval menyusul di latar belakang lewat satu permintaan, tanpa menahan layar.",
+    "Lama permintaan login dicatat ke console browser, sehingga penyebab 'login lama' bisa dipisahkan antara server, jaringan, dan gerbang lokasi."
+  ]
+}

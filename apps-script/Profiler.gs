@@ -8,8 +8,19 @@
 //   3. Pilih fungsi PROFILE_SEMUA dari dropdown, klik Run
 //   4. Buka menu "Eksekusi" / "Executions" untuk melihat hasil log
 //
-// AMAN: seluruh fungsi di sini HANYA MEMBACA. Tidak ada setValue,
-// tidak ada perubahan data apa pun di spreadsheet.
+// AMAN: tidak ada satu pun fungsi di sini yang mengubah DATA di
+// spreadsheet — tidak ada setValue, tidak ada baris ditulis.
+//
+// DUA PENGECUALIAN yang harus Anda tahu sebelum menjalankannya:
+//   PROFILE_LOGIN()        memanggil handleLogin sungguhan, sehingga
+//                          menerbitkan SessionID baru — karyawan pemilik
+//                          akun itu akan terlempar ke layar login.
+//   PROFILE_MASUK_DINGIN() membuang seluruh SIMPANAN (cache) lebih dulu.
+//                          Datanya tidak hilang, tapi beberapa permintaan
+//                          berikutnya akan lambat sampai simpanannya
+//                          tersusun ulang sendiri.
+// Untuk mencari bagian yang lambat, PROFILE_MASUK() sudah cukup dan
+// tidak punya efek samping apa pun.
 // =======================================================
 
 // Logger.log Apps Script TIDAK mendukung penentu lebar seperti %-16s —
@@ -85,7 +96,12 @@ function PROFILE_SHEETS() {
 
 /**
  * Ukur berapa lama handleLogin berjalan.
- * ISI dulu username & password milik user uji.
+ *
+ * PERINGATAN: fungsi ini memanggil handleLogin SUNGGUHAN, dan
+ * handleLogin menerbitkan SessionID baru. Artinya karyawan yang sedang
+ * memakai akun itu di HP-nya akan TERLEMPAR KE LAYAR LOGIN.
+ * Untuk sekadar mencari bagian mana yang lambat, pakai PROFILE_MASUK()
+ * di bawah — fungsinya hanya membaca, tanpa efek samping sama sekali.
  */
 function PROFILE_LOGIN() {
   const USERNAME = '';   // <-- isi, contoh: '25'
@@ -101,7 +117,183 @@ function PROFILE_LOGIN() {
   const ms = new Date().getTime() - t0;
 
   Logger.log('handleLogin  : %s ms', ms);
-  Logger.log('  membaca 3 sheet penuh: Users + MasterData + MASTER-CUTI');
+  Logger.log('CATATAN: sesi karyawan pemilik akun ini baru saja digusur.');
+}
+
+// =======================================================
+// PROFILE_MASUK — RINCIAN "KENAPA MASUK APLIKASI LAMA"
+//
+// Menjawab pertanyaan yang tidak bisa dijawab oleh satu angka total:
+// dari sekian detik itu, DETIK YANG MANA milik siapa.
+//
+// Mengukur setiap bagian jalur masuk secara terpisah, dalam kondisi
+// simpanan apa adanya (biasanya sudah panas), TANPA efek samping — tidak
+// ada SessionID baru, tidak ada sel yang ditulis, tidak ada karyawan yang
+// terlempar dari aplikasinya. Untuk kondisi terburuk, jalankan
+// PROFILE_MASUK_DINGIN() di bawahnya.
+//
+// CARA PAKAI
+//   1. Isi USER_ID di bawah (kolom A sheet Users, contoh
+//      'USR-1765521090380'). Ambil dari akun yang Anda pakai menguji.
+//   2. Pilih PROFILE_MASUK dari dropdown, klik Run.
+//   3. Buka Eksekusi / Executions untuk membaca tabelnya.
+//
+// CARA MEMBACANYA
+//   Angka di sini adalah waktu KERJA DI SERVER saja. Waktu yang Anda
+//   rasakan di HP = angka ini + ongkos tetap Apps Script (redirect 302
+//   + boot container, biasanya 1-3 detik dan TIDAK bisa dihilangkan
+//   dari sisi kode) + waktu jaringan.
+//
+//   Jadi kalau tabel ini menunjukkan total 800 ms sementara di HP terasa
+//   10 detik, masalahnya BUKAN di sini — cari di DevTools > Network,
+//   atau di gerbang GPS (lihat src/utils/gpsWajib.js).
+// =======================================================
+function PROFILE_MASUK() {
+  const USER_ID = '';   // <-- WAJIB diisi
+
+  if (!USER_ID) {
+    Logger.log('Isi dulu USER_ID di dalam fungsi PROFILE_MASUK.');
+    Logger.log('Ambil dari kolom A sheet Users, contoh: USR-1765521090380');
+    return;
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shUsers = ss.getSheetByName('Users');
+  const shAbsensi = ss.getSheetByName('Absensi');
+
+  // Cari baris user supaya NIK & role-nya bisa dipakai apa adanya.
+  const rowsUser = bacaSheet(shUsers, 14);
+  let baris = null;
+  for (let i = 1; i < rowsUser.length; i++) {
+    if (String(rowsUser[i][0]) === String(USER_ID)) { baris = rowsUser[i]; break; }
+  }
+  if (!baris) {
+    Logger.log('USER_ID "%s" tidak ada di sheet Users. Periksa lagi kolom A.', USER_ID);
+    return;
+  }
+
+  const role = String(baris[5] || '');
+  const nik = String(baris[7] || '');
+  const lokasi = baris[13] || 'All';
+  const divisi = baris[4];
+
+  const hasil = [];
+  const ukur = function (nama, fn) {
+    const t = new Date().getTime();
+    let catatan = '';
+    try { catatan = fn() || ''; } catch (e) { catatan = 'GAGAL: ' + e.message; }
+    hasil.push({ nama: nama, ms: new Date().getTime() - t, catatan: catatan });
+  };
+
+  Logger.log('PROFIL JALUR MASUK — %s', new Date());
+  Logger.log('User: %s | role: %s | NIK: %s', USER_ID, role || '-', nik || '-');
+  Logger.log('');
+
+  // --- Bagian yang dikerjakan handleLogin --------------------------
+  ukur('bacaSheet(Users,14)', function () {
+    const r = bacaSheet(shUsers, 14);
+    return (r.length - 1) + ' baris';
+  });
+
+  ukur('getMasterDataCached', function () {
+    return getMasterDataCached().length + ' entri';
+  });
+
+  ukur('getPetaCutiCached', function () {
+    return Object.keys(getPetaCutiCached()).length + ' NIK';
+  });
+
+  ukur('_ambilGeofenceUser', function () {
+    const g = _ambilGeofenceUser(USER_ID);
+    return g.required ? 'wajib' : 'tidak wajib';
+  });
+
+  ukur('getPengumumanAktifCached', function () {
+    return getPengumumanAktifCached() ? 'ada' : 'tidak ada';
+  });
+
+  ukur('getSemuaPeriode_', function () {
+    return getSemuaPeriode_().length + ' periode';
+  });
+
+  ukur('_ringkasGpsTracking_', function () {
+    return _ringkasGpsTracking_(USER_ID).aktif ? 'dilacak' : 'tidak dilacak';
+  });
+
+  // --- Bagian yang dikerjakan buka_aplikasi ------------------------
+  const periode = getPeriodeAbsenAktif_();
+
+  ukur('getIndeksDbAbsen', function () {
+    return Object.keys(getIndeksDbAbsen(periode)).length + ' NIK';
+  });
+
+  ukur('jendela sheet Absensi', function () {
+    const j = bacaAbsensiPeriode_(shAbsensi, periode, 13);
+    return j.baris.length + ' dari ' + (shAbsensi.getLastRow() - 1) + ' baris'
+      + ' (mulai baris ' + j.offsetBaris + ')';
+  });
+
+  ukur('hitungStats (utuh)', function () {
+    const st = hitungStats(String(USER_ID), role, nik, null, periode);
+    return st.hari_tercatat + ' hari tercatat';
+  });
+
+  if (_isApprovalRoleValue(role)) {
+    ukur('_susunApprovalList_', function () {
+      const ap = _susunApprovalList_({
+        role: role.toLowerCase(), lokasi: lokasi, divisi: divisi, userId: String(USER_ID)
+      });
+      return ap.list.length + ' pengajuan pending';
+    });
+  } else {
+    hasil.push({ nama: '_susunApprovalList_', ms: 0, catatan: 'dilewati (bukan penyetuju)' });
+  }
+
+  // --- Tabel -------------------------------------------------------
+  Logger.log(_profPad('BAGIAN', 26) + _profPadL('ms', 7) + '  KETERANGAN');
+  Logger.log('-'.repeat(72));
+  let total = 0;
+  let terberat = { nama: '-', ms: -1 };
+  hasil.forEach(function (h) {
+    total += h.ms;
+    if (h.ms > terberat.ms) terberat = h;
+    Logger.log(_profPad(h.nama, 26) + _profPadL(h.ms, 7) + '  ' + h.catatan);
+  });
+  Logger.log('-'.repeat(72));
+  Logger.log(_profPad('TOTAL KERJA SERVER', 26) + _profPadL(total, 7));
+  Logger.log('');
+  Logger.log('Bagian terberat: %s (%s ms)', terberat.nama, terberat.ms);
+  Logger.log('');
+  Logger.log('CATATAN PENTING soal "hitungStats (utuh)": angkanya SUDAH');
+  Logger.log('termasuk getIndeksDbAbsen dan jendela Absensi di atasnya,');
+  Logger.log('jadi jangan dijumlahkan dua kali. TOTAL di atas memang');
+  Logger.log('menghitungnya berlebih — yang dipakai untuk membandingkan');
+  Logger.log('adalah angka per baris, bukan totalnya.');
+  Logger.log('');
+  Logger.log('Waktu yang Anda RASAKAN di HP = angka di atas');
+  Logger.log('  + ongkos tetap Apps Script (redirect 302 + boot container,');
+  Logger.log('    biasanya 1-3 detik, tidak bisa dihilangkan dari kode)');
+  Logger.log('  + waktu jaringan.');
+  Logger.log('Kalau selisihnya jauh, penyebabnya BUKAN di server.');
+  Logger.log('Periksa DevTools > Network dan gerbang GPS (gpsWajib.js).');
+}
+
+/**
+ * Sama seperti PROFILE_MASUK, tetapi seluruh simpanan dibuang dulu
+ * sehingga yang terukur adalah kondisi PALING BURUK — yaitu yang
+ * dialami karyawan pertama yang login setelah import data mesin.
+ *
+ * Aman: yang dibuang hanya simpanan, bukan data. Semuanya tersusun
+ * ulang otomatis pada pemanggilan berikutnya.
+ */
+function PROFILE_MASUK_DINGIN() {
+  Logger.log('Membuang seluruh simpanan lebih dulu...');
+  try { CACHE_BERSIHKAN(); } catch (e) { Logger.log('CACHE_BERSIHKAN: ' + e.message); }
+  try { bersihkanIndeksDbAbsen(); } catch (e) { Logger.log('bersihkanIndeksDbAbsen: ' + e.message); }
+  try { ABSENSI_JENDELA_BERSIHKAN(); } catch (e) { Logger.log('ABSENSI_JENDELA_BERSIHKAN: ' + e.message); }
+  try { GEOCACHE_PETA_BERSIHKAN(); } catch (e) { Logger.log('GEOCACHE_PETA_BERSIHKAN: ' + e.message); }
+  Logger.log('');
+  PROFILE_MASUK();
 }
 
 /**

@@ -407,16 +407,25 @@ useEffect(() => {
 }, [cekVersiFrontend]);
 
     // ----------------------------------------------------------------
-    // SATU REQUEST UNTUK MEMBUKA APLIKASI (Sep 2026)
+    // SATU REQUEST LATAR BELAKANG UNTUK MENGISI DASHBOARD (Sep 2026)
     //
-    // `bootAwal` menampung jawaban action `buka_aplikasi`: nomor versi,
-    // statistik dashboard, pengumuman, daftar periode, status pelacakan
-    // GPS, dan angka lonceng approval — semuanya sekaligus. Saat login,
-    // isinya datang dari respons login yang memang sudah membawa hal
-    // yang sama.
+    // `bootAwal` menampung jawaban action `buka_aplikasi`: statistik
+    // dashboard, pengumuman, daftar periode, status pelacakan GPS, dan
+    // angka lonceng approval — semuanya sekaligus, menggantikan empat
+    // request terpisah yang dulu ditembakkan begitu dashboard terbuka.
     //
-    // `bootMenunggu` menahan layar-layar di bawah supaya TIDAK menembak
-    // request sendiri selama jawaban itu masih di perjalanan. Nilai
+    // KENAPA DI LATAR BELAKANG, BUKAN DITITIPKAN DI RESPONS LOGIN
+    // (pelajaran 18 Sep 2026, dibayar dengan satu percobaan yang gagal):
+    // menitipkannya di respons login memang membuat jumlah request lebih
+    // sedikit lagi, tetapi layar dashboard jadi baru muncul SETELAH
+    // seluruh statistik selesai dihitung di server. Yang dirasakan
+    // karyawan adalah "login makin lama", padahal total kerjanya
+    // berkurang. Sekarang layarnya muncul begitu login dijawab, dan
+    // angkanya menyusul di belakang layar — satu request, tidak menahan
+    // apa pun.
+    //
+    // `bootMenunggu` menahan layar-layar di bawah supaya tidak menembak
+    // request sendiri untuk data yang sedang dalam perjalanan. Nilai
     // awalnya dibaca langsung dari sessionStorage (bukan lewat efek),
     // karena Dashboard sudah ter-mount pada render yang sama dan akan
     // keburu menembak get_stats kalau menunggu satu putaran efek.
@@ -425,6 +434,13 @@ const [bootAwal, setBootAwal] = useState(null);
 const [bootMenunggu, setBootMenunggu] = useState(() => {
   try { return !!sessionStorage.getItem('app_user'); } catch (e) { return false; }
 });
+
+    // Status pelacakan GPS dari respons login. Dipisah dari `bootAwal`
+    // dengan sengaja: nilainya sudah ada sejak detik login, jadi pelacak
+    // bisa mulai tanpa menunggu request latar belakang selesai.
+const [gpsTrackingAwal, setGpsTrackingAwal] = useState(null);
+
+const bootDijalankanRef = useRef(false);
 
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
 useEffect(() => { 
@@ -435,26 +451,37 @@ useEffect(() => {
     if (m) setMasterData(JSON.parse(m)); 
     setView('dashboard'); 
   } 
-  // SATU REQUEST UNTUK SELURUH PEMBUKAAN APLIKASI — HANYA SAAT SESI
-  // DIPULIHKAN. Saat belum ada sesi, layar berikutnya pasti layar login
-  // dan respons login sudah membawa semuanya.
-  //
-  // Dulu di sini hanya ada `check_version`, tetapi begitu dashboard
-  // terbuka ia disusul EMPAT request lagi yang masing-masing menjadi
-  // satu eksekusi Apps Script tersendiri: get_stats, pengumuman, status
-  // pelacakan GPS, dan daftar approval. Yang mahal bukan pekerjaannya —
-  // melainkan ongkos tetap per eksekusi (redirect 302, boot container,
-  // antrean kuota eksekusi serentak). Lima request itulah yang membuat
-  // aplikasi terasa makin lambat dibuka setiap kali ada fitur baru.
-  //
-  // Sekarang kelimanya dijawab handleBukaAplikasi dalam SATU eksekusi.
+  // Pengisian dashboard ditangani efek `buka_aplikasi` di bawah, yang
+  // berjalan untuk kedua jalur — sesi dipulihkan MAUPUN login baru.
   //
   // Bundle frontend yang basi tetap terdeteksi tanpa request apa pun:
   // cekVersiFrontend() di atas membaca update-manifest.json langsung dari
   // hosting, tanpa menyentuh Apps Script sama sekali.
-  if (!u) { setBootMenunggu(false); return; }
+  if (!u) setBootMenunggu(false);
+}, []);
+
+    // ----------------------------------------------------------------
+    // REQUEST PENGISI DASHBOARD — SATU KALI PER SESI, DI LATAR BELAKANG
+    //
+    // Menggantikan empat request yang dulu ditembakkan sendiri-sendiri
+    // begitu dashboard terbuka: get_stats, get_latest_announcement,
+    // get_gps_tracking_status, dan get_approval_list. Masing-masing dulu
+    // menjadi satu eksekusi Apps Script tersendiri — dan yang mahal
+    // bukan pekerjaannya, melainkan ongkos tetapnya (redirect 302, boot
+    // container, antrean kuota eksekusi serentak).
+    //
+    // Dikunci pada user.id, bukan objek `user`: objek itu diganti setiap
+    // kali sisa cuti diperbarui sesudah absen, dan kalau efek ini ikut
+    // dijalankan ulang, request yang sedang berjalan akan dibatalkan
+    // tanpa pernah ada yang menggantikannya.
+    // ----------------------------------------------------------------
+useEffect(() => {
+  if (!user || !user.id) return;
+  if (bootDijalankanRef.current) return;
+  bootDijalankanRef.current = true;
 
   let batal = false;
+  setBootMenunggu(true);
   fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'buka_aplikasi' }) })
     .then((response) => response.json())
     .then((data) => {
@@ -467,7 +494,8 @@ useEffect(() => {
     .catch(() => { /* jaringan gagal: layar di bawah mengambil sendiri seperti dulu */ })
     .finally(() => { if (!batal) setBootMenunggu(false); });
   return () => { batal = true; };
-}, [cekVersi]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [user && user.id, cekVersi]);
 
     //----FUNGSI EKSEKUSI UPDATE (MEMBERSIHKAN CACHE)----
 const performUpdate = async () => {
@@ -555,6 +583,9 @@ const handleLogout = useCallback(() => {
   // tidak dibuang, status pelacakan dan angka approval orang lain bisa
   // ikut terpakai oleh user berikutnya yang login di HP yang sama.
   setBootAwal(null);
+  setGpsTrackingAwal(null);
+  setBootMenunggu(false);
+  bootDijalankanRef.current = false;
   sessionStorage.removeItem('app_stats_awal');
   sessionStorage.removeItem('app_stats_terakhir');
   sessionStorage.removeItem('app_pengumuman_awal');
@@ -576,17 +607,17 @@ useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemo
 const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumumanAwal, pengumumanDisertakan, periodsAwal, ekstra) => {
   cekVersi(versiServer);
 
-  // Respons login sudah membawa status pelacakan GPS dan angka lonceng
-  // approval. Dititipkan ke bootAwal supaya jalur login dan jalur sesi
-  // dipulihkan memakai satu sumber data yang sama — dan supaya pelacak
-  // GPS serta lonceng approval tidak lagi menembak satu eksekusi Apps
-  // Script masing-masing begitu dashboard terbuka.
-  setBootAwal({
-    dariLogin: true,
-    gpsTracking: (ekstra && ekstra.gpsTracking) || null,
-    approval: (ekstra && ekstra.approval) || null
-  });
-  setBootMenunggu(false);
+  // Status pelacakan GPS ikut di respons login (murni Script Properties,
+  // tidak menyentuh sheet). Dengan ini pelacak bisa mulai seketika tanpa
+  // menembak get_gps_tracking_status sendiri.
+  //
+  // `bootAwal` SENGAJA tidak diisi di sini: isinya statistik dan angka
+  // approval, yang memang diambil belakangan lewat `buka_aplikasi` agar
+  // layar dashboard tidak ditahan menunggu perhitungannya.
+  setGpsTrackingAwal((ekstra && ekstra.gpsTracking) || null);
+  setBootAwal(null);
+  setBootMenunggu(true);
+  bootDijalankanRef.current = false;
 
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift'), sheetImport: rawMasterData.filter(m => m.kategori === 'SheetImport') };
   setMasterData(p);
@@ -822,20 +853,23 @@ useEffect(() => {
   // masih menahan hanya menghasilkan ping gagal beruntun — GPS-nya memang
   // belum bisa dibaca, itu justru sebabnya gerbang muncul.
   if (!gpsGate.lolos) return;
-  // Status pelacakan sudah ikut di respons login / buka_aplikasi. Selama
-  // jawabannya masih di perjalanan, pelacak ditahan — kalau dijalankan
-  // sekarang ia akan menembak get_gps_tracking_status sendiri, yaitu
-  // persis request yang sedang dihapus dari jalur pembukaan aplikasi.
-  if (bootMenunggu) return;
+  // Status pelacakan datang dari respons login (jalur login) atau dari
+  // respons buka_aplikasi (jalur sesi dipulihkan). Selama BELUM ada
+  // satu pun dari keduanya dan jawabannya masih di perjalanan, pelacak
+  // ditahan — kalau dijalankan sekarang ia akan menembak
+  // get_gps_tracking_status sendiri, yaitu persis request yang sedang
+  // dihapus dari jalur pembukaan aplikasi.
+  const statusPelacak = gpsTrackingAwal || (bootAwal && bootAwal.gpsTracking) || null;
+  if (!statusPelacak && bootMenunggu) return;
   const hentikan = mulaiPelacakGps({
     fetchApi,
     scriptUrl: SCRIPT_URL,
     user,
     onStatus: setGpsTrackStatus,
-    statusAwal: (bootAwal && bootAwal.gpsTracking) || null
+    statusAwal: statusPelacak
   });
   return () => { try { hentikan(); } catch (e) { /* abaikan */ } };
-}, [user, gpsGate.lolos, bootAwal, bootMenunggu]);
+}, [user, gpsGate.lolos, gpsTrackingAwal, bootAwal, bootMenunggu]);
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
 return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-2">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Aplikasi akan diperbarui ke <strong>versi {newVersion}</strong>.</p>{!updateGagalBerulang&&(<p className="text-[12px] font-semibold mb-5">{view === 'form' ? (<span className="text-amber-600">Menunggu Anda menyelesaikan form absen. Update berjalan otomatis setelah keluar dari form.</span>) : (<span className="text-blue-600">Memuat ulang otomatis dalam {updateHitungMundur === null ? 5 : updateHitungMundur} detik…</span>)}</p>)}{updateGagalBerulang&&(<div className="mb-5" />)}<button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button>{updateGagalBerulang ? (<><p className="text-[11px] text-amber-600 font-semibold mt-4 leading-relaxed">Sudah beberapa kali dimuat ulang tetapi versinya tetap sama. Kemungkinan besar file aplikasi versi baru belum diunggah ke server — bukan kesalahan HP Anda.</p><button onClick={lanjutTanpaUpdate} className="w-full mt-3 border border-slate-300 text-slate-600 font-bold py-3 rounded-xl active:scale-95 transition-all">Lanjutkan dengan versi ini</button><p className="text-[10px] text-slate-400 mt-3">Absensi tetap dapat dipakai. Laporkan pesan ini ke Admin.</p></>) : (<p className="text-[10px] text-slate-400 mt-4">*Cache aplikasi dibersihkan lalu halaman dimuat ulang otomatis.</p>)}</div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
@@ -8763,11 +8797,19 @@ function LoginScreen({ onLogin }) {
       // Identitas perangkat ikut dikirim: server memakainya untuk aturan
       // 1 perangkat 1 akun dan untuk menggusur sesi di HP lain
       // (lihat apps-script/Devices.gs).
+      // Lama request login dicatat ke console supaya penyebab "login
+      // lama" bisa dipisahkan tanpa membuka DevTools > Network:
+      //   angka besar di sini  -> masalahnya di server / jaringan
+      //   angka kecil di sini  -> masalahnya SESUDAH login (gerbang GPS,
+      //                           atau pengisian dashboard)
+      // Buka console browser, lalu login.
+      const mulaiLogin = Date.now();
       const response = await fetchApi(SCRIPT_URL, {
         method: 'POST',
         body: JSON.stringify({ action: 'login', username, password, ...infoPerangkat() })
       });
       const data = await response.json();
+      console.info('[absensi] request login: ' + (Date.now() - mulaiLogin) + ' ms');
       if (data.result === 'success' && data.user) {
         onLogin(
           data.user,
@@ -8781,10 +8823,10 @@ function LoginScreen({ onLogin }) {
             periodsAktif: data.periodsAktif || [],
             periodeDefault: data.periodeDefault || null
           },
-          {
-            gpsTracking: data.gpsTracking || null,
-            approval: data.approval || null
-          }
+          // Hanya status pelacakan GPS. Statistik dan angka approval
+          // SENGAJA tidak ikut di respons login — lihat catatan di
+          // handleLogin (App.js) dan nomor 6 di handleLogin (Code.gs).
+          { gpsTracking: data.gpsTracking || null }
         );
       } else {
         alert(data.message || 'Login Gagal');

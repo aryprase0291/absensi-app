@@ -63,11 +63,22 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.24";
-// 1.0.24 — jalur buka-aplikasi dipangkas dari 5 request jadi 1 (action
-//          `buka_aplikasi` + titipan di respons login), dan sheet Absensi
-//          tidak lagi disisir utuh oleh hitungStats maupun cek duplikat
-//          saat Kirim (JendelaAbsensi.gs).
+const APP_VERSION = "1.0.25";
+// (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
+//  updates/backend/releases/*.json — jangan disunting manual.)
+//
+// 1.0.25 — KOREKSI 1.0.24. Statistik dashboard dan angka approval
+//          DIKELUARKAN lagi dari respons login. Keduanya menyisir sheet,
+//          dan menahannya di respons login membuat layar dashboard baru
+//          muncul SETELAH perhitungan selesai: jumlah request turun,
+//          tapi yang DIRASAKAN karyawan justru lebih lama. Keduanya kini
+//          diambil Dashboard lewat `buka_aplikasi` di latar belakang.
+//          Lihat aturannya di nomor 6 dalam handleLogin, dan PERFORMA-1.0.24.md
+//          bagian 7.
+// 1.0.24 — jalur pengisi dashboard dipangkas dari 4 request jadi 1
+//          (action `buka_aplikasi`), dan sheet Absensi tidak lagi
+//          disisir utuh oleh hitungStats maupun cek duplikat saat Kirim
+//          (JendelaAbsensi.gs).
 //          Naiknya versi TIDAK wajib untuk kompatibilitas — backend baru
 //          tetap melayani klien 1.0.23, dan klien 1.0.24 di backend lama
 //          otomatis kembali memakai action lama karena `buka_aplikasi`
@@ -1905,34 +1916,35 @@ function handleLogin(data) {
       console.warn('Periode gagal dibaca saat login: ' + e.message);
     }
 
-    // 6. STATISTIK DASHBOARD IKUT DI RESPONS LOGIN (Sep 2026)
+    // 6. APA YANG BOLEH DAN TIDAK BOLEH IKUT DI RESPONS LOGIN
     //
-    // Dulu dikirim null, dan Dashboard menembak get_stats sendiri
-    // sesudahnya. Karena eksekusi Apps Script milik satu akun berjalan
-    // BERURUTAN, request itu selalu mengantre di belakang login lengkap
-    // dengan redirect 302 dan boot container-nya sendiri — satu round
-    // trip penuh yang dibayar setiap karyawan setiap pagi.
+    // PELAJARAN 18 Sep 2026 — dibayar dengan satu percobaan yang gagal.
     //
-    // Yang membuatnya dulu mahal sudah hilang: hitungStats tidak lagi
-    // menyisir seluruh sheet Absensi, hanya jendela periodenya (lihat
-    // JendelaAbsensi.gs). Dan karena login sudah memegang baris user
-    // beserta peta cutinya, keduanya dioper supaya sheet Users dan
-    // MASTER-CUTI tidak dibaca untuk kedua kalinya.
+    // Sempat dicoba menitipkan `stats` dan angka lonceng approval di
+    // sini, dengan alasan menghemat satu request. Hitungan requestnya
+    // memang benar, tetapi YANG DIRASAKAN KARYAWAN justru memburuk:
+    // layar dashboard baru muncul SETELAH seluruh statistik selesai
+    // dihitung. Sebelumnya dashboard tampil begitu login dijawab, dan
+    // angkanya menyusul di belakang layar.
     //
-    // Kegagalan di sini TIDAK menggagalkan login: stats dikirim null,
-    // dan Dashboard mengambil sendiri persis seperti dulu.
-    let statsLogin = null;
-    try {
-      statsLogin = hitungStats(
-        String(foundUser[0]), foundUser[5], noPayroll, petaCuti,
-        periodeDefault || undefined
-      );
-    } catch (e) {
-      console.warn('Stats gagal dihitung saat login: ' + e.message);
-    }
+    // Jadi aturannya sekarang: yang ikut di respons login hanyalah yang
+    // dibutuhkan untuk MENGGAMBAR layar, dan yang biayanya tidak
+    // menyentuh sheet besar:
+    //
+    //   BOLEH  — masterData, pengumuman, periode (semuanya dari
+    //            simpanan), status pelacakan GPS (Script Properties).
+    //   TIDAK  — statistik dashboard (menyisir jendela sheet Absensi +
+    //            indeks dbabsen) dan angka approval (menyisir sheet
+    //            Absensi untuk SEMUA orang). Keduanya diambil Dashboard
+    //            lewat satu request `buka_aplikasi` di latar belakang,
+    //            tanpa menahan layar.
+    //
+    // Menambahkan sesuatu ke sini berarti memperlambat munculnya layar
+    // untuk semua orang. Ukur dulu dengan PROFILE_MASUK() di Profiler.gs.
 
-    // Status pelacakan posisi — menghapus request get_gps_tracking_status
-    // yang selama ini ditembakkan pelacak GPS setiap kali aplikasi dibuka.
+    // Status pelacakan posisi — murni Script Properties, tidak menyentuh
+    // sheet. Ini menghapus request get_gps_tracking_status yang selama
+    // ini ditembakkan pelacak GPS setiap kali aplikasi dibuka.
     let gpsTrackingLogin = null;
     try {
       if (typeof _gpsTrackKonfigUser === 'function') {
@@ -1940,23 +1952,6 @@ function handleLogin(data) {
       }
     } catch (e) {
       console.warn('Status pelacakan gagal dibaca saat login: ' + e.message);
-    }
-
-    // Angka lonceng approval — menghapus request get_approval_list yang
-    // ditembakkan setiap kepala divisi begitu dashboard terbuka.
-    let approvalLogin = null;
-    try {
-      if (_isApprovalRoleValue(String(foundUser[5] || ''))) {
-        const ap = _susunApprovalList_({
-          role: String(foundUser[5] || '').toLowerCase(),
-          lokasi: foundUser[13] || 'All',
-          divisi: foundUser[4],
-          userId: String(foundUser[0])
-        });
-        approvalLogin = { total: ap.list.length, divisiCounts: ap.divisiCounts };
-      }
-    } catch (e) {
-      console.warn('Ringkasan approval gagal saat login: ' + e.message);
     }
 
     return responseJSON({
@@ -2013,14 +2008,13 @@ function handleLogin(data) {
 
       masterData: masterData,
 
-      // Stats ikut di sini supaya Dashboard tidak perlu request kedua.
-      // null = gagal dihitung; Dashboard akan mengambilnya sendiri.
-      stats: statsLogin,
+      // SENGAJA null — lihat catatan panjang di nomor 6 di atas.
+      // Dashboard mengambilnya lewat `buka_aplikasi` di latar belakang,
+      // supaya layarnya muncul lebih dulu.
+      stats: null,
 
-      // Dititipkan agar pelacak GPS dan lonceng approval tidak masing-
-      // masing menembak satu eksekusi Apps Script saat dashboard terbuka.
+      // Boleh ikut: hanya membaca Script Properties.
       gpsTracking: gpsTrackingLogin,
-      approval: approvalLogin,
 
       // pengumuman null = tidak ada pengumuman aktif ATAU gagal dibaca.
       // pengumumanDisertakan yang membedakannya: hanya true kalau
