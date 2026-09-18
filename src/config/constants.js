@@ -23,6 +23,32 @@ const PRODUCTION_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzUH1Q7iV
 
 export const SCRIPT_URL = process.env.REACT_APP_SCRIPT_URL || PRODUCTION_SCRIPT_URL;
 
+// ============================================================
+// SUPABASE (FASE 1 — LOGIN)
+//
+// Dibiarkan KOSONG secara default, dan itu disengaja: selama kedua nilai
+// ini belum diisi, aplikasi berjalan persis seperti sebelumnya — login
+// tetap lewat Apps Script. Tidak ada yang berubah sampai Anda memilih
+// mengisinya.
+//
+// Keduanya aman berada di bundle yang dikirim ke HP karyawan: kunci
+// `anon` memang dirancang untuk itu, dan seluruh tabel memakai RLS tanpa
+// policy sehingga kunci ini tidak bisa membaca atau menulis apa pun.
+// Satu-satunya pintu masuk adalah Edge Function.
+//
+// Untuk pengujian lokal, isi lewat .env.local:
+//   REACT_APP_SUPABASE_URL=https://xxxx.supabase.co
+//   REACT_APP_SUPABASE_ANON_KEY=...
+// ============================================================
+export const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || '';
+export const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || '';
+export const SUPABASE_AKTIF = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+
+// Batas tunggu login lewat Supabase. Lewat dari ini, aplikasi berhenti
+// menunggu dan mengulang ke Apps Script. Angkanya sengaja pendek: kalau
+// jalur baru tidak lebih cepat dari ini, tidak ada gunanya ditunggu.
+export const SUPABASE_BATAS_MS = 6000;
+
 // true jika sedang memakai backend selain produksi.
 // Dipakai untuk menandai dengan jelas bahwa data yang tampil bukan data asli.
 export const IS_TEST_BACKEND = SCRIPT_URL !== PRODUCTION_SCRIPT_URL;

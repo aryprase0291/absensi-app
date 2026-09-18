@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
   Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION, TIMEOUT_LABEL, BOARD_ABSENSI_URL } from './config/constants';
+import { loginLewatSupabase } from './utils/loginSupabase';
 import { FRONTEND_VERSION } from './config/updateManifest';
 import BackButton from './components/BackButton';
 import RekapExcelScreen from './screens/RekapExcelScreen';
@@ -8802,14 +8803,32 @@ function LoginScreen({ onLogin }) {
       //   angka besar di sini  -> masalahnya di server / jaringan
       //   angka kecil di sini  -> masalahnya SESUDAH login (gerbang GPS,
       //                           atau pengisian dashboard)
-      // Buka console browser, lalu login.
+      // Buka console browser, lalu login. Sumbernya ikut tercetak, jadi
+      // terlihat jelas jalur mana yang benar-benar dipakai.
       const mulaiLogin = Date.now();
-      const response = await fetchApi(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'login', username, password, ...infoPerangkat() })
-      });
-      const data = await response.json();
-      console.info('[absensi] request login: ' + (Date.now() - mulaiLogin) + ' ms');
+      const muatan = { action: 'login', username, password, ...infoPerangkat() };
+
+      // FASE 1: jalur Supabase dicoba lebih dulu. Selama SUPABASE_URL
+      // belum diisi, fungsi ini langsung mengembalikan null dan tidak ada
+      // yang berubah sama sekali dari perilaku lama.
+      //
+      // null berarti "jangan pakai jalur ini" — bisa karena belum
+      // dinyalakan, gagal, lambat, atau karena kasusnya butuh gerbang
+      // perangkat lengkap yang hanya ada di Apps Script.
+      let data = await loginLewatSupabase(muatan);
+      let sumberLogin = 'supabase';
+
+      if (!data) {
+        sumberLogin = 'apps-script';
+        const response = await fetchApi(SCRIPT_URL, {
+          method: 'POST',
+          body: JSON.stringify(muatan)
+        });
+        data = await response.json();
+      }
+
+      console.info('[absensi] request login (' + sumberLogin + '): '
+        + (Date.now() - mulaiLogin) + ' ms');
       if (data.result === 'success' && data.user) {
         onLogin(
           data.user,
