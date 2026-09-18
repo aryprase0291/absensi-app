@@ -269,6 +269,19 @@ grant execute on function sinkron_kata_sandi(text, text) to service_role;
 -- ikut dihapus di sini. Karyawan yang dinonaktifkan HRD harus benar-benar
 -- tidak bisa login, bukan sekadar hilang dari daftar.
 -- ---------------------------------------------------------------------
+-- SETIAP `delete` DI BAWAH WAJIB PUNYA KLAUSA `where`.
+--
+-- Supabase memasang pengaman `pg-safeupdate` pada peran yang dipakai Edge
+-- Function, dan pengaman itu MENOLAK `delete` tanpa `where` dengan pesan
+-- "DELETE requires a WHERE clause". Ini tidak terlihat saat fungsinya
+-- diuji lewat koneksi admin biasa — perannya berbeda — jadi satu-satunya
+-- cara menemukannya memang menjalankannya dari Edge Function sungguhan.
+--
+-- Dipakai `where <kolom kunci> is not null`, bukan `where true`: yang
+-- terakhir dilipat menjadi konstanta oleh perencana kueri dan hilang dari
+-- rencananya, sehingga pengaman itu tetap menganggapnya tanpa syarat.
+--
+-- Artinya sama: semua baris. Yang berubah hanya bentuknya.
 create or replace function sinkron_master(p jsonb)
 returns jsonb
 language plpgsql
@@ -361,7 +374,7 @@ begin
     -- tidak berlaku lagi untuk siapa pun. Aturannya sama dengan bagian
     -- lain di bawah: yang tidak dikirim, tidak disentuh.
     if p ? 'geofence' then
-      delete from geofence_area;
+      delete from geofence_area where id is not null;
       insert into geofence_area (karyawan_id, nama, latitude, longitude, radius_meter, aktif)
       select g.karyawan_id, g.nama, g.latitude, g.longitude, g.radius_meter, coalesce(g.aktif, true)
       from jsonb_to_recordset(p->'geofence') as g(
@@ -373,7 +386,7 @@ begin
 
   -- ---------- MASTER DATA ----------
   if p ? 'masterData' then
-    delete from master_data;
+    delete from master_data where id is not null;
     insert into master_data (kategori, value, label, urutan)
     select m.kategori, m.value, m.label, coalesce(m.urutan, 0)
     from jsonb_to_recordset(p->'masterData') as m(
@@ -382,7 +395,7 @@ begin
 
   -- ---------- PERIODE ----------
   if p ? 'periode' then
-    delete from periode_absensi;
+    delete from periode_absensi where id is not null;
     insert into periode_absensi (id, mulai, selesai, aktif, label)
     select pr.id, pr.mulai::date, pr.selesai::date, coalesce(pr.aktif, true), pr.label
     from jsonb_to_recordset(p->'periode') as pr(
@@ -392,7 +405,7 @@ begin
 
   -- ---------- PENGUMUMAN ----------
   if p ? 'pengumuman' then
-    delete from pengumuman;
+    delete from pengumuman where id is not null;
     insert into pengumuman (waktu, isi, aktif)
     select pg.waktu, pg.isi, true
     from jsonb_to_recordset(p->'pengumuman') as pg(waktu text, isi text)
@@ -401,7 +414,7 @@ begin
 
   -- ---------- PERANGKAT ----------
   if p ? 'perangkat' then
-    delete from perangkat;
+    delete from perangkat where device_id is not null;
     insert into perangkat (device_id, status)
     select distinct on (d.device_id) d.device_id, coalesce(d.status, '')
     from jsonb_to_recordset(p->'perangkat') as d(device_id text, status text)
@@ -410,7 +423,7 @@ begin
   end if;
 
   if p ? 'perangkatUser' then
-    delete from perangkat_user;
+    delete from perangkat_user where device_id is not null;
     insert into perangkat_user (device_id, karyawan_id, status)
     select distinct on (b.device_id, b.karyawan_id) b.device_id, b.karyawan_id, coalesce(b.status, '')
     from jsonb_to_recordset(p->'perangkatUser') as b(

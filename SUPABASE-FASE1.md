@@ -123,6 +123,7 @@ di lingkungan tiruan:
 | `crypt()` tidak ditemukan | di Supabase, `pgcrypto` dipasang di skema `extensions`, bukan `public` — dan `search_path` ketiga fungsi memang dikunci |
 | `relation "_k" already exists` | `on commit drop` baru berlaku saat commit, jadi dua panggilan dalam satu transaksi gagal |
 | Geofence terhapus diam-diam | muatan berisi `karyawan` tanpa `geofence` ikut mengosongkan seluruh area |
+| `DELETE requires a WHERE clause` | Supabase memasang pengaman `pg-safeupdate` pada peran yang dipakai **Edge Function**. Tidak terlihat lewat koneksi admin — perannya berbeda — jadi baru muncul saat Apps Script benar-benar memanggilnya |
 
 Ketiganya sudah diperbaiki di berkas migrasi maupun di database.
 
