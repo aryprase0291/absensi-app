@@ -169,8 +169,57 @@ function _pastikanSheetGeoCache() {
   return sheet;
 }
 
+// CACHE LAPIS 3: PETA SIAP PAKAI DI SCRIPT PROPERTIES (Sep 2026)
+//
+// MASALAH TERUKUR: _geoMuatMemo() membaca SELURUH sheet GeoCache setiap
+// kali sebuah koordinat diterjemahkan. Itu terjadi pada setiap absen
+// Hadir/Pulang (dua kali: sekali di catatAuditGps, sekali saat menulis
+// kolom Alamat) DAN pada setiap ping pelacakan posisi yang berpindah
+// cukup jauh — 300 karyawan setiap lima menit. Sheet-nya sendiri hanya
+// bertambah, tidak pernah menyusut, jadi biayanya naik terus.
+//
+// Petanya sekarang disimpan lewat lapisan penyimpanan yang sama dengan
+// Cache.gs (gzip + Script Properties, karena CacheService terbukti tidak
+// menyimpan apa pun di skrip ini — lihat DIAGNOSA-LAMBAT-LAGI.md).
+// Sheet tetap menjadi sumber kebenaran: kalau simpanannya tidak ada,
+// rusak, atau kebesaran, sheet dibaca persis seperti dulu.
+const KUNCI_GEOCACHE_PETA = 'GEOCACHE_PETA_V1';
+const GEOCACHE_PETA_TTL_DETIK = 6 * 60 * 60;
+
+// Di atas jumlah ini petanya tidak lagi dititipkan ke Properties —
+// kuota totalnya 500 KB untuk SELURUH skrip, dan indeks dbabsen serta
+// daftar sesi ikut tinggal di sana. Batasnya sengaja terlihat di log
+// supaya tidak berubah menjadi kegagalan diam-diam.
+const GEOCACHE_PETA_MAKS_ENTRI = 6000;
+
+/** @private */
+function _geoSimpanPeta_(peta) {
+  if (typeof _simpanTahan_ !== 'function') return;
+  const jumlah = Object.keys(peta).length;
+  if (jumlah > GEOCACHE_PETA_MAKS_ENTRI) {
+    console.warn('GeoCache ' + jumlah + ' entri — melewati batas simpanan, '
+      + 'sheet akan dibaca setiap kali. Pertimbangkan memangkas sheet GeoCache.');
+    return;
+  }
+  try {
+    const hasil = _simpanTahan_(KUNCI_GEOCACHE_PETA, peta, GEOCACHE_PETA_TTL_DETIK);
+    if (!hasil.ok) console.warn('GeoCache gagal disimpan: ' + hasil.alasan);
+  } catch (e) {
+    console.warn('GeoCache gagal disimpan: ' + e.message);
+  }
+}
+
 function _geoMuatMemo() {
   if (_geoMemo) return _geoMemo;
+
+  // Lapis simpanan: satu pembacaan Properties, bukan seluruh sheet.
+  try {
+    if (typeof _ambilTahan_ === 'function') {
+      const hit = _ambilTahan_(KUNCI_GEOCACHE_PETA);
+      if (hit && typeof hit === 'object') { _geoMemo = hit; return _geoMemo; }
+    }
+  } catch (e) { /* simpanan rusak: baca sheet seperti dulu */ }
+
   _geoMemo = {};
   try {
     const sheet = SS.getSheetByName(SHEET_GEOCACHE);
@@ -181,6 +230,7 @@ function _geoMuatMemo() {
         const a = String(nilai[i][1] || '').trim();
         if (k && a) _geoMemo[k] = a;
       }
+      _geoSimpanPeta_(_geoMemo);
     }
   } catch (e) {
     console.warn('GeoCache tidak terbaca: ' + e.message);
@@ -189,7 +239,8 @@ function _geoMuatMemo() {
 }
 
 function _geoSimpanCache(kunci, alamat, lat, lng) {
-  _geoMuatMemo()[kunci] = alamat;
+  const peta = _geoMuatMemo();
+  peta[kunci] = alamat;
   try {
     CacheService.getScriptCache().put('geo_' + kunci, alamat, 21600);
   } catch (e) { /* cache penuh: abaikan */ }
@@ -198,6 +249,16 @@ function _geoSimpanCache(kunci, alamat, lat, lng) {
   } catch (e) {
     console.warn('Gagal menulis GeoCache: ' + e.message);
   }
+  // Titik baru jarang terjadi (itulah gunanya cache ini), jadi menulis
+  // ulang petanya di sini murah — dan tanpa ini simpanan akan terus
+  // menjawab "belum ada" untuk titik yang sudah masuk sheet.
+  _geoSimpanPeta_(peta);
+}
+
+/** Membuang simpanan peta GeoCache. Sheet-nya tidak disentuh. */
+function GEOCACHE_PETA_BERSIHKAN() {
+  if (typeof _hapusTahan_ === 'function') _hapusTahan_(KUNCI_GEOCACHE_PETA);
+  _geoMemo = null;
 }
 
 // ---------------------------------------------------------------------
@@ -304,14 +365,23 @@ function lebarBacaAbsensi(sheet, minimal) {
   }
 }
 
+// Nomor kolom "Alamat" dihitung SEKALI per eksekusi. Satu absen
+// memanggilnya dua kali (tulisAlamatAbsensi lalu nilaiAlamatBaris), dan
+// setiap panggilan membaca satu baris judul penuh dari Sheets.
+let _geoKolomAlamatMemo = null;
+
 function indeksKolomAlamat(sheet) {
+  if (_geoKolomAlamatMemo !== null) return _geoKolomAlamatMemo;
   const target = sheet || SS.getSheetByName(SHEET_ABSENSI);
   if (!target) return -1;
 
   const lebar = Math.max(target.getLastColumn(), 1);
   const header = target.getRange(1, 1, 1, lebar).getValues()[0];
   for (let i = 0; i < header.length; i++) {
-    if (String(header[i]).trim() === KOLOM_ALAMAT_ABSENSI) return i + 1;
+    if (String(header[i]).trim() === KOLOM_ALAMAT_ABSENSI) {
+      _geoKolomAlamatMemo = i + 1;
+      return _geoKolomAlamatMemo;
+    }
   }
 
   const kolomBaru = lebar + 1;
@@ -319,6 +389,7 @@ function indeksKolomAlamat(sheet) {
     target.insertColumnsAfter(target.getMaxColumns(), kolomBaru - target.getMaxColumns());
   }
   target.getRange(1, kolomBaru).setValue(KOLOM_ALAMAT_ABSENSI);
+  _geoKolomAlamatMemo = kolomBaru;
   return kolomBaru;
 }
 

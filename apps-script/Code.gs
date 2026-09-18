@@ -63,7 +63,16 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.23";
+const APP_VERSION = "1.0.24";
+// 1.0.24 — jalur buka-aplikasi dipangkas dari 5 request jadi 1 (action
+//          `buka_aplikasi` + titipan di respons login), dan sheet Absensi
+//          tidak lagi disisir utuh oleh hitungStats maupun cek duplikat
+//          saat Kirim (JendelaAbsensi.gs).
+//          Naiknya versi TIDAK wajib untuk kompatibilitas — backend baru
+//          tetap melayani klien 1.0.23, dan klien 1.0.24 di backend lama
+//          otomatis kembali memakai action lama karena `buka_aplikasi`
+//          dijawab "Action tidak dikenal". Dinaikkan supaya semua HP
+//          menarik bundle baru dan benar-benar ikut merasakannya.
 // 1.0.19 — penguncian perangkat (Devices.gs) + pencocokan wajah acuan
 //          (FaceProfile.gs). WAJIB naik versi: token terbitan 1.0.18 tidak
 //          punya SessionID, dan authorizeRequest menolaknya sebagai sesi
@@ -176,6 +185,11 @@ function doPost(e) {
           history: typeof BACKEND_UPDATE_HISTORY === 'undefined' ? [] : BACKEND_UPDATE_HISTORY
         });
     }
+
+    // SATU REQUEST UNTUK MEMBUKA APLIKASI (lihat handleBukaAplikasi).
+    // Menggantikan check_version + get_stats + get_latest_announcement +
+    // get_gps_tracking_status + get_approval_list saat sesi dipulihkan.
+    if (action === 'buka_aplikasi') return handleBukaAplikasi(data);
 
     if (action === 'get_absence_period') return handleGetAbsencePeriod(data);
     if (action === 'save_absence_period') return handleSaveAbsencePeriod(data);
@@ -400,8 +414,6 @@ function handleAbsen(data) {
   const TYPES_CHECK_DUPLICATE = ['Ijin', 'Cuti', 'Sakit', 'Dinas Luar', 'Cuti EO', 'Tukar Shift', 'Off', 'Dinas'];
 
   if (TYPES_CHECK_DUPLICATE.includes(data.tipe)) {
-      const rowsAbsen = bacaSheet(sheet, 14);
-      
       // Tentukan Tanggal Input yang akan dicek (Format: yyyy-MM-dd)
       let inputDateStr = "";
       if (data.tglMulai && data.tglMulai !== '-' && data.tglMulai !== '') {
@@ -416,10 +428,29 @@ function handleAbsen(data) {
       // bulan depan dinilai terhadap kuota bulan depan.
       const periodeAktif = periodeKuotaUntukTanggal_(inputDateStr);
 
+      // JENDELA BARIS (Sep 2026, lihat JendelaAbsensi.gs).
+      //
+      // INILAH bagian yang membuat tombol Kirim terasa makin berat dari
+      // bulan ke bulan: seluruh sheet Absensi dibaca ulang pada SETIAP
+      // pengajuan form, hanya untuk membandingkan dengan pengajuan milik
+      // satu orang di dalam satu periode.
+      //
+      // Dua hal yang dicari loop di bawah — duplikat tanggal dan kuota
+      // Ijin — keduanya dinilai terhadap `periodeAktif`. Baris yang lebih
+      // tua dari itu tidak pernah bisa mengubah keputusannya, jadi tidak
+      // perlu dibaca. Margin 180 hari tetap dipakai supaya pengajuan yang
+      // dikirim jauh hari sebelumnya tetap ikut terbandingkan.
+      //
+      // Elemen ke-0 adalah baris data pertama (bukan judul) -> loop dari 0.
+      // typeof: lihat catatan yang sama di hitungStats.
+      const rowsAbsen = (typeof bacaAbsensiPeriode_ === 'function')
+          ? bacaAbsensiPeriode_(sheet, periodeAktif, 14).baris
+          : bacaSheet(sheet, 14).slice(1);
+
       let countIjinExisting = 0; // Counter khusus Ijin
 
       // Loop untuk mengecek data lama
-      for (let i = 1; i < rowsAbsen.length; i++) {
+      for (let i = 0; i < rowsAbsen.length; i++) {
           const rUserId = String(rowsAbsen[i][2]); // Kolom C: User ID
           const rTipe   = rowsAbsen[i][4];         // Kolom E: Tipe Absen
           const rStatus = rowsAbsen[i][12];        // Kolom M: Status
@@ -554,8 +585,16 @@ function handleAbsen(data) {
   // tulisKolomAuditAbsensi() mencari kolom berdasarkan NAMA HEADER dan
   // membuatnya di ujung sheet bila belum ada — aman berapa pun lebar
   // sheet sekarang maupun nanti.
+  //
+  // Nomor baris yang BARU ditulis diambil SEKALI di sini. Sebelumnya
+  // getLastRow() ditembak dua kali — sekali di dalam
+  // tulisKolomAuditAbsensi dan sekali lagi saat menulis kolom Alamat —
+  // dua round trip ke Sheets untuk angka yang sama persis, di jalur yang
+  // dipakai setiap karyawan setiap hari.
+  const barisBaru = sheet.getLastRow();
+
   if (typeof tulisKolomAuditAbsensi === 'function') {
-    try { tulisKolomAuditAbsensi(sheet, data, analisaGps); } catch (e) { console.warn('Kolom audit GPS gagal ditulis: ' + e.message); }
+    try { tulisKolomAuditAbsensi(sheet, data, analisaGps, barisBaru); } catch (e) { console.warn('Kolom audit GPS gagal ditulis: ' + e.message); }
   }
 
   // Semua absen ber-GPS dicatat ke sheet GpsAudit, bukan hanya yang
@@ -574,7 +613,7 @@ function handleAbsen(data) {
   // absen tetap tersimpan. Bisa diisi belakangan lewat isiAlamatYangKosong().
   let alamatTersimpan = '';
   if (typeof tulisAlamatAbsensi === 'function') {
-    try { alamatTersimpan = tulisAlamatAbsensi(sheet, sheet.getLastRow(), data.lokasi); }
+    try { alamatTersimpan = tulisAlamatAbsensi(sheet, barisBaru, data.lokasi); }
     catch (e) { console.warn('Alamat gagal ditulis: ' + e.message); }
   }
 
@@ -1866,6 +1905,60 @@ function handleLogin(data) {
       console.warn('Periode gagal dibaca saat login: ' + e.message);
     }
 
+    // 6. STATISTIK DASHBOARD IKUT DI RESPONS LOGIN (Sep 2026)
+    //
+    // Dulu dikirim null, dan Dashboard menembak get_stats sendiri
+    // sesudahnya. Karena eksekusi Apps Script milik satu akun berjalan
+    // BERURUTAN, request itu selalu mengantre di belakang login lengkap
+    // dengan redirect 302 dan boot container-nya sendiri — satu round
+    // trip penuh yang dibayar setiap karyawan setiap pagi.
+    //
+    // Yang membuatnya dulu mahal sudah hilang: hitungStats tidak lagi
+    // menyisir seluruh sheet Absensi, hanya jendela periodenya (lihat
+    // JendelaAbsensi.gs). Dan karena login sudah memegang baris user
+    // beserta peta cutinya, keduanya dioper supaya sheet Users dan
+    // MASTER-CUTI tidak dibaca untuk kedua kalinya.
+    //
+    // Kegagalan di sini TIDAK menggagalkan login: stats dikirim null,
+    // dan Dashboard mengambil sendiri persis seperti dulu.
+    let statsLogin = null;
+    try {
+      statsLogin = hitungStats(
+        String(foundUser[0]), foundUser[5], noPayroll, petaCuti,
+        periodeDefault || undefined
+      );
+    } catch (e) {
+      console.warn('Stats gagal dihitung saat login: ' + e.message);
+    }
+
+    // Status pelacakan posisi — menghapus request get_gps_tracking_status
+    // yang selama ini ditembakkan pelacak GPS setiap kali aplikasi dibuka.
+    let gpsTrackingLogin = null;
+    try {
+      if (typeof _gpsTrackKonfigUser === 'function') {
+        gpsTrackingLogin = _ringkasGpsTracking_(String(foundUser[0]));
+      }
+    } catch (e) {
+      console.warn('Status pelacakan gagal dibaca saat login: ' + e.message);
+    }
+
+    // Angka lonceng approval — menghapus request get_approval_list yang
+    // ditembakkan setiap kepala divisi begitu dashboard terbuka.
+    let approvalLogin = null;
+    try {
+      if (_isApprovalRoleValue(String(foundUser[5] || ''))) {
+        const ap = _susunApprovalList_({
+          role: String(foundUser[5] || '').toLowerCase(),
+          lokasi: foundUser[13] || 'All',
+          divisi: foundUser[4],
+          userId: String(foundUser[0])
+        });
+        approvalLogin = { total: ap.list.length, divisiCounts: ap.divisiCounts };
+      }
+    } catch (e) {
+      console.warn('Ringkasan approval gagal saat login: ' + e.message);
+    }
+
     return responseJSON({
       result: 'success',
       user: { 
@@ -1920,8 +2013,14 @@ function handleLogin(data) {
 
       masterData: masterData,
 
-      // Stats dimuat secara asinkron di Dashboard agar respon login kilat < 1.5 detik
-      stats: null,
+      // Stats ikut di sini supaya Dashboard tidak perlu request kedua.
+      // null = gagal dihitung; Dashboard akan mengambilnya sendiri.
+      stats: statsLogin,
+
+      // Dititipkan agar pelacak GPS dan lonceng approval tidak masing-
+      // masing menembak satu eksekusi Apps Script saat dashboard terbuka.
+      gpsTracking: gpsTrackingLogin,
+      approval: approvalLogin,
 
       // pengumuman null = tidak ada pengumuman aktif ATAU gagal dibaca.
       // pengumumanDisertakan yang membedakannya: hanya true kalau
@@ -2039,44 +2138,96 @@ function handleUploadProfile(data) {
   return responseJSON({ result: 'error' });
 }
 
-function handleEditAbsen(data) {
-    const sheet = SS.getSheetByName(SHEET_ABSENSI); const rows = sheet.getDataRange().getValues();
-    const now = new Date();
-    for (let i = 1; i < rows.length; i++) {
-        if (rows[i][0] == data.uuid) {
-            const entryTime = new Date(rows[i][1]);
-            const diffHours = (now - entryTime) / (1000 * 60 * 60);
-            if (diffHours > 1) return responseJSON({ result: 'error', message: 'Batas waktu edit (1 jam) habis.' });
-            
-            const status = rows[i][12];
-            if (status === 'Approved' || status === 'Rejected') return responseJSON({ result: 'error', message: 'Data sudah diproses pimpinan.' });
-            sheet.getRange(i + 1, 7).setValue(data.catatan);
-            sheet.getRange(i + 1, 9).setValue(data.tglMulai);
-            sheet.getRange(i + 1, 10).setValue(data.tglSelesai);
-            sheet.getRange(i + 1, 11).setValue(data.jamMulai);
-            sheet.getRange(i + 1, 12).setValue(data.jamSelesai);
-            return responseJSON({ result: 'success', message: 'Data berhasil diubah' });
+/**
+ * Mencari satu baris Absensi berdasarkan UUID (kolom A).
+ *
+ * Dipakai edit & hapus, yang keduanya hanya boleh menyentuh baris
+ * berumur < 1 jam. Karena itu jendela beberapa jam terakhir dicoba lebih
+ * dulu (lihat JendelaAbsensi.gs) — jalur normal jadi tidak lagi membaca
+ * seluruh sheet. Kalau tidak ketemu di jendela, sheet dibaca penuh
+ * seperti dulu, supaya baris lama tetap ditemukan dan karyawan tetap
+ * mendapat pesan "batas waktu habis" yang benar, bukan "data tidak
+ * ditemukan".
+ *
+ * @return {?{baris: number, isi: Array}} baris = nomor baris sheet.
+ * @private
+ */
+function _cariBarisAbsenUuid_(sheet, uuid, jmlKolom) {
+    const target = String(uuid);
+
+    // typeof: tanpa JendelaAbsensi.gs, jendelanya kosong dan pencarian
+    // langsung jatuh ke pembacaan penuh di bawah — perilaku lama.
+    const jendela = (typeof bacaAbsensiJamTerakhir_ === 'function')
+        ? bacaAbsensiJamTerakhir_(sheet, 6, jmlKolom)
+        : { baris: [], offsetBaris: 3 };
+    for (let i = 0; i < jendela.baris.length; i++) {
+        if (String(jendela.baris[i][0]) === target) {
+            return { baris: jendela.offsetBaris + i, isi: jendela.baris[i] };
         }
     }
-    return responseJSON({ result: 'error', message: 'Data tidak ditemukan' });
+
+    // Jendela sudah mencakup seluruh sheet -> tidak perlu membaca lagi.
+    if (jendela.offsetBaris <= 2) return null;
+
+    const penuh = bacaSheet(sheet, jmlKolom);
+    for (let i = 1; i < penuh.length; i++) {
+        if (String(penuh[i][0]) === target) return { baris: i + 1, isi: penuh[i] };
+    }
+    return null;
+}
+
+function handleEditAbsen(data) {
+    const sheet = SS.getSheetByName(SHEET_ABSENSI);
+    const now = new Date();
+
+    // Kolom terjauh yang dipakai: index 12 (Status) -> 13 kolom.
+    // Dulu getDataRange() menarik SELURUH lebar sheet (46 kolom) untuk
+    // seluruh baris, hanya untuk mencari satu UUID.
+    const ketemu = _cariBarisAbsenUuid_(sheet, data.uuid, 13);
+    if (!ketemu) return responseJSON({ result: 'error', message: 'Data tidak ditemukan' });
+
+    const entryTime = new Date(ketemu.isi[1]);
+    const diffHours = (now - entryTime) / (1000 * 60 * 60);
+    if (diffHours > 1) return responseJSON({ result: 'error', message: 'Batas waktu edit (1 jam) habis.' });
+
+    const status = ketemu.isi[12];
+    if (status === 'Approved' || status === 'Rejected') return responseJSON({ result: 'error', message: 'Data sudah diproses pimpinan.' });
+
+    // Kolom I sampai L ditulis sekaligus. Dulu empat setValue terpisah —
+    // empat round trip ke Sheets untuk satu penyuntingan.
+    //
+    // Nilai undefined DIUBAH menjadi '' lebih dulu: setValue() diam-diam
+    // menerimanya sebagai sel kosong, tetapi setValues() menolak seluruh
+    // penulisan. Form non-interval memang tidak mengirim tglMulai.
+    const isiEdit = [data.tglMulai, data.tglSelesai, data.jamMulai, data.jamSelesai]
+        .map(function (v) { return (v === undefined || v === null) ? '' : v; });
+
+    sheet.getRange(ketemu.baris, 7).setValue(data.catatan === undefined ? '' : data.catatan);
+    sheet.getRange(ketemu.baris, 9, 1, 4).setValues([isiEdit]);
+    return responseJSON({ result: 'success', message: 'Data berhasil diubah' });
 }
 
 function handleDeleteAbsen(data) {
-    const sheet = SS.getSheetByName(SHEET_ABSENSI); const rows = sheet.getDataRange().getValues();
+    const sheet = SS.getSheetByName(SHEET_ABSENSI);
     const now = new Date();
-    for (let i = 1; i < rows.length; i++) {
-        if (rows[i][0] == data.uuid) {
-            const entryTime = new Date(rows[i][1]);
-            const diffHours = (now - entryTime) / (1000 * 60 * 60);
-            if (diffHours > 1) return responseJSON({ result: 'error', message: 'Batas waktu hapus (1 jam) habis.' });
 
-            const status = rows[i][12];
-            if (status === 'Approved' || status === 'Rejected') return responseJSON({ result: 'error', message: 'Data sudah diproses pimpinan.' });
-            sheet.deleteRow(i + 1); 
-            return responseJSON({ result: 'success', message: 'Data dihapus' });
-        }
-    }
-    return responseJSON({ result: 'error', message: 'Data tidak ditemukan' });
+    const ketemu = _cariBarisAbsenUuid_(sheet, data.uuid, 13);
+    if (!ketemu) return responseJSON({ result: 'error', message: 'Data tidak ditemukan' });
+
+    const entryTime = new Date(ketemu.isi[1]);
+    const diffHours = (now - entryTime) / (1000 * 60 * 60);
+    if (diffHours > 1) return responseJSON({ result: 'error', message: 'Batas waktu hapus (1 jam) habis.' });
+
+    const status = ketemu.isi[12];
+    if (status === 'Approved' || status === 'Rejected') return responseJSON({ result: 'error', message: 'Data sudah diproses pimpinan.' });
+
+    sheet.deleteRow(ketemu.baris);
+    // Nomor baris bergeser: batas jendela yang tersimpan harus dibuang.
+    // Verifikasi di jendelaBarisAbsensi_ sebenarnya sudah menangkap ini
+    // sendiri, tapi membersihkannya di sini membuat pembaca berikutnya
+    // tidak perlu membayar satu pencarian biner.
+    if (typeof ABSENSI_JENDELA_BERSIHKAN === 'function') ABSENSI_JENDELA_BERSIHKAN();
+    return responseJSON({ result: 'success', message: 'Data dihapus' });
 }
 
 
@@ -2121,6 +2272,127 @@ function handleGetStats(data) {
         stats: hitungStats(String(data.userId), data.role, null, null, periode),
         periode: periode
     });
+}
+
+// ==========================================
+// SATU REQUEST UNTUK MEMBUKA APLIKASI (Sep 2026)
+// ==========================================
+//
+// MASALAH TERUKUR
+//
+// Membuka aplikasi dengan sesi yang masih hidup dulu menembakkan LIMA
+// eksekusi Apps Script yang terpisah:
+//
+//   check_version              nomor versi backend
+//   get_stats                  angka dashboard
+//   get_latest_announcement    pengumuman HRD
+//   get_gps_tracking_status    apakah akun ini dilacak
+//   get_approval_list          angka di lonceng (khusus penyetuju)
+//
+// Empat di antaranya sebenarnya sepele; yang membuatnya mahal BUKAN
+// pekerjaannya, melainkan ongkos tetap per eksekusi: redirect 302,
+// boot container, dan antrean kuota eksekusi serentak milik akun
+// pemilik skrip. Pada jam masuk, 300 karyawan x 5 request adalah 1.500
+// eksekusi yang harus diantre — dan itulah yang dirasakan sebagai
+// "aplikasinya makin lama makin lambat dibuka", karena setiap fitur baru
+// yang dirilis menambah satu request lagi ke daftar ini.
+//
+// Handler ini mengerjakan kelimanya dalam SATU eksekusi. Isi jawabannya
+// sengaja memakai nama field yang sama persis dengan handler aslinya,
+// supaya frontend tidak perlu dua bentuk penguraian — dan supaya
+// handler aslinya tetap hidup untuk klien versi lama.
+//
+// Setiap bagian dibungkus try/catch sendiri: satu bagian yang gagal
+// (mis. sheet pengumuman dihapus) tidak boleh menjatuhkan seluruh
+// pembukaan aplikasi. Bagian yang gagal dikirim sebagai null, dan
+// frontend tahu artinya "ambil sendiri seperti dulu".
+function handleBukaAplikasi(data) {
+  const hasil = {
+    result: 'success',
+    version: APP_VERSION,
+    // Dipakai frontend untuk menyamakan jamnya dengan jam server tanpa
+    // menunggu ping GPS pertama (lihat updateServerTime di src/App.js).
+    serverTimestamp: new Date().getTime()
+  };
+
+  // --- Statistik dashboard + periode yang dipakai menghitungnya ------
+  try {
+    const periode = resolvePeriodeStats_(data);
+    hasil.stats = hitungStats(String(data.userId), data.role, null, null, periode);
+    hasil.periode = periode;
+  } catch (e) {
+    hasil.stats = null;
+    console.warn('Stats gagal saat buka aplikasi: ' + e.message);
+  }
+
+  // --- Daftar periode untuk pemilih di dashboard ---------------------
+  try {
+    const semua = getSemuaPeriode_();
+    hasil.periods = semua;
+    hasil.periodsAktif = semua.filter(function (p) { return p.aktif; });
+    hasil.periodeDefault = getPeriodeAbsenAktif_();
+  } catch (e) {
+    console.warn('Periode gagal saat buka aplikasi: ' + e.message);
+  }
+
+  // --- Pengumuman HRD ------------------------------------------------
+  // null punya dua arti yang berbeda — "tidak ada" dan "gagal dibaca".
+  // pengumumanDisertakan yang membedakannya, sama seperti di handleLogin.
+  hasil.pengumuman = null;
+  hasil.pengumumanDisertakan = false;
+  try {
+    hasil.pengumuman = (typeof getPengumumanAktifCached === 'function')
+      ? getPengumumanAktifCached()
+      : cariPengumumanAktif();
+    hasil.pengumumanDisertakan = true;
+  } catch (e) {
+    console.warn('Pengumuman gagal saat buka aplikasi: ' + e.message);
+  }
+
+  // --- Status pelacakan posisi --------------------------------------
+  try {
+    hasil.gpsTracking = (typeof _gpsTrackKonfigUser === 'function')
+      ? _ringkasGpsTracking_(String(data.userId))
+      : null;
+  } catch (e) {
+    hasil.gpsTracking = null;
+    console.warn('Status pelacakan gagal saat buka aplikasi: ' + e.message);
+  }
+
+  // --- Angka lonceng approval (hanya untuk penyetuju) ---------------
+  // Sengaja HANYA jumlahnya, bukan daftarnya: layar Approval mengambil
+  // daftar lengkap sendiri saat benar-benar dibuka, dan menitipkan
+  // ratusan baris di respons ini akan membuat pembukaan aplikasi justru
+  // lebih berat daripada sebelumnya.
+  hasil.approval = null;
+  try {
+    if (_isApprovalRoleValue(String(data.role || ''))) {
+      const ap = _susunApprovalList_(data);
+      hasil.approval = { total: ap.list.length, divisiCounts: ap.divisiCounts };
+    }
+  } catch (e) {
+    console.warn('Ringkasan approval gagal saat buka aplikasi: ' + e.message);
+  }
+
+  return responseJSON(hasil);
+}
+
+/**
+ * Bentuk jawaban get_gps_tracking_status, dipakai ulang oleh
+ * handleBukaAplikasi dan handleLogin.
+ * @private
+ */
+function _ringkasGpsTracking_(userId) {
+  const cfg = _gpsTrackKonfigUser(userId);
+  return {
+    aktif: cfg.aktif,
+    intervalDetik: cfg.interval,
+    // Ditampilkan apa adanya di aplikasi karyawan. Pelacakan diam-diam
+    // bukan hanya masalah etika, di banyak yurisdiksi juga masalah hukum.
+    pemberitahuan: cfg.aktif
+      ? 'Lokasi Anda dibagikan ke Admin selama aplikasi ini terbuka.'
+      : ''
+  };
 }
 
 /**
@@ -2176,8 +2448,33 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
     //   Absensi : index 2 (User ID), 4 (Tipe), 12 (Status)        -> 13 kolom
     // Dulu dibaca penuh (46 kolom) tiap dashboard dibuka.
     const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
-    const rowsAbsensi = bacaSheet(sheetAbsensi, 13);
     const periodeAktif = periodeDipilih || getPeriodeAbsenAktif_();
+
+    // JENDELA BARIS (Sep 2026, lihat JendelaAbsensi.gs).
+    //
+    // Sampai sebelum ini seluruh sheet Absensi dibaca ulang setiap kali
+    // dashboard dibuka — oleh setiap karyawan, setiap pagi — padahal
+    // penjaga `masukPeriode` di bawah membuang semua baris di luar
+    // periode aktif. Biayanya tumbuh mengikuti umur sheet, dan itulah
+    // sebab aplikasi terasa makin lambat dari bulan ke bulan.
+    //
+    // Yang dibaca sekarang hanya baris sejak (awal periode - 180 hari).
+    // Marginnya sengaja lebar supaya cuti yang diajukan jauh hari tetap
+    // ikut terhitung; kalau periode tidak terbaca, fungsinya jatuh ke
+    // baca penuh seperti semula. Hasil hitungannya tidak berubah
+    // sedikit pun — dibuktikan JENDELA_UJI().
+    //
+    // CATATAN: elemen ke-0 adalah baris data PERTAMA, bukan baris judul.
+    // Karena itu loop di bawah mulai dari 0, bukan 1.
+    //
+    // typeof: kalau JendelaAbsensi.gs belum ikut ditempel ke editor Apps
+    // Script, fungsinya kembali membaca penuh seperti sebelumnya —
+    // lambat, tapi hasilnya tetap benar dan dashboard tetap terbuka.
+    // .slice(1) membuang baris judul supaya bentuknya sama dengan
+    // kembalian jendela, yang memang tidak pernah memuat judul.
+    const rowsAbsensi = (typeof bacaAbsensiPeriode_ === 'function')
+        ? bacaAbsensiPeriode_(sheetAbsensi, periodeAktif, 13).baris
+        : bacaSheet(sheetAbsensi, 13).slice(1);
 
     // Data mesin TIDAK lagi disisir per request. Diambil dari indeks
     // agregat per NIK yang disusun sekali lalu di-cache (StatsIndex.gs).
@@ -2249,7 +2546,7 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
     const ijinFormByDate = {};
 
     // 1. HITUNG STATISTIK MANUAL (Sheet Absensi - Ijin, Sakit, Alpa)
-    for (let i = 1; i < rowsAbsensi.length; i++) {
+    for (let i = 0; i < rowsAbsensi.length; i++) {
         if (String(rowsAbsensi[i][2]) === targetId) {
             const tipe = rowsAbsensi[i][4];
             const status = rowsAbsensi[i][12];
@@ -2614,16 +2911,33 @@ function handleSaveApprovalTeamConfig(data) {
   });
 }
 
-function handleGetApprovalList(data) {
+/**
+ * Inti penyusun daftar approval, dipisah dari handler-nya (Sep 2026)
+ * supaya respons "buka aplikasi" bisa menitipkan JUMLAHNYA saja tanpa
+ * satu request Apps Script tersendiri. Dulu setiap kepala divisi yang
+ * membuka aplikasi selalu menembak get_approval_list hanya untuk
+ * menampilkan angka di lonceng notifikasi.
+ *
+ * @return {{list: Array, divisiCounts: Object}}
+ * @private
+ */
+function _susunApprovalList_(data) {
   const role = data.role ? String(data.role).toLowerCase() : '';
   const adminLokasi = data.lokasi;
   const isApprovalRole = _isApprovalRoleValue(role);
-  if (!isApprovalRole) { return responseJSON({ result: 'success', list: [] }); }
-  
+  if (!isApprovalRole) { return { list: [], divisiCounts: {} }; }
+
+  // Kolom terjauh yang dipakai loop di bawah: index 15 (Lampiran) -> 16.
+  // Dulu getDataRange() menarik SELURUH lebar sheet Absensi (46 kolom,
+  // termasuk kolom audit GPS dan kolom admin) padahal 16 saja yang
+  // dibaca — tiga kali lipat sel untuk hasil yang sama persis.
   const sheetAbsensi = SS.getSheetByName(SHEET_ABSENSI);
-  const rowsAbsen = sheetAbsensi.getDataRange().getValues();
+  const rowsAbsen = bacaSheet(sheetAbsensi, 16);
+  // Users: index 13 (lokasi) -> 14 kolom. Berhenti sebelum kolom O & P
+  // yang berisi VLOOKUP ke Sheet7 — membacanya memicu recalc formula
+  // untuk seluruh baris (alasan yang sama seperti di handleLogin).
   const sheetUsers = SS.getSheetByName(SHEET_USERS);
-  const rowsUsers = sheetUsers.getDataRange().getValues();
+  const rowsUsers = bacaSheet(sheetUsers, 14);
   const userMap = {}; 
   const teamMemberMap = (role === 'admin' || role === 'hrd') ? {} : _approvalMemberMapForKepala(data.userId);
   const hasTeamMapping = Object.keys(teamMemberMap).length > 0;
@@ -2716,8 +3030,13 @@ function handleGetApprovalList(data) {
   
   // Sort (Terlama di bawah)
   list.reverse();
-  
-  return responseJSON({ result: 'success', list: list, divisiCounts: divisiCounts });
+
+  return { list: list, divisiCounts: divisiCounts };
+}
+
+function handleGetApprovalList(data) {
+  const hasil = _susunApprovalList_(data);
+  return responseJSON({ result: 'success', list: hasil.list, divisiCounts: hasil.divisiCounts });
 }
 
 // Riwayat SEMUA pengajuan tim (bukan cuma yang Pending) untuk approver —
@@ -3982,6 +4301,9 @@ function handleDeleteAbsensi(data) {
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][2]) === String(targetUuid)) {
       sheet.deleteRow(i + 1); // Hapus Baris
+      // Nomor baris bergeser — batas jendela yang tersimpan harus dibuang
+      // (lihat JendelaAbsensi.gs).
+      if (typeof ABSENSI_JENDELA_BERSIHKAN === 'function') ABSENSI_JENDELA_BERSIHKAN();
       return responseJSON({ result: 'success', message: 'Data berhasil dihapus.' });
     }
   }

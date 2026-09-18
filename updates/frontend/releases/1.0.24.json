@@ -1,0 +1,11 @@
+{
+  "version": "1.0.24",
+  "releasedAt": "2026-09-18",
+  "required": true,
+  "notes": [
+    "Membuka aplikasi jauh lebih cepat: lima permintaan terpisah ke server (cek versi, statistik, pengumuman, status pelacakan lokasi, dan angka approval) digabung menjadi SATU permintaan.",
+    "Angka dashboard kini sudah ikut dalam balasan login, sehingga layar utama tidak lagi menunggu satu permintaan tambahan setelah masuk.",
+    "Pelacak lokasi dan lonceng approval tidak lagi menembak permintaannya sendiri saat aplikasi dibuka — datanya sudah dibawa dari awal.",
+    "Bila server lama masih terpasang, aplikasi otomatis kembali ke cara lama. Tidak ada urutan deploy yang wajib."
+  ]
+}

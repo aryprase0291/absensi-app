@@ -818,17 +818,30 @@ function handleTrackGpsAntrian(data) {
  * ping untuk karyawan yang justru sudah dikecualikan admin.
  */
 function handleGetGpsTrackingStatus(data) {
+  // Bentuk jawabannya disusun _ringkasGpsTracking_ (Code.gs) supaya
+  // sama persis dengan yang dititipkan di respons login dan
+  // buka_aplikasi — kalau kalimat pemberitahuannya diubah, ketiganya
+  // ikut berubah bersama.
   const userId = String(data.userId || '').trim();
-  const cfg = _gpsTrackKonfigUser(userId);
+  // typeof: supaya file ini tetap jalan bila Code.gs versi baru belum
+  // ikut ditempel ke editor Apps Script.
+  const ringkas = (typeof _ringkasGpsTracking_ === 'function')
+    ? _ringkasGpsTracking_(userId)
+    : (function () {
+        const cfg = _gpsTrackKonfigUser(userId);
+        return {
+          aktif: cfg.aktif,
+          intervalDetik: cfg.interval,
+          pemberitahuan: cfg.aktif
+            ? 'Lokasi Anda dibagikan ke Admin selama aplikasi ini terbuka.'
+            : ''
+        };
+      })();
   return responseJSON({
     result: 'success',
-    aktif: cfg.aktif,
-    intervalDetik: cfg.interval,
-    // Ditampilkan apa adanya di aplikasi karyawan. Pelacakan diam-diam
-    // bukan hanya masalah etika, di banyak yurisdiksi juga masalah hukum.
-    pemberitahuan: cfg.aktif
-      ? 'Lokasi Anda dibagikan ke Admin selama aplikasi ini terbuka.'
-      : ''
+    aktif: ringkas.aktif,
+    intervalDetik: ringkas.intervalDetik,
+    pemberitahuan: ringkas.pemberitahuan
   });
 }
 

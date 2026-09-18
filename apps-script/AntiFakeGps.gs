@@ -388,12 +388,20 @@ function analisaIntegritasGps(data, geofenceInfo) {
 // JEJAK AUDIT
 // ---------------------------------------------------------------------
 
+// Sheet GpsAudit sudah dipastikan benar di eksekusi ini. Pemeriksaan
+// judul kolom di bawah membaca satu baris penuh dari Sheets; pada jalur
+// absen ia dipanggil setiap kali, padahal jawabannya tidak akan berubah
+// di tengah satu request.
+let _gpsSheetAuditMemo = null;
+
 function _pastikanSheetGpsAudit() {
+  if (_gpsSheetAuditMemo) return _gpsSheetAuditMemo;
   let sheet = SS.getSheetByName(SHEET_GPS_AUDIT);
   if (!sheet) {
     sheet = SS.insertSheet(SHEET_GPS_AUDIT);
     sheet.getRange(1, 1, 1, GPS_AUDIT_HEADERS.length).setValues([GPS_AUDIT_HEADERS]);
     sheet.setFrozenRows(1);
+    _gpsSheetAuditMemo = sheet;
     return sheet;
   }
 
@@ -415,6 +423,7 @@ function _pastikanSheetGpsAudit() {
   } catch (e) {
     console.warn('Judul kolom GpsAudit gagal diperbaiki: ' + e.message);
   }
+  _gpsSheetAuditMemo = sheet;
   return sheet;
 }
 
@@ -729,7 +738,14 @@ function tulisLaporanAuditGpsKeSheet() {
 
 const GPS_KOLOM_ABSENSI = ['GPS Akurasi', 'GPS Skor', 'GPS Level', 'GPS Alasan'];
 
+// Peta kolom dihitung SEKALI per eksekusi. Satu absen memanggilnya lewat
+// tulisKolomAuditAbsensi, dan baris judul sheet Absensi tidak pernah
+// berubah di tengah satu request — membacanya berulang hanya menambah
+// round trip ke Sheets pada jalur yang paling sering dipakai karyawan.
+let _gpsPetaKolomMemo = null;
+
 function _gpsPetaKolomAbsensi(sheet) {
+  if (_gpsPetaKolomMemo) return _gpsPetaKolomMemo;
   const lebar = Math.max(sheet.getLastColumn(), 1);
   const header = sheet.getRange(1, 1, 1, lebar).getValues()[0];
   const peta = {};
@@ -757,19 +773,46 @@ function _gpsPetaKolomAbsensi(sheet) {
       kolomBerikut++;
     });
   }
+  _gpsPetaKolomMemo = peta;
   return peta;
 }
 
-function tulisKolomAuditAbsensi(sheet, data, analisa) {
+/**
+ * @param {Sheet} sheet   sheet Absensi
+ * @param {Object} data   payload absen
+ * @param {Object} analisa hasil analisaIntegritasGps
+ * @param {number=} barisDiketahui nomor baris yang BARU ditulis. Diisi
+ *        pemanggil supaya getLastRow() tidak ditembak lagi — handleAbsen
+ *        sudah memegang angkanya. Kosong = cari sendiri (perilaku lama).
+ */
+function tulisKolomAuditAbsensi(sheet, data, analisa, barisDiketahui) {
   const tipe = String(data.tipe || '');
   if (tipe !== 'Hadir' && tipe !== 'Pulang') return;
 
   const peta = _gpsPetaKolomAbsensi(sheet);
-  const baris = sheet.getLastRow();
+  const baris = barisDiketahui || sheet.getLastRow();
   const akurasi = Number(data.gpsAccuracy);
 
-  sheet.getRange(baris, peta['GPS Akurasi']).setValue(isFinite(akurasi) ? Math.round(akurasi) : '-');
-  sheet.getRange(baris, peta['GPS Skor']).setValue(analisa.skor);
-  sheet.getRange(baris, peta['GPS Level']).setValue(analisa.level);
-  sheet.getRange(baris, peta['GPS Alasan']).setValue(analisa.alasan.length ? analisa.alasan.join(' | ') : '-');
+  const nilai = {};
+  nilai[peta['GPS Akurasi']] = isFinite(akurasi) ? Math.round(akurasi) : '-';
+  nilai[peta['GPS Skor']] = analisa.skor;
+  nilai[peta['GPS Level']] = analisa.level;
+  nilai[peta['GPS Alasan']] = analisa.alasan.length ? analisa.alasan.join(' | ') : '-';
+
+  // Keempat kolom ini dibuat bersamaan di ujung sheet, jadi hampir selalu
+  // BERURUTAN — dan kalau berurutan, empat setValue (empat round trip ke
+  // Sheets pada jalur tercepat yang dipakai karyawan) bisa dijadikan satu
+  // setValues. Kalau ternyata tidak berurutan — misalnya ada yang
+  // menyisipkan kolom di tengahnya — jalur lama dipakai apa adanya.
+  const kolom = Object.keys(nilai).map(Number).sort(function (a, b) { return a - b; });
+  const berurutan = kolom.length === GPS_KOLOM_ABSENSI.length &&
+    (kolom[kolom.length - 1] - kolom[0]) === (kolom.length - 1);
+
+  if (berurutan) {
+    sheet.getRange(baris, kolom[0], 1, kolom.length)
+      .setValues([kolom.map(function (k) { return nilai[k]; })]);
+    return;
+  }
+
+  kolom.forEach(function (k) { sheet.getRange(baris, k).setValue(nilai[k]); });
 }

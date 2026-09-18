@@ -179,6 +179,12 @@ const ACTION_ROLES = {
   'get_db_absen': '*',
   'get_user_list_simple': '*',
   'get_stats': '*',
+  // Pembukaan aplikasi dalam satu request (lihat handleBukaAplikasi di
+  // Code.gs). Isinya gabungan dari action-action yang sudah '*' di sini,
+  // ditambah ringkasan approval yang hanya diisi bila role peminta
+  // memang penyetuju — jadi tidak ada data baru yang terbuka untuk
+  // karyawan biasa.
+  'buka_aplikasi': '*',
   'get_absence_period': '*',
   'ganti_password': '*',
   'upload_profile': '*',
@@ -369,7 +375,8 @@ function authorizeRequest(data) {
   //   - handleAbsen      : lokasi GPS tempat absen (data user, jangan ditimpa!)
   //   - handleGetApprovalList : lokasi kantor si admin (scope, harus ditimpa)
   // Karena itu penimpaan dilakukan per-action, bukan menyeluruh.
-  if (action === 'get_approval_list' || action === 'process_approval') {
+  if (action === 'get_approval_list' || action === 'process_approval' ||
+      action === 'buka_aplikasi') {
     data.lokasi = auth.l;
     data.divisi = auth.d;
   }

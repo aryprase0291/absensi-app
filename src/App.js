@@ -49,7 +49,10 @@ import { infoPerangkat } from './utils/perangkat';
 
 // Action yang aman diulang: hanya membaca, tidak mengubah data.
 const ACTION_AMAN_DIULANG = [
-  'ping', 'check_version', 'login', 'get_latest_announcement',
+  // buka_aplikasi hanya MEMBACA (statistik, pengumuman, periode, status
+  // pelacakan, angka approval) — sama seperti action get_* di bawah,
+  // jadi aman diulang saat Google membalas halaman HTML alih-alih JSON.
+  'ping', 'check_version', 'buka_aplikasi', 'login', 'get_latest_announcement',
   'get_history', 'get_db_absen', 'get_user_list_simple', 'get_stats',
   'get_remarks', 'get_shift_history', 'get_approval_list', 'get_approval_team_config', 'get_team_history',
   'get_user_list_admin', 'get_analysis_data', 'get_geofence_config', 'get_absence_period',
@@ -403,6 +406,26 @@ useEffect(() => {
   return pantauPembaruan(cekVersiFrontend);
 }, [cekVersiFrontend]);
 
+    // ----------------------------------------------------------------
+    // SATU REQUEST UNTUK MEMBUKA APLIKASI (Sep 2026)
+    //
+    // `bootAwal` menampung jawaban action `buka_aplikasi`: nomor versi,
+    // statistik dashboard, pengumuman, daftar periode, status pelacakan
+    // GPS, dan angka lonceng approval — semuanya sekaligus. Saat login,
+    // isinya datang dari respons login yang memang sudah membawa hal
+    // yang sama.
+    //
+    // `bootMenunggu` menahan layar-layar di bawah supaya TIDAK menembak
+    // request sendiri selama jawaban itu masih di perjalanan. Nilai
+    // awalnya dibaca langsung dari sessionStorage (bukan lewat efek),
+    // karena Dashboard sudah ter-mount pada render yang sama dan akan
+    // keburu menembak get_stats kalau menunggu satu putaran efek.
+    // ----------------------------------------------------------------
+const [bootAwal, setBootAwal] = useState(null);
+const [bootMenunggu, setBootMenunggu] = useState(() => {
+  try { return !!sessionStorage.getItem('app_user'); } catch (e) { return false; }
+});
+
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
 useEffect(() => { 
   // UBAH: localStorage menjadi sessionStorage
@@ -412,26 +435,38 @@ useEffect(() => {
     if (m) setMasterData(JSON.parse(m)); 
     setView('dashboard'); 
   } 
-  // CEK VERSI BACKEND — HANYA SAAT SESI DIPULIHKAN.
+  // SATU REQUEST UNTUK SELURUH PEMBUKAAN APLIKASI — HANYA SAAT SESI
+  // DIPULIHKAN. Saat belum ada sesi, layar berikutnya pasti layar login
+  // dan respons login sudah membawa semuanya.
   //
-  // Dulu request ini ditembakkan pada SETIAP pembukaan aplikasi. Padahal
-  // saat belum ada sesi, layar berikutnya pasti layar login, dan respons
-  // login SUDAH membawa `version` (handleLogin memanggil cekVersi dengan
-  // nilai itu). Jadi untuk pembukaan dingin — bentuk pembukaan yang paling
-  // sering dialami karyawan — ini adalah satu eksekusi Apps Script PENUH
-  // yang berjalan berbarengan dengan login, mengantre di kuota eksekusi
-  // serentak yang sama, dan ikut menanggung risiko balasan HTML
-  // interstitial 1-dari-7. Membuangnya memotong separuh round trip
-  // backend saat membuka aplikasi.
+  // Dulu di sini hanya ada `check_version`, tetapi begitu dashboard
+  // terbuka ia disusul EMPAT request lagi yang masing-masing menjadi
+  // satu eksekusi Apps Script tersendiri: get_stats, pengumuman, status
+  // pelacakan GPS, dan daftar approval. Yang mahal bukan pekerjaannya —
+  // melainkan ongkos tetap per eksekusi (redirect 302, boot container,
+  // antrean kuota eksekusi serentak). Lima request itulah yang membuat
+  // aplikasi terasa makin lambat dibuka setiap kali ada fitur baru.
   //
-  // Bundle frontend yang basi TETAP terdeteksi tanpa request ini:
+  // Sekarang kelimanya dijawab handleBukaAplikasi dalam SATU eksekusi.
+  //
+  // Bundle frontend yang basi tetap terdeteksi tanpa request apa pun:
   // cekVersiFrontend() di atas membaca update-manifest.json langsung dari
-  // hosting yang sama, tanpa menyentuh Apps Script sama sekali.
-  if (!u) return;
-  fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'check_version' }) })
+  // hosting, tanpa menyentuh Apps Script sama sekali.
+  if (!u) { setBootMenunggu(false); return; }
+
+  let batal = false;
+  fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'buka_aplikasi' }) })
     .then((response) => response.json())
-    .then((data) => { if (data.result === 'success') cekVersi(data.version); })
-    .catch(() => { /* jaringan gagal: jangan mengunci aplikasi tanpa bukti versi */ });
+    .then((data) => {
+      if (batal) return;
+      if (data.result === 'success') {
+        cekVersi(data.version);
+        setBootAwal(data);
+      }
+    })
+    .catch(() => { /* jaringan gagal: layar di bawah mengambil sendiri seperti dulu */ })
+    .finally(() => { if (!batal) setBootMenunggu(false); });
+  return () => { batal = true; };
 }, [cekVersi]);
 
     //----FUNGSI EKSEKUSI UPDATE (MEMBERSIHKAN CACHE)----
@@ -516,6 +551,10 @@ const handleLogout = useCallback(() => {
   sessionStorage.removeItem('announcement_shown');
   // Statistik milik user sebelumnya — kalau tidak dibuang, user berikutnya
   // yang login di HP yang sama akan melihat angka orang lain sekejap.
+  // Titipan respons login/buka_aplikasi milik user sebelumnya. Kalau
+  // tidak dibuang, status pelacakan dan angka approval orang lain bisa
+  // ikut terpakai oleh user berikutnya yang login di HP yang sama.
+  setBootAwal(null);
   sessionStorage.removeItem('app_stats_awal');
   sessionStorage.removeItem('app_stats_terakhir');
   sessionStorage.removeItem('app_pengumuman_awal');
@@ -534,8 +573,20 @@ const resetTimer = useCallback(() => { if (logoutTimerRef.current) clearTimeout(
 useEffect(() => { if (!user) return; resetTimer(); const ev = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart']; ev.forEach(e => window.addEventListener(e, resetTimer)); return () => { if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current); ev.forEach(e => window.removeEventListener(e, resetTimer)); }; }, [user, resetTimer]);
 
     // FUNGSI HANDLER LOGIN & PENYIMPANAN SESI
-const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumumanAwal, pengumumanDisertakan, periodsAwal) => {
+const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumumanAwal, pengumumanDisertakan, periodsAwal, ekstra) => {
   cekVersi(versiServer);
+
+  // Respons login sudah membawa status pelacakan GPS dan angka lonceng
+  // approval. Dititipkan ke bootAwal supaya jalur login dan jalur sesi
+  // dipulihkan memakai satu sumber data yang sama — dan supaya pelacak
+  // GPS serta lonceng approval tidak lagi menembak satu eksekusi Apps
+  // Script masing-masing begitu dashboard terbuka.
+  setBootAwal({
+    dariLogin: true,
+    gpsTracking: (ekstra && ekstra.gpsTracking) || null,
+    approval: (ekstra && ekstra.approval) || null
+  });
+  setBootMenunggu(false);
 
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift'), sheetImport: rawMasterData.filter(m => m.kategori === 'SheetImport') };
   setMasterData(p);
@@ -577,9 +628,32 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
       return;
     }
 
-    let batal = false;
     const kunci = `approval_notice_seen_${user.id}`;
     if (sessionStorage.getItem(kunci) === '1') return;
+
+    // JALUR CEPAT: angka lonceng sudah ikut di respons login maupun
+    // buka_aplikasi. Dulu setiap kepala divisi yang membuka aplikasi
+    // menembak get_approval_list sendiri — satu eksekusi Apps Script
+    // penuh, yang di dalamnya menyisir seluruh sheet Absensi, hanya
+    // untuk menampilkan satu angka.
+    if (bootAwal) {
+      const ap = bootAwal.approval;
+      const total = ap ? (Number(ap.total) || 0) : 0;
+      if (total > 0) {
+        setApprovalNotice({
+          total,
+          divisiCounts: (ap && ap.divisiCounts) || {},
+          nama: user.nama || 'Kepala Divisi'
+        });
+      }
+      return;
+    }
+
+    // Jawaban boot masih di perjalanan: jangan menembak request kedua
+    // untuk data yang sudah dalam perjalanan.
+    if (bootMenunggu) return;
+
+    let batal = false;
 
     const muatNotifikasiApproval = async () => {
       try {
@@ -610,7 +684,7 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
 
     muatNotifikasiApproval();
     return () => { batal = true; };
-  }, [user]);
+  }, [user, bootAwal, bootMenunggu]);
 
     // ----------------------------------------------------------------
     // GERBANG GPS WAJIB (lihat utils/gpsWajib.js)
@@ -748,14 +822,20 @@ useEffect(() => {
   // masih menahan hanya menghasilkan ping gagal beruntun — GPS-nya memang
   // belum bisa dibaca, itu justru sebabnya gerbang muncul.
   if (!gpsGate.lolos) return;
+  // Status pelacakan sudah ikut di respons login / buka_aplikasi. Selama
+  // jawabannya masih di perjalanan, pelacak ditahan — kalau dijalankan
+  // sekarang ia akan menembak get_gps_tracking_status sendiri, yaitu
+  // persis request yang sedang dihapus dari jalur pembukaan aplikasi.
+  if (bootMenunggu) return;
   const hentikan = mulaiPelacakGps({
     fetchApi,
     scriptUrl: SCRIPT_URL,
     user,
-    onStatus: setGpsTrackStatus
+    onStatus: setGpsTrackStatus,
+    statusAwal: (bootAwal && bootAwal.gpsTracking) || null
   });
   return () => { try { hentikan(); } catch (e) { /* abaikan */ } };
-}, [user, gpsGate.lolos]);
+}, [user, gpsGate.lolos, bootAwal, bootMenunggu]);
 
     // LAYOUT CONTAINER / WRAPPER UTAMA APLIKASI
 return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-2">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Aplikasi akan diperbarui ke <strong>versi {newVersion}</strong>.</p>{!updateGagalBerulang&&(<p className="text-[12px] font-semibold mb-5">{view === 'form' ? (<span className="text-amber-600">Menunggu Anda menyelesaikan form absen. Update berjalan otomatis setelah keluar dari form.</span>) : (<span className="text-blue-600">Memuat ulang otomatis dalam {updateHitungMundur === null ? 5 : updateHitungMundur} detik…</span>)}</p>)}{updateGagalBerulang&&(<div className="mb-5" />)}<button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button>{updateGagalBerulang ? (<><p className="text-[11px] text-amber-600 font-semibold mt-4 leading-relaxed">Sudah beberapa kali dimuat ulang tetapi versinya tetap sama. Kemungkinan besar file aplikasi versi baru belum diunggah ke server — bukan kesalahan HP Anda.</p><button onClick={lanjutTanpaUpdate} className="w-full mt-3 border border-slate-300 text-slate-600 font-bold py-3 rounded-xl active:scale-95 transition-all">Lanjutkan dengan versi ini</button><p className="text-[10px] text-slate-400 mt-3">Absensi tetap dapat dipakai. Laporkan pesan ini ke Admin.</p></>) : (<p className="text-[10px] text-slate-400 mt-4">*Cache aplikasi dibersihkan lalu halaman dimuat ulang otomatis.</p>)}</div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
@@ -792,7 +872,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice} bootAwal={bootAwal} bootMenunggu={bootMenunggu}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
       <GpsGateScreen
         status={gpsGate.status}
         pesan={gpsGate.pesan}
@@ -899,7 +979,7 @@ function labelPeriodeDDMM(mulai, selesai) {
   return `${susun(mulai)} - ${susun(selesai)}`;
 }
 
-function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice }) {
+function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice, bootAwal, bootMenunggu }) {
   const [time, setTime] = useState(() => getServerNow());
   const [cuaca, setCuaca] = useState(null);
 
@@ -962,8 +1042,37 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalN
 
   const lewatiRefetchPeriodeAwal = useRef(false);
 
+  // Daftar periode yang ikut di respons buka_aplikasi (sesi dipulihkan).
+  useEffect(() => {
+    if (!bootAwal) return;
+    const aktif = Array.isArray(bootAwal.periodsAktif) ? bootAwal.periodsAktif : [];
+    if (aktif.length) setPeriodeOpsi(aktif);
+
+    // Periode yang BENAR-BENAR dipakai server saat menghitung stats di
+    // respons ini. Pemilih disamakan dengan itu, bukan dengan pilihan
+    // lama dari sessionStorage — kalau admin mengganti periode aktif,
+    // pilihan lama bisa basi dan label periode di layar akan bercerita
+    // beda dari angka yang ditampilkan.
+    const idDipakai = (bootAwal.periode && bootAwal.periode.id)
+      || (bootAwal.periodeDefault && bootAwal.periodeDefault.id)
+      || (aktif.length ? aktif[0].id : '');
+
+    if (idDipakai && idDipakai !== periodeIdPilih) {
+      lewatiRefetchPeriodeAwal.current = true;
+      setPeriodeIdPilih(idDipakai);
+    }
+    // periodeIdPilih sengaja tidak masuk daftar: efek ini hanya mengisi
+    // nilai AWAL, dan ikut berjalan setiap kali user mengganti periode
+    // justru akan menimpanya kembali ke default.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootAwal]);
+
   useEffect(() => {
     if (periodeOpsi.length > 0) return;
+    // Jawaban buka_aplikasi sudah membawa daftar periode; menembak
+    // get_absence_period sekarang berarti satu eksekusi Apps Script
+    // untuk data yang sedang dalam perjalanan.
+    if (bootMenunggu) return;
     let batal = false;
     (async () => {
       try {
@@ -976,13 +1085,20 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalN
       } catch (e) { /* pemilih periode tidak muncul; dashboard tetap jalan */ }
     })();
     return () => { batal = true; };
-  }, [periodeOpsi.length]);
+  }, [periodeOpsi.length, bootMenunggu]);
 
   const lewatiFetchStatsAwal = useRef(!!statsAwal);
+
+  // Angka dashboard dari respons buka_aplikasi sudah dipakai — supaya
+  // tidak diterapkan ulang saat user mengganti periode.
+  const bootStatsTerpakai = useRef(false);
+  // Pengumuman sudah diurus sekali di sesi ini.
+  const pengumumanDitangani = useRef(false);
 
     // LOGIC FETCH PENGUMUMAN / INFO HRD
 useEffect(() => { (async () => {
   if (sessionStorage.getItem('announcement_shown')) return;
+  if (pengumumanDitangani.current) return;
 
   // JALUR CEPAT: pengumuman sudah ikut di respons login (lihat handleLogin).
   // Dipakai sekali lalu dihapus, supaya reload halaman mengambil yang terbaru.
@@ -1006,8 +1122,32 @@ useEffect(() => { (async () => {
     }
   } catch (e) { /* cache rusak: lanjut ambil dari server */ }
 
+  // JALUR CEPAT KEDUA: pengumuman ikut di respons buka_aplikasi saat sesi
+  // dipulihkan. Tanpa ini, setiap pembukaan aplikasi menembak
+  // get_latest_announcement — satu eksekusi Apps Script penuh — bahkan
+  // ketika memang tidak ada pengumuman aktif sama sekali, karena penanda
+  // 'announcement_shown' baru ditulis saat karyawan MENUTUP kotak
+  // pengumuman, dan kotak itu tidak pernah muncul kalau isinya kosong.
+  if (bootAwal) {
+    pengumumanDitangani.current = true;
+    if (bootAwal.pengumumanDisertakan) {
+      if (bootAwal.pengumuman) {
+        setNewsContent(bootAwal.pengumuman);
+        setShowNews(true);
+      }
+      return;
+    }
+    // pengumumanDisertakan false = server gagal membacanya. Ambil sendiri
+    // seperti dulu, jangan diam-diam menganggap tidak ada pengumuman.
+  } else if (bootMenunggu) {
+    // Jawabannya masih di perjalanan — jangan menembak request kedua.
+    return;
+  } else {
+    pengumumanDitangani.current = true;
+  }
+
   try { const d = await (await fetchApi(SCRIPT_URL, {method:'POST', body:JSON.stringify({action:'get_latest_announcement'})})).json(); if(d.result==='success'&&d.data){ setNewsContent(d.data); setShowNews(true); } } catch(e){ console.error(e); }
-})(); }, []);
+})(); }, [bootAwal, bootMenunggu]);
   
     // LOGIC TIMER / DETAK JAM REAL-TIME
 useEffect(() => { const t = setInterval(() => setTime(getServerNow()), 1000); return () => clearInterval(t); }, []);
@@ -1058,9 +1198,31 @@ useEffect(() => {
     return;
   }
 
+  // JALUR CEPAT KEDUA: angka sudah ikut di respons buka_aplikasi saat
+  // sesi dipulihkan. Inilah yang menghapus satu round trip get_stats —
+  // request terberat di jalur membuka aplikasi, karena di dalamnya ada
+  // perhitungan seluruh statistik periode.
+  //
+  // SENGAJA DI ATAS pemeriksaan lewatiRefetchPeriodeAwal di bawah: efek
+  // pengisi periode berjalan lebih dulu pada commit yang sama dan bisa
+  // menyalakan penanda itu. Kalau urutannya dibalik, angka yang sudah
+  // terbawa di respons ini akan dilewati dan tidak pernah dipasang.
+  if (!bootStatsTerpakai.current && bootAwal && bootAwal.stats) {
+    bootStatsTerpakai.current = true;
+    terapkanStats(bootAwal.stats);
+    setLoadingStats(false);
+    setStatsError('');
+    return;
+  }
+
   // Perubahan periode yang berasal dari default server tidak perlu ditembak
   // ulang — angkanya sudah benar sejak respons login.
   if (lewatiRefetchPeriodeAwal.current) { lewatiRefetchPeriodeAwal.current = false; return; }
+
+  // Jawaban buka_aplikasi masih di perjalanan: angkanya sedang dibawa
+  // request itu, jadi menembak get_stats sekarang hanya menggandakan
+  // pekerjaan yang sama di server.
+  if (bootMenunggu) return;
 
   const f = async () => {
     setLoadingStats(true);
@@ -1090,7 +1252,10 @@ useEffect(() => {
   // periodeIdPilih ikut: mengganti periode WAJIB mengambil ulang angkanya.
   // Pengambilan pertama tetap dilewati oleh lewatiFetchStatsAwal (angka sudah
   // ikut di respons login), jadi ini tidak menambah request saat buka aplikasi.
-}, [user, statsRetry, periodeIdPilih]);
+  // bootAwal/bootMenunggu ikut supaya efek ini berjalan lagi begitu jawaban
+  // buka_aplikasi tiba — tanpa keduanya, angkanya ikut terbawa tapi tidak
+  // pernah dipasang ke layar.
+}, [user, statsRetry, periodeIdPilih, bootAwal, bootMenunggu]);
 
     // FUNGSI KLIK STATISTIK (NAVIGASI FILTER)
 const handleStatClick = (c) => { localStorage.setItem('dbAbsenFilter', c); setView('db_absen'); };
@@ -8615,6 +8780,10 @@ function LoginScreen({ onLogin }) {
             periods: data.periods || [],
             periodsAktif: data.periodsAktif || [],
             periodeDefault: data.periodeDefault || null
+          },
+          {
+            gpsTracking: data.gpsTracking || null,
+            approval: data.approval || null
           }
         );
       } else {

@@ -206,8 +206,14 @@ export async function kirimAntrianGps({ fetchApi, scriptUrl, user }) {
  * @param {Function} onStatus dipanggil setiap status berubah, untuk
  *        indikator di layar:
  *        { aktif, izinDitolak, terakhir, pesan, antrian, layarDitahan }
+ * @param {Object=} statusAwal jawaban `get_gps_tracking_status` yang SUDAH
+ *        dipegang pemanggil — sejak Sep 2026 respons login dan
+ *        `buka_aplikasi` membawanya serta. Kalau diisi, pelacak tidak
+ *        menembak request status sendiri: satu eksekusi Apps Script hilang
+ *        dari setiap pembukaan aplikasi, dan itu eksekusi yang selama ini
+ *        mengantre bersama login/statistik pada jam masuk.
  */
-export function mulaiPelacakGps({ fetchApi, scriptUrl, user, onStatus }) {
+export function mulaiPelacakGps({ fetchApi, scriptUrl, user, onStatus, statusAwal = null }) {
   let hidup = true;
   let timer = null;
   let intervalMs = INTERVAL_BAWAAN_MS;
@@ -334,8 +340,54 @@ export function mulaiPelacakGps({ fetchApi, scriptUrl, user, onStatus }) {
     }
   };
 
+  // Memasang pelacak dari jawaban status, dari mana pun asalnya.
+  const pasangDariStatus = (status) => {
+    if (!status || !status.aktif) {
+      kabar({ aktif: false, izinDitolak: false, terakhir: 0, pesan: '' });
+      hentikan();
+      return;
+    }
+
+    dilacak = true;
+    intervalMs = Math.max(Number(status.intervalDetik || 300) * 1000, 60000);
+
+    // Layar ditahan HANYA untuk karyawan yang memang dilacak. Menahan
+    // layar orang yang pelacakannya dimatikan admin adalah baterai
+    // yang terbuang tanpa satu titik pun dihasilkan.
+    if (GPS_WAKE_LOCK_AKTIF) {
+      hentikanWakeLock = mulaiWakeLock((st) => {
+        layarDitahan = !!(st && st.aktif);
+      });
+    }
+
+    kabar({ aktif: true, izinDitolak: false, terakhir: 0, pesan: status.pemberitahuan || '' });
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', saatTerlihat);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', saatOnline);
+    }
+
+    // Titik yang tertinggal dari sesi sebelumnya (aplikasi ditutup saat
+    // jaringan mati, atau sesi habis karena auto-logout) disusulkan
+    // lebih dulu — tidak perlu menunggu siklus pertama.
+    kirimAntrianGps({ fetchApi, scriptUrl, user });
+
+    // Titik pertama dikirim agak lambat, bukan seketika: saat login
+    // aplikasi sedang sibuk memuat dashboard, dan izin lokasi yang
+    // muncul di detik pertama membuat karyawan menolaknya karena kaget.
+    jadwalkan(20000);
+  };
+
   // --- Mulai: tanyakan dulu apakah akun ini memang dilacak ------------
   (async () => {
+    // Jawabannya sudah ikut di respons login / buka_aplikasi.
+    if (statusAwal && typeof statusAwal.aktif === 'boolean') {
+      pasangDariStatus(statusAwal);
+      return;
+    }
+
     try {
       const res = await fetchApi(scriptUrl, {
         method: 'POST',
@@ -348,42 +400,7 @@ export function mulaiPelacakGps({ fetchApi, scriptUrl, user, onStatus }) {
       // kesalahan yang perlu ditampilkan: aplikasi baru memang harus tetap
       // berjalan normal di backend yang belum di-deploy ulang.
       if (!data || data.result !== 'success') { hentikan(); return; }
-      if (!data.aktif) {
-        kabar({ aktif: false, izinDitolak: false, terakhir: 0, pesan: '' });
-        hentikan();
-        return;
-      }
-
-      dilacak = true;
-      intervalMs = Math.max(Number(data.intervalDetik || 300) * 1000, 60000);
-
-      // Layar ditahan HANYA untuk karyawan yang memang dilacak. Menahan
-      // layar orang yang pelacakannya dimatikan admin adalah baterai
-      // yang terbuang tanpa satu titik pun dihasilkan.
-      if (GPS_WAKE_LOCK_AKTIF) {
-        hentikanWakeLock = mulaiWakeLock((st) => {
-          layarDitahan = !!(st && st.aktif);
-        });
-      }
-
-      kabar({ aktif: true, izinDitolak: false, terakhir: 0, pesan: data.pemberitahuan || '' });
-
-      if (typeof document !== 'undefined') {
-        document.addEventListener('visibilitychange', saatTerlihat);
-      }
-      if (typeof window !== 'undefined') {
-        window.addEventListener('online', saatOnline);
-      }
-
-      // Titik yang tertinggal dari sesi sebelumnya (aplikasi ditutup saat
-      // jaringan mati, atau sesi habis karena auto-logout) disusulkan
-      // lebih dulu — tidak perlu menunggu siklus pertama.
-      kirimAntrianGps({ fetchApi, scriptUrl, user });
-
-      // Titik pertama dikirim agak lambat, bukan seketika: saat login
-      // aplikasi sedang sibuk memuat dashboard, dan izin lokasi yang
-      // muncul di detik pertama membuat karyawan menolaknya karena kaget.
-      jadwalkan(20000);
+      pasangDariStatus(data);
     } catch (e) {
       hentikan();
     }
