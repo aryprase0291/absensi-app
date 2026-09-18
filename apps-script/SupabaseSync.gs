@@ -27,6 +27,7 @@
 const SB_PROP_URL       = 'SUPABASE_URL';
 const SB_PROP_RAHASIA   = 'SUPABASE_SINKRON_RAHASIA';
 const SB_PROP_WATERMARK = 'SUPABASE_SESI_SAMPAI';
+const SB_PROP_ANON      = 'SUPABASE_ANON_KEY';
 
 /** @private */
 function _sbKonfig() {
@@ -39,13 +40,34 @@ function _sbKonfig() {
   return { url: url, rahasia: rahasia };
 }
 
+/**
+ * Header untuk setiap panggilan Edge Function.
+ *
+ * `x-sinkron-rahasia` adalah gerbang kita sendiri. `Authorization`
+ * dibutuhkan terpisah: Edge Function yang dideploy lewat dasbor/API
+ * berjalan dengan verify_jwt aktif, dan tanpa header ini Supabase
+ * menolak permintaannya di depan pintu — sebelum kode kita sempat
+ * berjalan sama sekali. Anon key TIDAK memberi akses apa pun ke tabel;
+ * seluruh isi tetap dijaga RLS dan rahasia sinkron di atas.
+ * @private
+ */
+function _sbHeader(cfg) {
+  const h = { 'x-sinkron-rahasia': cfg.rahasia };
+  const anon = String(PropertiesService.getScriptProperties().getProperty(SB_PROP_ANON) || '');
+  if (anon) {
+    h['apikey'] = anon;
+    h['Authorization'] = 'Bearer ' + anon;
+  }
+  return h;
+}
+
 /** @private */
 function _sbPanggil(namaFungsi, muatan) {
   const cfg = _sbKonfig();
   const res = UrlFetchApp.fetch(cfg.url + '/functions/v1/' + namaFungsi, {
     method: 'post',
     contentType: 'application/json',
-    headers: { 'x-sinkron-rahasia': cfg.rahasia },
+    headers: _sbHeader(cfg),
     payload: JSON.stringify(muatan || {}),
     muteHttpExceptions: true
   });
@@ -316,6 +338,81 @@ function SUPABASE_SETUP() {
 }
 
 /**
+ * Menyimpan anon key Supabase. JALANKAN SEKALI, lalu lupakan.
+ *
+ * KENAPA PERLU. Edge Function `dbabsen` di-deploy lewat API, dan di
+ * jalur itu `verify_jwt` menyala secara bawaan — berbeda dengan `login`,
+ * `sesi-terbaru` dan `sinkron-master` yang di-deploy dengan satpam itu
+ * dimatikan. Selama kunci ini belum tersimpan, setiap panggilan Apps
+ * Script ke `dbabsen` ditolak Supabase di depan pintu, SEBELUM kode kita
+ * sempat berjalan. Gejalanya: "dbabsen menjawab HTTP 401".
+ *
+ * APAKAH INI RAHASIA? Bukan. Anon key memang dirancang untuk dipasang di
+ * sisi klien — nilainya sudah ikut terkirim ke setiap HP karyawan di
+ * dalam bundle aplikasi (lihat src/config/constants.js). Ia tidak memberi
+ * akses ke tabel mana pun: seluruh isi dijaga RLS, dan endpoint
+ * sinkronisasi masih meminta SINKRON_RAHASIA di atasnya.
+ *
+ * KALAU KELAK ANDA MEMUTAR ULANG KUNCI Supabase, ganti nilai di bawah
+ * dan jalankan fungsi ini lagi. Nilainya harus SAMA dengan yang dipakai
+ * aplikasi, kalau tidak Apps Script tetap ditolak.
+ */
+function SUPABASE_SETUP_ANON() {
+  const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93YmlicXFhb2V5cm5hdHpxZ3NvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3MTY5ODgsImV4cCI6MjEwNTI5Mjk4OH0.fYkvj16tWN-7yh4zvRSbRg7aIb3tp4dnZQapNK50J3Q';
+
+  PropertiesService.getScriptProperties().setProperty(SB_PROP_ANON, ANON);
+  if (typeof _propsLupakan_ === 'function') _propsLupakan_();
+
+  Logger.log('Anon key tersimpan (' + ANON.length + ' karakter).');
+  Logger.log('Buktikan sekarang juga dengan SUPABASE_UJI_ANON().');
+}
+
+/**
+ * Membuktikan kunci di atas benar-benar diterima.
+ *
+ * Memanggil Edge Function `dbabsen` sungguhan dengan aksi paling murah
+ * yang ada (`versi`). Kalau ia menjawab angka, berarti kartu tamu DAN
+ * rahasia sinkron dua-duanya diterima — tidak perlu menebak lagi.
+ *
+ * Aman dijalankan kapan saja: `versi` hanya membaca, tidak menulis
+ * sebaris pun.
+ */
+function SUPABASE_UJI_ANON() {
+  const anon = String(PropertiesService.getScriptProperties().getProperty(SB_PROP_ANON) || '');
+  Logger.log('Anon key tersimpan : ' + (anon ? anon.length + ' karakter' : '(KOSONG — jalankan SUPABASE_SETUP_ANON dulu)'));
+
+  try {
+    const hasil = _sbDbAbsen('versi', {});
+    Logger.log('Jawaban dbabsen    : ' + JSON.stringify(hasil));
+    Logger.log('');
+    Logger.log('>>> BERHASIL. Apps Script sudah bisa memanggil Edge Function dbabsen.');
+    Logger.log('    Isi db_absen saat ini: ' + hasil.total + ' baris.');
+    if (Number(hasil.total) === 0) {
+      Logger.log('    (Masih kosong — itu wajar sebelum SUPABASE_SEMAI_DBABSEN dijalankan.)');
+    }
+    return hasil;
+  } catch (e) {
+    const pesan = String(e && e.message ? e.message : e);
+    Logger.log('Jawaban dbabsen    : GAGAL — ' + pesan);
+    Logger.log('');
+    if (pesan.indexOf('401') !== -1) {
+      Logger.log('>>> HTTP 401 = kartu tamunya ditolak. Anon key salah atau belum tersimpan.');
+      Logger.log('    Salin ulang nilainya dari src/config/constants.js, lalu jalankan');
+      Logger.log('    SUPABASE_SETUP_ANON() lagi.');
+    } else if (pesan.indexOf('Tidak berwenang') !== -1) {
+      Logger.log('>>> Kartu tamu diterima, tapi SINKRON_RAHASIA tidak cocok.');
+      Logger.log('    Samakan nilainya dengan secret SINKRON_RAHASIA di Supabase.');
+    } else if (pesan.indexOf('belum disiapkan') !== -1) {
+      Logger.log('>>> SUPABASE_URL / SUPABASE_SINKRON_RAHASIA belum diisi.');
+      Logger.log('    Jalankan SUPABASE_SETUP() lebih dulu.');
+    } else {
+      Logger.log('>>> Belum jelas penyebabnya. Pesan di atas apa adanya dari Supabase.');
+    }
+    throw e;
+  }
+}
+
+/**
  * Menampilkan AUTH_SECRET supaya bisa dipasang sebagai secret di
  * Supabase. Edge Function login WAJIB memakai nilai yang sama — kalau
  * berbeda, tokennya akan ditolak setiap endpoint Apps Script.
@@ -516,7 +613,11 @@ function SUPABASE_PASANG_TRIGGER() {
   SUPABASE_LEPAS_TRIGGER();
   ScriptApp.newTrigger('SUPABASE_TARIK_SESI').timeBased().everyMinutes(1).create();
   ScriptApp.newTrigger('SUPABASE_SINKRON_MASTER').timeBased().everyMinutes(10).create();
-  Logger.log('Trigger terpasang: tarik sesi tiap 1 menit, sinkron master tiap 10 menit.');
+  // Cermin dbabsen. Tiap 5 menit sudah cukup: yang mengubahnya hanya
+  // import, beberapa kali sehari. Penarikan yang menemukan sidik isi
+  // tidak berubah berhenti tanpa menyentuh satu sel pun.
+  ScriptApp.newTrigger('SUPABASE_TARIK_DBABSEN').timeBased().everyMinutes(5).create();
+  Logger.log('Trigger terpasang: sesi 1 menit, master 10 menit, cermin dbabsen 5 menit.');
 }
 
 /** Melepas kedua trigger. */
@@ -524,10 +625,283 @@ function SUPABASE_LEPAS_TRIGGER() {
   let n = 0;
   ScriptApp.getProjectTriggers().forEach(function (t) {
     const f = t.getHandlerFunction();
-    if (f === 'SUPABASE_TARIK_SESI' || f === 'SUPABASE_SINKRON_MASTER') {
+    if (f === 'SUPABASE_TARIK_SESI' || f === 'SUPABASE_SINKRON_MASTER' ||
+        f === 'SUPABASE_TARIK_DBABSEN') {
       ScriptApp.deleteTrigger(t);
       n++;
     }
   });
   Logger.log('Trigger dilepas: ' + n);
+}
+
+// =====================================================================
+// FASE 2 — dbabsen
+//
+// ARAHNYA BERLAWANAN DENGAN FASE 1, dan itu disengaja:
+//
+//   karyawan : Sheets menulis  -> Postgres cermin   (SUPABASE_SINKRON_MASTER)
+//   dbabsen  : Postgres menulis -> sheet cermin     (SUPABASE_TARIK_DBABSEN)
+//
+// Satu tabel tetap punya SATU penulis; yang berubah cuma siapa. Sejak
+// ini dipakai, sheet `dbabsen` TIDAK BOLEH lagi diedit tangan — isinya
+// ditimpa setiap kali Postgres berubah.
+// =====================================================================
+
+const SB_PROP_DBABSEN      = 'SUPABASE_DBABSEN';        // '1' = jalur baru menyala
+const SB_PROP_DBABSEN_CAP  = 'SUPABASE_DBABSEN_CAP';    // sidik isi terakhir yang sudah ditulis ke sheet
+
+// Potongan penyemaian & penarikan. 2.000 baris x 18 kolom masih jauh di
+// bawah batas muatan Edge Function, dan cukup kecil untuk selesai dalam
+// satu eksekusi Apps Script.
+const SB_DBABSEN_POTONGAN = 2000;
+
+// Urutannya HARUS sama dengan kolom B..S sheet dbabsen. Dipakai dua
+// arah — menyemai ke Postgres dan menulis balik ke sheet — supaya tidak
+// ada dua daftar kolom yang bisa berbeda diam-diam.
+const SB_DBABSEN_KOLOM = [
+  'no_akun', 'nik', 'nama', 'tanggal', 'jam_kerja', 'mulai_tugas',
+  'akhir_tugas', 'masuk', 'pulang', 'telat', 'pulang_awal', 'bolos',
+  'durasi_kerja', 'symbol', 'departemen', 'att_time', 'waktu_scan', 'minggu'
+];
+
+/**
+ * Sakelar jalur baru. Selama '0' atau kosong, SELURUH pembacaan tetap
+ * memakai sheet seperti sebelumnya — jadi menyalakannya bukan taruhan,
+ * dan mematikannya kembali satu properti.
+ */
+function sbDbAbsenAktif() {
+  try {
+    return String(PropertiesService.getScriptProperties().getProperty(SB_PROP_DBABSEN) || '') === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+/** @private */
+function _sbDbAbsen(aksi, muatan) {
+  const isi = muatan || {};
+  isi.aksi = aksi;
+  return _sbPanggil('dbabsen', isi);
+}
+
+// ---------------------------------------------------------------------
+// PENYEMAIAN: isi sheet yang sudah ada -> Postgres
+//
+// Dijalankan SEKALI, manual, sebelum sakelar dinyalakan. Tanpa ini
+// Postgres kosong dan semua pembacaan mengembalikan nol — bukan error,
+// yang justru lebih berbahaya karena tidak ada yang sadar.
+// ---------------------------------------------------------------------
+function SUPABASE_SEMAI_DBABSEN() {
+  const sheet = SS.getSheetByName(SHEET_DB_ABSEN);
+  if (!sheet) throw new Error('Sheet dbabsen tidak ditemukan.');
+
+  const rows = bacaSheet(sheet, 19);
+  if (rows.length < 2) throw new Error('Sheet dbabsen kosong, tidak ada yang bisa disemai.');
+
+  const sesi = 'semai-' + new Date().getTime();
+  let terkirim = 0;
+  let dilewati = 0;
+  let potongan = [];
+
+  const kirim = function () {
+    if (!potongan.length) return;
+    _sbDbAbsen('impor_potongan', { sesi: sesi, baris: potongan });
+    terkirim += potongan.length;
+    potongan = [];
+  };
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+
+    // Baris tanpa tanggal terbaca tidak bisa dimasukkan: tanggal adalah
+    // separuh kunci. Dihitung dan dilaporkan, bukan dibuang diam-diam.
+    const ymd = formatDateYMD_Strict(r[4]);
+    if (!ymd) { dilewati++; continue; }
+    // Baris tanpa No.Akun DAN tanpa NIK tidak punya kunci sama sekali.
+    if (!String(r[1] || '').trim() && !String(r[2] || '').trim()) { dilewati++; continue; }
+
+    const b = {};
+    for (let k = 0; k < SB_DBABSEN_KOLOM.length; k++) {
+      b[SB_DBABSEN_KOLOM[k]] = String(r[k + 1] === null || r[k + 1] === undefined ? '' : r[k + 1]).trim();
+    }
+    b.tanggal = ymd;
+    potongan.push(b);
+
+    if (potongan.length >= SB_DBABSEN_POTONGAN) kirim();
+  }
+  kirim();
+
+  if (!terkirim) throw new Error('Tidak ada baris yang bisa disemai (semua dilewati).');
+
+  // replace: Postgres diisi ULANG dari sheet, bukan digabung. Penyemaian
+  // yang diulang karena gagal di tengah karena itu aman — tidak ada
+  // baris kembar yang tertinggal.
+  const hasil = _sbDbAbsen('impor_commit', { sesi: sesi, mode: 'replace' });
+
+  Logger.log('Semai selesai: ' + terkirim + ' baris terkirim, ' + dilewati + ' dilewati.');
+  Logger.log('Jawaban commit: ' + JSON.stringify(hasil));
+  Logger.log('');
+  Logger.log('Berikutnya: bandingkan dulu dengan SUPABASE_UJI_DBABSEN(),');
+  Logger.log('baru nyalakan sakelarnya dengan SUPABASE_DBABSEN_NYALAKAN().');
+  return hasil;
+}
+
+/** Menyalakan / mematikan jalur baca baru. */
+function SUPABASE_DBABSEN_NYALAKAN() {
+  PropertiesService.getScriptProperties().setProperty(SB_PROP_DBABSEN, '1');
+  if (typeof _propsLupakan_ === 'function') _propsLupakan_();
+  Logger.log('Jalur dbabsen Supabase DINYALAKAN.');
+}
+
+function SUPABASE_DBABSEN_MATIKAN() {
+  PropertiesService.getScriptProperties().setProperty(SB_PROP_DBABSEN, '0');
+  if (typeof _propsLupakan_ === 'function') _propsLupakan_();
+  Logger.log('Jalur dbabsen Supabase DIMATIKAN — semua pembacaan kembali ke sheet.');
+}
+
+// ---------------------------------------------------------------------
+// CERMIN: Postgres -> sheet dbabsen
+//
+// Dipasang sebagai trigger. Sheet ditulis ULANG SELURUHNYA, bukan
+// digabung baris per baris. Alasannya: Postgres satu-satunya penulis,
+// jadi tidak ada perubahan lokal yang perlu dipertahankan — dan menulis
+// ulang sekali jauh lebih sederhana (juga lebih sulit salah) daripada
+// mencocokkan ribuan kunci di dalam Apps Script.
+//
+// Biayanya dijaga oleh sidik isi: selama `versi` menjawab jumlah baris
+// dan stempel terbaru yang sama, TIDAK ADA satu sel pun yang ditulis.
+// ---------------------------------------------------------------------
+function SUPABASE_TARIK_DBABSEN() {
+  if (!sbDbAbsenAktif()) {
+    Logger.log('Jalur dbabsen belum dinyalakan; penarikan dilewati.');
+    return 0;
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const versi = _sbDbAbsen('versi', {});
+  const sidik = String(versi.total) + '|' + String(versi.terbaru || '');
+
+  if (sidik === String(props.getProperty(SB_PROP_DBABSEN_CAP) || '')) {
+    return 0; // tidak ada yang berubah — jalur paling sering dilewati.
+  }
+
+  const sheet = SS.getSheetByName(SHEET_DB_ABSEN);
+  if (!sheet) throw new Error('Sheet dbabsen tidak ditemukan.');
+
+  // Seluruh isi ditarik lebih dulu ke memori. Sheet baru disentuh
+  // setelah penarikan BERHASIL SELURUHNYA — kalau putus di tengah,
+  // sheet lama tetap utuh, bukan setengah jadi.
+  const semua = [];
+  let offset = 0;
+  for (;;) {
+    const hal = _sbDbAbsen('semua', { offset: offset, batas: SB_DBABSEN_POTONGAN });
+    const baris = hal.baris || [];
+    for (let i = 0; i < baris.length; i++) semua.push(baris[i]);
+    if (hal.habis || !baris.length) break;
+    offset += baris.length;
+    if (offset > 200000) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
+  }
+
+  if (!semua.length) {
+    Logger.log('Postgres kosong — sheet TIDAK dikosongkan. Jalankan SUPABASE_SEMAI_DBABSEN() dulu.');
+    return 0;
+  }
+
+  const keluar = new Array(semua.length);
+  for (let i = 0; i < semua.length; i++) {
+    const s = semua[i];
+    const baris = new Array(19).fill('');   // kolom A memang kosong
+    for (let k = 0; k < SB_DBABSEN_KOLOM.length; k++) {
+      baris[k + 1] = s[SB_DBABSEN_KOLOM[k]] === null || s[SB_DBABSEN_KOLOM[k]] === undefined
+        ? '' : String(s[SB_DBABSEN_KOLOM[k]]);
+    }
+    // Tanggal harus objek Date — formatDateYMD_Strict dan seluruh
+    // pembaca lama bergantung padanya. 'T00:00:00' (tanpa Z) supaya
+    // dibaca sebagai tengah malam waktu skrip, bukan UTC, sehingga
+    // tidak ada yang bergeser satu hari.
+    baris[4] = new Date(String(s.tanggal) + 'T00:00:00');
+    keluar[i] = baris;
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 19).clearContent();
+  sheet.getRange(2, 1, keluar.length, 19).setValues(keluar);
+
+  // Format kolom: semua teks kecuali tanggal. Kalau tidak, "08:06"
+  // ditafsirkan Sheets sebagai nilai jam dan tampil sebagai 30/12/1899.
+  if (typeof _importSetFormatKolom === 'function') {
+    _importSetFormatKolom(sheet, 2, keluar.length);
+  }
+  sheet.getRange('T1').setValue(new Date());
+
+  props.setProperty(SB_PROP_DBABSEN_CAP, sidik);
+  if (typeof _propsLupakan_ === 'function') _propsLupakan_();
+
+  // Indeks statistik lama disusun dari isi sheet yang barusan berubah.
+  if (typeof bersihkanIndeksDbAbsen === 'function') {
+    try { bersihkanIndeksDbAbsen(); } catch (e) { console.warn('Gagal bersihkan indeks: ' + e.message); }
+  }
+
+  Logger.log('Cermin dbabsen diperbarui: ' + keluar.length + ' baris.');
+  return keluar.length;
+}
+
+// ---------------------------------------------------------------------
+// PEMBUKTIAN
+//
+// Membandingkan angka statistik versi Postgres dengan versi sheet untuk
+// beberapa NIK, memakai periode aktif. Jalankan SEBELUM sakelar
+// dinyalakan — kalau ada yang berbeda, ia mencetak selisihnya, bukan
+// sekadar berkata gagal.
+// ---------------------------------------------------------------------
+function SUPABASE_UJI_DBABSEN() {
+  const periode = getPeriodeAbsenAktif_();
+  const idxSheet = _susunIndeksDbAbsen(periode);
+  const nikSemua = Object.keys(idxSheet);
+
+  if (!nikSemua.length) {
+    Logger.log('Indeks sheet kosong untuk periode ini — tidak ada yang bisa dibandingkan.');
+    return;
+  }
+
+  // Sepuluh NIK dengan catatan terbanyak: paling mungkin memunculkan
+  // perbedaan kalau memang ada.
+  nikSemua.sort(function (a, b) {
+    return Object.keys(idxSheet[b].hari_by_date).length - Object.keys(idxSheet[a].hari_by_date).length;
+  });
+  const contoh = nikSemua.slice(0, 10);
+
+  const bandingkan = ['hadir', 'telat_freq', 'telat_menit', 'sakit', 'alpa', 'no_scan_in', 'no_scan_out'];
+  let beda = 0;
+
+  Logger.log('Periode: ' + periode.mulai + ' .. ' + periode.selesai);
+  for (let i = 0; i < contoh.length; i++) {
+    const nik = contoh[i];
+    const jawab = _sbDbAbsen('statistik', { nik: nik, dari: periode.mulai, sampai: periode.selesai });
+    const pg = jawab.stats || {};
+    const sh = idxSheet[nik];
+
+    const selisih = [];
+    for (let k = 0; k < bandingkan.length; k++) {
+      const f = bandingkan[k];
+      if (Number(pg[f] || 0) !== Number(sh[f] || 0)) {
+        selisih.push(f + ': sheet=' + sh[f] + ' postgres=' + pg[f]);
+      }
+    }
+    const hariSheet = Object.keys(sh.hari_by_date).length;
+    const hariPg = Object.keys(pg.hari_by_date || {}).length;
+    if (hariSheet !== hariPg) selisih.push('hari_tercatat: sheet=' + hariSheet + ' postgres=' + hariPg);
+
+    if (selisih.length) {
+      beda++;
+      Logger.log('BEDA  ' + nik + ' -> ' + selisih.join(' | '));
+    } else {
+      Logger.log('sama  ' + nik + ' (' + hariSheet + ' hari tercatat)');
+    }
+  }
+
+  Logger.log('');
+  Logger.log(beda === 0
+    ? '>>> BERHASIL: ' + contoh.length + ' NIK sama persis. Aman menyalakan sakelar.'
+    : '>>> ADA ' + beda + ' NIK BERBEDA. JANGAN nyalakan sakelar sebelum ini dijelaskan.');
 }

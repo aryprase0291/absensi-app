@@ -308,8 +308,40 @@ function _ambilIndeks_(kunci) {
  *              alpa_by_date, hadir_by_date }, ...
  * }
  */
-function getIndeksDbAbsen(periodeDiketahui) {
+function getIndeksDbAbsen(periodeDiketahui, nikDicari) {
   const periode = periodeDiketahui || getPeriodeAbsenAktif_();
+
+  // -------------------------------------------------------------
+  // FASE 2 — JALUR PENDEK
+  //
+  // Pemanggil yang menyebutkan NIK hanya butuh angka SATU orang.
+  // Postgres bisa menjawabnya langsung, dan dengan itu seluruh mesin
+  // indeks di bawah — scan 6.700 baris, pemotongan 8 KB per properti,
+  // pembuangan revisi lama — tidak perlu dijalankan sama sekali.
+  //
+  // Bentuk kembaliannya tetap peta ber-kunci NIK, sama seperti jalur
+  // lama, supaya pemanggilnya (`idxDb[userNik]`) tidak berubah.
+  //
+  // Gagal apa pun di sini JATUH ke jalur lama, tidak melempar error:
+  // dashboard yang lambat masih jauh lebih baik daripada dashboard
+  // yang tidak terbuka.
+  // -------------------------------------------------------------
+  const nik = String(nikDicari || '').trim();
+  if (nik && nik !== '-' && typeof sbDbAbsenAktif === 'function' && sbDbAbsenAktif()) {
+    try {
+      const jawab = _sbDbAbsen('statistik', {
+        nik: nik, dari: periode.mulai, sampai: periode.selesai
+      });
+      if (jawab && jawab.stats) {
+        const peta = {};
+        peta[nik] = jawab.stats;
+        return peta;
+      }
+    } catch (e) {
+      console.warn('Statistik Supabase gagal, kembali ke indeks sheet: ' + e.message);
+    }
+  }
+
   const kunci = _kunciIndeksDbAbsen_(periode);
 
   const tersimpan = _ambilIndeks_(kunci);

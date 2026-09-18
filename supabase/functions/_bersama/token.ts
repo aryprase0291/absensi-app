@@ -47,6 +47,35 @@ function base64WebSafe(bytes: Uint8Array): string {
   return PERTAHANKAN_PADDING ? hasil : hasil.replace(/=+$/, "");
 }
 
+/** Kebalikannya — meniru Utilities.base64DecodeWebSafe. */
+function base64WebSafeBalik(teks: string): Uint8Array {
+  let s = teks.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4 !== 0) s += "=";
+  const biner = atob(s);
+  const out = new Uint8Array(biner.length);
+  for (let i = 0; i < biner.length; i++) out[i] = biner.charCodeAt(i);
+  return out;
+}
+
+async function kunciHmac(rahasia: string): Promise<CryptoKey> {
+  return await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(rahasia),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+}
+
+async function tandaTangan(body: string, rahasia: string): Promise<string> {
+  const tanda = await crypto.subtle.sign(
+    "HMAC",
+    await kunciHmac(rahasia),
+    new TextEncoder().encode(body),
+  );
+  return base64WebSafe(new Uint8Array(tanda));
+}
+
 export interface IsiToken {
   id: string;
   sesiId: string;
@@ -72,20 +101,77 @@ export async function buatToken(isi: IsiToken, rahasia: string): Promise<string>
   };
 
   const body = base64WebSafe(new TextEncoder().encode(JSON.stringify(payload)));
-
-  const kunci = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(rahasia),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const tanda = await crypto.subtle.sign("HMAC", kunci, new TextEncoder().encode(body));
-
-  return body + "." + base64WebSafe(new Uint8Array(tanda));
+  return body + "." + await tandaTangan(body, rahasia);
 }
 
 /** SessionID: 20 karakter heksadesimal, sama bentuknya dengan deviceTerbitkanSesi. */
 export function buatSesiId(): string {
   return crypto.randomUUID().replace(/-/g, "").substring(0, 20);
+}
+
+// =====================================================================
+// VERIFIKASI — cerminan verifyAuthToken() di apps-script/Auth.gs
+//
+// Dipakai endpoint yang dipanggil LANGSUNG oleh browser karyawan
+// (lihat functions/dbabsen). Tanpa ini, satu-satunya cara memastikan
+// pemanggilnya sah adalah menumpang Apps Script — dan itu justru biaya
+// yang sedang dihapus.
+//
+// Yang TIDAK diperiksa di sini: SessionID (aturan satu perangkat).
+// Pemeriksaan itu butuh Script Properties dan tetap tinggal di
+// authorizeRequest. Akibat yang disengaja: perangkat yang sesinya sudah
+// digusur masih bisa MEMBACA riwayatnya sendiri sampai tokennya
+// kedaluwarsa, tapi tidak bisa mengabsen atau menyentuh apa pun yang
+// mengubah data. Menaruh pembacaan riwayat di belakang penggusuran sesi
+// tidak sepadan dengan satu round trip tambahan ke Apps Script pada
+// setiap pembukaan layar.
+// =====================================================================
+
+export interface TokenTerbaca {
+  u: string;   // userId
+  s: string;   // sessionId
+  r: string;   // role
+  d: string;   // divisi
+  l: string;   // lokasi
+  e: number;   // kedaluwarsa (epoch ms)
+}
+
+export async function bacaToken(
+  token: unknown,
+  rahasia: string,
+): Promise<TokenTerbaca | null> {
+  if (!token || typeof token !== "string") return null;
+
+  const bagian = token.split(".");
+  if (bagian.length !== 2) return null;
+
+  const [body, sig] = bagian;
+
+  const diharapkan = await tandaTangan(body, rahasia);
+  // Perbandingan panjang tetap, sama seperti _timingSafeEqual.
+  if (sig.length !== diharapkan.length) return null;
+  let beda = 0;
+  for (let i = 0; i < sig.length; i++) {
+    beda |= sig.charCodeAt(i) ^ diharapkan.charCodeAt(i);
+  }
+  if (beda !== 0) return null;
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64WebSafeBalik(body)));
+  } catch (_e) {
+    return null;
+  }
+
+  if (!payload || !payload.u || !payload.e) return null;
+  if (Date.now() > Number(payload.e)) return null;
+
+  return {
+    u: String(payload.u),
+    s: String(payload.s || ""),
+    r: String(payload.r || "").trim().toLowerCase(),
+    d: String(payload.d || ""),
+    l: String(payload.l || "All"),
+    e: Number(payload.e),
+  };
 }

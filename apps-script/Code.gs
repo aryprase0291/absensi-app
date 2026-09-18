@@ -1396,6 +1396,44 @@ function handleUpdateRemarkStatus(data) {
 // 4. FITUR GET DB ABSEN
 // ==========================================
 
+/**
+ * Baris mesin satu karyawan dari Postgres, dalam BENTUK BARIS SHEET.
+ *
+ * Index-nya sengaja mengikuti kolom dbabsen (0 = kolom A yang kosong,
+ * 1 = No.Akun, 2 = NIK, ...) supaya pemanggilnya tidak perlu tahu
+ * datanya datang dari mana. Elemen ke-0 diisi baris kosong sebagai
+ * pengganti baris judul, karena seluruh loop lama mulai dari i = 1.
+ *
+ * @return {Array<Array>} bentuknya sama dengan bacaSheet(dbabsen, 19)
+ * @private
+ */
+function _sbBarisMesin(nik) {
+  const jawab = _sbDbAbsen('riwayat', { nik: String(nik) });
+  const list = (jawab && jawab.list) ? jawab.list : [];
+
+  const rows = [new Array(19).fill('')];   // pengganti baris judul
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    const b = new Array(19).fill('');
+    b[1]  = r.no_akun || '';
+    b[2]  = r.nik || '';
+    b[3]  = r.nama || '';
+    // 'T00:00:00' tanpa Z: tengah malam waktu skrip, bukan UTC. Dengan
+    // Z, tanggal akan mundur satu hari untuk zona waktu timur seperti
+    // WIB — dan kalender Data Absen ikut bergeser.
+    b[4]  = r.tanggal ? new Date(String(r.tanggal) + 'T00:00:00') : '';
+    b[5]  = r.jam_kerja || '';
+    b[8]  = r.masuk || '';
+    b[9]  = r.pulang || '';
+    b[10] = r.telat || '';
+    b[14] = r.symbol || '';
+    b[17] = r.waktu_scan || '';
+    b[18] = r.minggu || '';
+    rows.push(b);
+  }
+  return rows;
+}
+
 function handleGetDbAbsen(data) {
   const sheet = SS.getSheetByName(SHEET_DB_ABSEN);
   if (!sheet) return responseJSON({ result: 'error', message: 'Sheet dbabsen tidak ditemukan' }); // [cite: 158]
@@ -1408,10 +1446,6 @@ function handleGetDbAbsen(data) {
         lastUpdateStr = new Date(lastUpdateRaw).toISOString();
       } catch (e) { lastUpdateStr = null; }
   }
-
-  // Kolom terjauh yang dibaca di bawah: index 18 (week) -> 19 kolom,
-  // bukan 49. Sisanya tidak pernah dipakai.
-  const rows = bacaSheet(sheet, 19);
 
   // --- CARI USER ---
   let userNik = data.noPayroll;
@@ -1428,6 +1462,35 @@ function handleGetDbAbsen(data) {
   }
 
   if (!userNik || userNik === '-') return responseJSON({ result: 'success', list: [] });
+
+  // --- BARIS MESIN (dbabsen) ---
+  //
+  // FASE 2. Dulu baris di bawah menyisir SELURUH sheet dbabsen — 6.700
+  // baris x 19 kolom — lalu membuang 99% hasilnya karena hanya satu NIK
+  // yang dipakai. Sekarang Postgres yang menyaring, dan yang dikirim
+  // balik cuma puluhan baris milik orang ini.
+  //
+  // Bentuk hasilnya sengaja dibuat SAMA PERSIS dengan bentuk baris
+  // sheet (larik 19 kolom, index 0 = kolom A yang kosong), supaya
+  // seluruh loop di bawah — termasuk penggabungan dengan absensi online
+  // dari sheet Absensi — tidak berubah satu baris pun.
+  //
+  // Kalau Supabase mati atau sakelarnya belum dinyalakan, jalur lama
+  // dipakai apa adanya. Itu yang membuat ini bukan taruhan.
+  let rows = null;
+  if (typeof sbDbAbsenAktif === 'function' && sbDbAbsenAktif()) {
+    try {
+      rows = _sbBarisMesin(userNik);
+    } catch (e) {
+      console.warn('dbabsen Supabase gagal, kembali ke sheet: ' + e.message);
+      rows = null;
+    }
+  }
+  if (rows === null) {
+    // Kolom terjauh yang dibaca di bawah: index 18 (week) -> 19 kolom,
+    // bukan 49. Sisanya tidak pernah dipakai.
+    rows = bacaSheet(sheet, 19);
+  }
 
   const list = [];
   
@@ -2517,7 +2580,9 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
     // agregat per NIK yang disusun sekali lalu di-cache (StatsIndex.gs).
     // Dulu: 6.700 baris dbabsen disisir ulang setiap dashboard dibuka,
     // hanya untuk mengambil angka satu orang.
-    const idxDb = getIndeksDbAbsen(periodeAktif);
+    // idxDb sengaja BELUM diambil di sini: sejak Fase 2 ia hanya perlu
+    // angka SATU NIK, dan NIK-nya baru diketahui beberapa puluh baris di
+    // bawah. Lihat pengambilannya di sana.
 
     // [UPDATE] Ambil Data MASTER-CUTI — DARI CACHE (lihat Cache.gs).
     // Dulu membaca sheet MASTER-CUTI PENUH di setiap pemanggilan get_stats.
@@ -2708,6 +2773,11 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
         const foundUser = rowsUser.slice(1).find(r => String(r[0]) === targetId);
         if (foundUser) userNik = String(foundUser[7]).trim(); // Ambil No Payroll
     }
+
+    // Angka mesin untuk SATU orang ini saja. Sejak Fase 2, Postgres yang
+    // mengagregasinya; kalau jalurnya belum menyala atau Supabase mati,
+    // getIndeksDbAbsen jatuh sendiri ke indeks sheet yang lama.
+    const idxDb = getIndeksDbAbsen(periodeAktif, userNik);
 
     // [UPDATE] LOGIKA BARU: AMBIL DARI MASTER-CUTI BERDASARKAN NIK
     if (userNik && userNik !== '-') {
