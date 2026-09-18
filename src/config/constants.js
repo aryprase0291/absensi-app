@@ -47,20 +47,26 @@ const SUPABASE_ANON_PRODUKSI =
 export const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || SUPABASE_URL_PRODUKSI;
 export const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || SUPABASE_ANON_PRODUKSI;
 
-// SAKELAR JALUR LOGIN BARU — SENGAJA MASIH MATI.
+// SAKELAR JALUR LOGIN BARU — DINYALAKAN 18 Sep 2026.
 //
-// Alamat dan kunci di atas sudah benar, tetapi menyalakannya sebelum
-// SUPABASE_UJI_TOKEN() berkata BERHASIL adalah satu-satunya cara fase
-// ini bisa merugikan: kalau AUTH_SECRET di Supabase berbeda dengan yang
-// ada di Apps Script, karyawan akan berhasil login lalu SEKETIKA
-// terlempar kembali ke layar login pada request berikutnya — dan itu
-// jauh lebih buruk daripada login yang lambat.
+// Dinyalakan hanya SETELAH SUPABASE_UJI_LOGIN() di editor Apps Script
+// berkata `>>> BERHASIL`, yaitu bukti bahwa token terbitan Supabase
+// diterima verifyAuthToken() yang asli dan SessionID-nya sudah tersalin
+// ke Script Properties. Tanpa bukti itu, karyawan akan berhasil login
+// lalu SEKETIKA terlempar kembali ke layar login pada request
+// berikutnya — jauh lebih buruk daripada login yang lambat.
 //
-// Nyalakan dengan mengubah false menjadi true di bawah (atau
-// REACT_APP_SUPABASE_LOGIN=1 saat build), lalu `npm run build`.
-// Mematikannya kembali: kembalikan ke false, build, unggah. Selesai.
+// MEMATIKANNYA KEMBALI: ubah true menjadi false, `npm run build`,
+// unggah. Selesai — login kembali lewat Apps Script, dan tidak ada data
+// yang perlu dipulihkan karena Postgres di fase ini hanya berisi cermin
+// dan sesi.
+//
+// Menyalakan pun tidak pernah menjadi taruhan satu arah: setiap keadaan
+// yang tidak benar-benar berhasil — gagal, lambat, atau Edge Function
+// sengaja menyerah — tetap jatuh ke Apps Script (lihat
+// utils/loginSupabase.js).
 export const SUPABASE_LOGIN_AKTIF =
-  process.env.REACT_APP_SUPABASE_LOGIN === '1' || false;
+  process.env.REACT_APP_SUPABASE_LOGIN === '1' || true;
 
 export const SUPABASE_AKTIF = !!(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_LOGIN_AKTIF);
 

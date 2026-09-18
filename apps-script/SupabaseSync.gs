@@ -299,6 +299,8 @@ function SUPABASE_TAMPILKAN_RAHASIA() {
 // akun Anda sendiri, atau jalankan di luar jam kerja.
 // =====================================================================
 function SUPABASE_UJI_LOGIN() {
+  // Kosongkan kembali keduanya setelah selesai menguji — ini kode sumber,
+  // bukan tempat menyimpan kredensial.
   const USERNAME = '';   // <-- isi username akun UJI
   const PASSWORD = '';   // <-- isi kata sandinya
 
@@ -439,6 +441,11 @@ function _sbPeriksaToken(token) {
   Logger.log('');
   Logger.log('>>> BERHASIL. Token terbitan Supabase diterima Apps Script,');
   Logger.log('>>> dan sesinya sudah tersalin. Langkah 7 aman dijalankan.');
+  Logger.log('');
+  Logger.log('>>> SEKARANG KOSONGKAN KEMBALI USERNAME dan PASSWORD di dalam');
+  Logger.log('>>> fungsi ini. Keduanya tersimpan sebagai KODE SUMBER, terbaca');
+  Logger.log('>>> siapa pun yang punya akses ke editor Apps Script ini, dan');
+  Logger.log('>>> ikut terbawa setiap kali isinya disalin atau di-screenshot.');
 }
 
 /**

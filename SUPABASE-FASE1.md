@@ -2,17 +2,21 @@
 
 Ditulis 18 Sep 2026. Lanjutan dari `PERFORMA-1.0.24.md`.
 
-**Status: infrastruktur sudah berdiri, jalur login masih MATI.**
-Sakelarnya (`SUPABASE_LOGIN_AKTIF` di `src/config/constants.js`) masih
-`false`, jadi aplikasi berjalan persis seperti sebelumnya.
+**Status: SELESAI dan DINYALAKAN (18 Sep 2026).**
 
 | | |
 |---|---|
 | Project | `absensi-app`, region **Singapore** (`ap-southeast-1`) |
 | URL | `https://owbibqqaoeyrnatzqgso.supabase.co` |
-| Migrasi | sudah dijalankan & diuji di database itu |
-| Edge Function | `login`, `sinkron-master`, `sesi-terbaru` — ketiganya ACTIVE |
-| Yang belum | secret di Supabase, sisi Apps Script, dan sakelarnya |
+| Migrasi | dijalankan & diuji di database itu |
+| Edge Function | `login`, `sinkron-master`, `sesi-terbaru` — ACTIVE |
+| Secret | `AUTH_SECRET`, `SINKRON_RAHASIA` terpasang |
+| Cermin | 305 karyawan, 191 perangkat, 204 ikatan, 54 master data |
+| Trigger | tarik sesi 1 menit, sinkron master 10 menit |
+| Uji token | `SUPABASE_UJI_LOGIN()` → `>>> BERHASIL` |
+| Sakelar | `SUPABASE_LOGIN_AKTIF` = **true** |
+
+Yang tersisa hanya `npm run build` lalu mengunggah isi `build/`.
 
 ---
 
@@ -127,7 +131,7 @@ di lingkungan tiruan:
 
 Ketiganya sudah diperbaiki di berkas migrasi maupun di database.
 
-### 3. Pasang secret di Supabase — ⬜ GILIRAN ANDA
+### 3. Pasang secret di Supabase — ✅ SELESAI
 
 Edge Functions → Secrets:
 
@@ -154,12 +158,26 @@ sandi, dua lainnya memeriksa `SINKRON_RAHASIA` dengan perbandingan
 berpanjang tetap. Menyandarkan diri pada kunci anon tidak menambah apa
 pun — kunci itu memang publik.
 
-### 5. Siapkan Apps Script — ⬜ GILIRAN ANDA
+### 5. Siapkan Apps Script — ✅ SELESAI
 
 Salin `apps-script/SupabaseSync.gs` ke editor, isi `URL` dan `RAHASIA` di
 dalam `SUPABASE_SETUP()`, lalu jalankan sekali.
 
-### 6. Isi cermin & buktikan tokennya — ⬜ GILIRAN ANDA
+### 6. Isi cermin & buktikan tokennya — ✅ SELESAI
+
+Hasilnya di spreadsheet produksi:
+
+```
+base64EncodeWebSafe("ab") = "YWI="        <- padding DIPERTAHANKAN
+Tanda tangan COCOK.
+SessionID di token             : 0ec7ef75db8d4000adf1
+SessionID di Script Properties : 0ec7ef75db8d4000adf1
+>>> BERHASIL
+```
+
+Baris pertama menjawab satu-satunya hal yang tidak bisa dipastikan dari
+luar Apps Script: padding memang dipertahankan, jadi
+`PERTAHANKAN_PADDING = true` di `token.ts` sudah benar.
 
 ```
 SUPABASE_SINKRON_MASTER()   -> harus melaporkan jumlah karyawan
@@ -180,7 +198,7 @@ request aplikasi.
 **Jangan lanjut ke langkah 7 sebelum fungsi itu berkata `>>> BERHASIL`.**
 Itu satu-satunya bukti bahwa token Supabase diterima Apps Script.
 
-### 7. Nyalakan di aplikasi — ⬜ GILIRAN ANDA, SATU BARIS
+### 7. Nyalakan di aplikasi — ✅ SUDAH DINYALAKAN
 
 Alamat dan kunci project sudah tertanam di `src/config/constants.js`.
 Yang tersisa hanya sakelarnya:
