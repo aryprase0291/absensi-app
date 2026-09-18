@@ -49,21 +49,26 @@
 //    dari kembalian, bukan `i + 1` seperti saat membaca dari baris 1.
 // =====================================================================
 
-const JENDELA_PROP_AWALAN = 'ABSROW_V1_';
-
 // Margin mundur untuk hitungStats & cek duplikat.
 //
 // Sebuah baris bisa jatuh di dalam periode aktif walaupun waktu inputnya
 // jauh lebih awal — cuti yang diajukan berbulan-bulan sebelumnya adalah
-// contohnya. 180 hari dipilih supaya pengajuan paling maju sekalipun
-// tetap ikut terbaca, dan tetap memotong sheet yang umurnya bertahun.
+// contohnya. Margin inilah yang menjamin baris seperti itu tetap terbaca.
 //
 // MENAIKKAN angka ini selalu aman (hanya membaca lebih banyak).
-// MENURUNKANNYA berisiko: pengajuan yang diajukan lebih awal dari margin
+// MENURUNKANNYA berisiko: pengajuan yang dikirim lebih awal dari margin
 // akan hilang dari statistik tanpa error apa pun.
+//
+// JANGAN menebak saat mengubahnya. JENDELA_UJI() melaporkan jarak
+// terjauh yang BENAR-BENAR pernah terjadi di spreadsheet ini
+// ("selisih terjauh"), dan angka itulah dasar yang sah.
 const JENDELA_MARGIN_HARI = 180;
 
 const JENDELA_MS_HARI = 24 * 60 * 60 * 1000;
+
+// Berapa baris ekor yang dibaca pada percobaan pertama saat mencari
+// batas jendela. Lihat catatan biaya di jendelaBarisAbsensi_.
+const JENDELA_EKOR_AWAL = 1500;
 
 /**
  * Nilai kolom Waktu menjadi milidetik. null kalau tidak bisa dibaca.
@@ -87,8 +92,6 @@ function _jabWaktuMs_(nilai) {
 function _jabBatasMs_(tanggalYmd) {
   const teks = String(tanggalYmd || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(teks)) return null;
-  // Zona waktu skrip disisipkan lewat formatDate supaya tidak bergantung
-  // pada zona waktu server Google yang menjalankan eksekusi ini.
   const nol = new Date(teks + 'T00:00:00Z');
   if (isNaN(nol.getTime())) return null;
 
@@ -108,52 +111,32 @@ function _jabBatasMs_(tanggalYmd) {
 }
 
 /**
- * Pencarian biner: nomor baris PERTAMA yang waktunya >= batasMs.
- * Mengembalikan 2 (baca penuh) bila ada sel waktu yang tidak terbaca —
- * pada data berlubang, pencarian biner tidak bisa dipercaya.
- * @private
- */
-function _jabCariBaris_(sheet, batasMs, lastRow) {
-  if (lastRow < 2) return lastRow + 1;
-
-  let lo = 2;
-  let hi = lastRow;
-  let jawab = lastRow + 1;
-  let pengaman = 0;
-
-  // Sisa rentang yang lebih kecil dari ini diselesaikan dengan SATU
-  // pembacaan blok, bukan diteruskan membelah. Enam langkah biner
-  // terakhir masing-masing memakai satu round trip Sheets; membaca 64
-  // sel sekaligus jauh lebih murah daripada enam kali membaca 1 sel.
-  const BLOK = 64;
-
-  while (lo <= hi && pengaman++ < 60) {
-    if (hi - lo < BLOK) {
-      const nilai = sheet.getRange(lo, 2, hi - lo + 1, 1).getValues();
-      for (let i = 0; i < nilai.length; i++) {
-        const ms = _jabWaktuMs_(nilai[i][0]);
-        if (ms === null) return 2; // ada lubang -> jangan menebak, baca penuh
-        if (ms >= batasMs) return lo + i;
-      }
-      return jawab;
-    }
-
-    const tengah = Math.floor((lo + hi) / 2);
-    const ms = _jabWaktuMs_(sheet.getRange(tengah, 2).getValue());
-    if (ms === null) return 2; // ada lubang -> jangan menebak, baca penuh
-    if (ms >= batasMs) { jawab = tengah; hi = tengah - 1; }
-    else { lo = tengah + 1; }
-  }
-  return jawab;
-}
-
-/**
- * Nomor baris awal jendela untuk sebuah tanggal, lewat simpanan yang
- * selalu diverifikasi ulang.
+ * Nomor baris PERTAMA yang waktu inputnya >= tanggal.
  *
- * Verifikasinya: baris (r-1) harus MASIH di bawah batas dan baris r harus
- * MASIH di atas batas. Kalau salah satu tidak lagi benar — misalnya
- * karena ada baris dihapus di tengah — pencarian biner diulang.
+ * KENAPA MEMBACA EKOR, BUKAN PENCARIAN BINER (dikoreksi 18 Sep 2026)
+ *
+ * Versi pertama memakai pencarian biner: ~10 pembacaan satu sel untuk
+ * 20.000 baris, dan itu terdengar hemat. Ternyata salah, dan PROFILE_SHEETS
+ * di spreadsheet produksi yang membuktikannya:
+ *
+ *     Announcements      9 baris x  4 kolom =     36 sel -> 214 ms
+ *     MasterData        55 baris x  7 kolom =    385 sel -> 188 ms
+ *     Users            307 baris x 18 kolom =  5.526 sel -> 247 ms
+ *
+ * 36 sel dan 5.526 sel memakan waktu hampir sama. Artinya biaya membaca
+ * sheet hampir seluruhnya adalah ONGKOS PER PANGGILAN (~200 ms), bukan
+ * jumlah selnya. Pencarian biner menukar sedikit sel dengan BANYAK
+ * panggilan — persis arah yang salah: 10 panggilan = ~2 detik, dan itu
+ * dibayar setiap kali batasnya belum tersimpan.
+ *
+ * Yang dipakai sekarang: membaca EKOR kolom B sekali jalan, digandakan
+ * kalau ternyata kurang jauh. Satu panggilan untuk kasus biasa
+ * (~200 ms), dua untuk jendela yang lebar. Tidak ada simpanan yang perlu
+ * diverifikasi atau dibersihkan saat ada baris dihapus — penyederhanaan
+ * ini sekaligus menghapus satu sumber bug.
+ *
+ * Kalau sheet Absensi kelak melewati ~50.000 baris, tinjau ulang: pada
+ * ukuran itu ongkos selnya mulai menyaingi ongkos panggilan.
  */
 function jendelaBarisAbsensi_(sheet, tanggalYmd) {
   if (!sheet) return 2;
@@ -163,38 +146,41 @@ function jendelaBarisAbsensi_(sheet, tanggalYmd) {
   const batasMs = _jabBatasMs_(tanggalYmd);
   if (batasMs === null) return 2; // tanggal tidak dikenal -> baca penuh
 
-  const kunci = JENDELA_PROP_AWALAN + tanggalYmd;
+  // Percobaan pertama: ekor saja. Kalau ternyata kurang jauh, percobaan
+  // KEDUA langsung membaca seluruh kolom B — tidak digandakan
+  // bertahap. Menggandakan terdengar lebih hemat sel, tapi setiap
+  // penggandaan adalah satu panggilan lagi seharga ~200 ms, dan pada
+  // sheet 20.000 baris tiga panggilan bertahap justru lebih lambat
+  // daripada dua panggilan yang salah satunya membaca semuanya.
+  // Jadi: paling banyak DUA panggilan, apa pun ukuran sheetnya.
+  for (let putaran = 0; putaran < 2; putaran++) {
+    const mulai = putaran === 0 ? Math.max(2, lastRow - JENDELA_EKOR_AWAL + 1) : 2;
+    const jml = lastRow - mulai + 1;
+    const nilai = sheet.getRange(mulai, 2, jml, 1).getValues();
 
-  // --- Jalur cepat: simpanan yang masih terbukti benar ---------------
-  try {
-    const simpan = (typeof _propGetCepat_ === 'function')
-      ? _propGetCepat_(kunci)
-      : PropertiesService.getScriptProperties().getProperty(kunci);
-    const r = Number(simpan);
-    if (isFinite(r) && r >= 2 && r <= lastRow + 1) {
-      if (r === 2) {
-        // Klaim "seluruh sheet masuk jendela": cukup periksa baris 2.
-        const ms = _jabWaktuMs_(sheet.getRange(2, 2).getValue());
-        if (ms !== null && ms >= batasMs) return 2;
-      } else if (r === lastRow + 1) {
-        const ms = _jabWaktuMs_(sheet.getRange(lastRow, 2).getValue());
-        if (ms !== null && ms < batasMs) return r;
-      } else {
-        const dua = sheet.getRange(r - 1, 2, 2, 1).getValues();
-        const sebelum = _jabWaktuMs_(dua[0][0]);
-        const ini = _jabWaktuMs_(dua[1][0]);
-        if (sebelum !== null && ini !== null && sebelum < batasMs && ini >= batasMs) return r;
-      }
+    let ketemu = -1;
+    for (let i = 0; i < jml; i++) {
+      const ms = _jabWaktuMs_(nilai[i][0]);
+      // Sel waktu yang tidak terbaca TIDAK boleh dilewati: kita tidak
+      // bisa membuktikan baris itu di luar jendela, jadi ia dianggap
+      // masuk. Selalu ke arah membaca LEBIH BANYAK, tidak pernah kurang.
+      if (ms === null || ms >= batasMs) { ketemu = i; break; }
     }
-  } catch (e) { /* simpanan rusak: hitung ulang */ }
 
-  // --- Jalur lengkap: pencarian biner --------------------------------
-  const jawab = _jabCariBaris_(sheet, batasMs, lastRow);
-  try {
-    PropertiesService.getScriptProperties().setProperty(kunci, String(jawab));
-    if (typeof _propLupakanSatuan_ === 'function') _propLupakanSatuan_(kunci);
-  } catch (e) { /* kuota properti penuh: tetap jalan, hanya tidak hemat */ }
-  return jawab;
+    // Tidak ada satu pun baris di dalam jendela. Karena kolom B menaik,
+    // baris yang lebih tua pasti lebih jauh lagi dari batas — tidak perlu
+    // membaca ke atas.
+    if (ketemu === -1) return lastRow + 1;
+
+    // Ketemu di baris paling atas yang dibaca padahal di atasnya masih
+    // ada baris lain: batas sebenarnya bisa lebih tinggi lagi, jadi baca
+    // seluruh kolom pada putaran berikutnya.
+    if (ketemu === 0 && mulai > 2) continue;
+
+    return mulai + ketemu;
+  }
+
+  return 2; // tidak sempat dipastikan -> baca penuh, seperti perilaku lama
 }
 
 /**
@@ -263,27 +249,6 @@ function bacaAbsensiJamTerakhir_(sheet, jumlahJam, jmlKolom) {
   return bacaAbsensiSejak_(sheet, tanggal, jmlKolom);
 }
 
-/**
- * Membuang seluruh simpanan batas jendela.
- *
- * WAJIB dipanggil setelah baris sheet Absensi DIHAPUS. Sebenarnya
- * verifikasi di jendelaBarisAbsensi_ sudah menangkapnya sendiri, tetapi
- * membersihkan di tempat kejadian membuat pemanggil berikutnya tidak
- * perlu membayar satu pencarian biner.
- */
-function ABSENSI_JENDELA_BERSIHKAN() {
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const semua = props.getProperties();
-    Object.keys(semua).forEach(function (k) {
-      if (k.indexOf(JENDELA_PROP_AWALAN) === 0) props.deleteProperty(k);
-    });
-    if (typeof _propsLupakan_ === 'function') _propsLupakan_();
-  } catch (e) {
-    console.warn('Gagal membersihkan jendela Absensi: ' + e.message);
-  }
-}
-
 // =====================================================================
 // DIAGNOSA — jalankan dari editor Apps Script
 // =====================================================================
@@ -299,21 +264,42 @@ function JENDELA_UJI() {
 
   const periode = getPeriodeAbsenAktif_();
   const lastRow = sheet.getLastRow();
+  const batasPeriodeMs = _jabBatasMs_(periode.mulai);
 
   const t0 = new Date().getTime();
   const penuh = bacaSheet(sheet, 13);
   const t1 = new Date().getTime();
-
-  ABSENSI_JENDELA_BERSIHKAN();
-  const dingin = bacaAbsensiPeriode_(sheet, periode, 13);
+  const jendela = bacaAbsensiPeriode_(sheet, periode, 13);
   const t2 = new Date().getTime();
-  const panas = bacaAbsensiPeriode_(sheet, periode, 13);
-  const t3 = new Date().getTime();
 
-  // Setiap baris di dalam periode HARUS ikut terbawa jendela.
+  // --- Pemeriksaan 1: adakah baris periode yang terlewat? -----------
+  // --- Pemeriksaan 2: berapa hari SEBENARNYA margin yang dibutuhkan?
+  //
+  // Pemeriksaan kedua inilah yang membuat JENDELA_MARGIN_HARI tidak
+  // perlu ditebak. Untuk setiap baris yang jatuh di dalam periode, ia
+  // menghitung berapa hari SEBELUM periode dimulai baris itu diinput.
+  // Yang terbesar = margin minimum yang sah untuk data ini.
   let hilang = 0;
   let contoh = '';
+  let selisihTerjauh = 0;
+  let barisTerjauh = '';
+  let jumlahDiPeriode = 0;
+
+  // Pemeriksaan 3: SELURUH kolom B harus terisi tanggal yang terbaca.
+  //
+  // Seluruh keamanan jendela bersandar pada satu hal: kolom B menaik dan
+  // selalu terisi, karena setiap baris masuk lewat appendRow. Baris yang
+  // kolom B-nya dikosongkan manual di sheet TIDAK bisa dinilai posisinya,
+  // dan kalau letaknya jauh di atas jendela ia bisa terlewat tanpa error.
+  // Karena itu jumlahnya dihitung dan dilaporkan — bukan diasumsikan nol.
+  let waktuKosong = 0;
+  let contohKosong = '';
+
   for (let i = 1; i < penuh.length; i++) {
+    if (_jabWaktuMs_(penuh[i][1]) === null) {
+      waktuKosong++;
+      if (!contohKosong) contohKosong = 'baris ' + (i + 1);
+    }
     const mulaiBaris = formatDateYMD_Strict(
       penuh[i][8] && penuh[i][8] !== '-' ? penuh[i][8] : penuh[i][1]);
     const selesaiBaris = formatDateYMD_Strict(
@@ -321,20 +307,72 @@ function JENDELA_UJI() {
     const masuk = !!mulaiBaris && !!selesaiBaris &&
       !(selesaiBaris < periode.mulai || mulaiBaris > periode.selesai);
     if (!masuk) continue;
+
+    jumlahDiPeriode++;
     const barisSheet = i + 1;
-    if (barisSheet < panas.offsetBaris) {
+
+    if (barisSheet < jendela.offsetBaris) {
       hilang++;
       if (!contoh) contoh = 'baris ' + barisSheet + ' (' + mulaiBaris + ')';
     }
+
+    const inputMs = _jabWaktuMs_(penuh[i][1]);
+    if (inputMs !== null && batasPeriodeMs !== null) {
+      const hari = Math.ceil((batasPeriodeMs - inputMs) / JENDELA_MS_HARI);
+      if (hari > selisihTerjauh) {
+        selisihTerjauh = hari;
+        barisTerjauh = 'baris ' + barisSheet + ' (' + mulaiBaris + ')';
+      }
+    }
   }
 
+  const persen = lastRow > 1
+    ? Math.round(jendela.baris.length * 100 / (lastRow - 1)) : 0;
+
   console.log(
-    'Sheet Absensi: ' + lastRow + ' baris. Periode ' + periode.mulai + ' s/d ' + periode.selesai + '\n' +
-    'Baca penuh   : ' + (penuh.length - 1) + ' baris, ' + (t1 - t0) + ' ms\n' +
-    'Jendela dingin: ' + dingin.baris.length + ' baris (mulai ' + dingin.offsetBaris + '), ' + (t2 - t1) + ' ms\n' +
-    'Jendela panas : ' + panas.baris.length + ' baris (mulai ' + panas.offsetBaris + '), ' + (t3 - t2) + ' ms\n' +
-    'Baris periode yang TERLEWAT: ' + hilang + (contoh ? ' — contoh ' + contoh : '')
+    'Sheet Absensi : ' + (lastRow - 1) + ' baris data\n' +
+    'Periode aktif : ' + periode.mulai + ' s/d ' + periode.selesai +
+      '  (' + jumlahDiPeriode + ' baris di dalamnya)\n' +
+    '\n' +
+    'Baca PENUH    : ' + (penuh.length - 1) + ' baris, ' + (t1 - t0) + ' ms\n' +
+    'Baca JENDELA  : ' + jendela.baris.length + ' baris (' + persen + '%), ' +
+      (t2 - t1) + ' ms, mulai baris ' + jendela.offsetBaris + '\n' +
+    'Hemat         : ' + ((t1 - t0) - (t2 - t1)) + ' ms\n' +
+    '\n' +
+    'Baris periode yang TERLEWAT : ' + hilang + (contoh ? ' — contoh ' + contoh : '') + '\n' +
+    'Kolom B kosong/tak terbaca  : ' + waktuKosong + (contohKosong ? ' — contoh ' + contohKosong : '') + '\n' +
+    'Margin terpakai sekarang    : ' + JENDELA_MARGIN_HARI + ' hari\n' +
+    'Selisih terjauh sebenarnya  : ' + selisihTerjauh + ' hari' +
+      (barisTerjauh ? ' (' + barisTerjauh + ')' : '')
   );
-  console.log(hilang === 0 ? '>>> BERHASIL: tidak ada baris periode yang terlewat.'
-                           : '>>> GAGAL: naikkan JENDELA_MARGIN_HARI.');
+
+  console.log('');
+  if (hilang > 0) {
+    console.log('>>> GAGAL: ada baris periode yang tidak ikut terbaca.');
+    console.log('>>> Naikkan JENDELA_MARGIN_HARI menjadi minimal ' + (selisihTerjauh + 30) + '.');
+    return;
+  }
+
+  if (waktuKosong > 0) {
+    console.log('>>> PERHATIAN: ada ' + waktuKosong + ' baris yang kolom B-nya tidak');
+    console.log('>>> terbaca sebagai tanggal. Jendela memakai kolom itu untuk');
+    console.log('>>> menentukan batas, jadi baris seperti ini sebaiknya');
+    console.log('>>> diperbaiki di sheet (isi Waktu Input-nya) atau dihapus.');
+    console.log('');
+  }
+
+  console.log('>>> BENAR: tidak ada baris periode yang terlewat.');
+  if (selisihTerjauh + 60 < JENDELA_MARGIN_HARI) {
+    console.log('>>> Margin ' + JENDELA_MARGIN_HARI + ' hari jauh lebih lebar daripada');
+    console.log('>>> yang dibutuhkan data ini (' + selisihTerjauh + ' hari). Menurunkannya ke');
+    console.log('>>> ' + (selisihTerjauh + 60) + ' hari akan mempersempit jendela tanpa kehilangan');
+    console.log('>>> satu baris pun — tetapi ingat angka itu hanya berlaku');
+    console.log('>>> untuk data yang ADA SEKARANG. Sisakan kelonggaran untuk');
+    console.log('>>> pengajuan yang lebih maju dari apa pun yang pernah terjadi.');
+  }
+  if ((t1 - t0) - (t2 - t1) < 100) {
+    console.log('>>> CATATAN: penghematannya masih kecil. Pada ukuran sheet');
+    console.log('>>> sekarang itu wajar — nilai jendela ini terutama menahan');
+    console.log('>>> biaya agar tidak ikut tumbuh saat sheet makin panjang.');
+  }
 }

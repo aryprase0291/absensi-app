@@ -63,10 +63,16 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.25";
+const APP_VERSION = "1.0.26";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
+// 1.0.26 — pencarian batas jendela Absensi diganti: pencarian biner
+//          (banyak panggilan, sedikit sel) ternyata arah yang salah,
+//          karena biaya baca sheet hampir seluruhnya ongkos PER
+//          PANGGILAN (~200 ms, terukur lewat PROFILE_SHEETS). Kini
+//          membaca ekor kolom B, paling banyak dua panggilan. Simpanan
+//          batas jendela di Properties dihapus seluruhnya.
 // 1.0.25 — KOREKSI 1.0.24. Statistik dashboard dan angka approval
 //          DIKELUARKAN lagi dari respons login. Keduanya menyisir sheet,
 //          dan menahannya di respons login membuat layar dashboard baru
@@ -2215,12 +2221,11 @@ function handleDeleteAbsen(data) {
     const status = ketemu.isi[12];
     if (status === 'Approved' || status === 'Rejected') return responseJSON({ result: 'error', message: 'Data sudah diproses pimpinan.' });
 
+    // Batas jendela (JendelaAbsensi.gs) tidak perlu dibersihkan: sejak
+    // 1.0.25 batasnya dihitung ulang dari isi kolom B setiap kali, tanpa
+    // simpanan apa pun, jadi pergeseran nomor baris akibat penghapusan
+    // ini tidak bisa membuatnya meleset.
     sheet.deleteRow(ketemu.baris);
-    // Nomor baris bergeser: batas jendela yang tersimpan harus dibuang.
-    // Verifikasi di jendelaBarisAbsensi_ sebenarnya sudah menangkap ini
-    // sendiri, tapi membersihkannya di sini membuat pembaca berikutnya
-    // tidak perlu membayar satu pencarian biner.
-    if (typeof ABSENSI_JENDELA_BERSIHKAN === 'function') ABSENSI_JENDELA_BERSIHKAN();
     return responseJSON({ result: 'success', message: 'Data dihapus' });
 }
 
@@ -4295,9 +4300,6 @@ function handleDeleteAbsensi(data) {
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][2]) === String(targetUuid)) {
       sheet.deleteRow(i + 1); // Hapus Baris
-      // Nomor baris bergeser — batas jendela yang tersimpan harus dibuang
-      // (lihat JendelaAbsensi.gs).
-      if (typeof ABSENSI_JENDELA_BERSIHKAN === 'function') ABSENSI_JENDELA_BERSIHKAN();
       return responseJSON({ result: 'success', message: 'Data berhasil dihapus.' });
     }
   }

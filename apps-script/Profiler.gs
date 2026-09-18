@@ -290,7 +290,6 @@ function PROFILE_MASUK_DINGIN() {
   Logger.log('Membuang seluruh simpanan lebih dulu...');
   try { CACHE_BERSIHKAN(); } catch (e) { Logger.log('CACHE_BERSIHKAN: ' + e.message); }
   try { bersihkanIndeksDbAbsen(); } catch (e) { Logger.log('bersihkanIndeksDbAbsen: ' + e.message); }
-  try { ABSENSI_JENDELA_BERSIHKAN(); } catch (e) { Logger.log('ABSENSI_JENDELA_BERSIHKAN: ' + e.message); }
   try { GEOCACHE_PETA_BERSIHKAN(); } catch (e) { Logger.log('GEOCACHE_PETA_BERSIHKAN: ' + e.message); }
   Logger.log('');
   PROFILE_MASUK();

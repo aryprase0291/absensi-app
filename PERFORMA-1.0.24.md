@@ -125,20 +125,13 @@ lewat `appendRow` dan tidak ada satu pun handler yang menulis ulang kolom
 itu — sudah diperiksa: `handleEditAbsen` menyentuh kolom G, I, J, K, L;
 `handleUpdateAbsensi` kolom E.
 
-Karena menaik, baris pertama yang waktunya ≥ sebuah tanggal bisa dicari
-dengan **pencarian biner**. Diuji atas data sintetis:
+Karena menaik, batas jendela bisa dicari tanpa membaca seluruh sheet.
 
-| Jumlah baris | Panggilan Sheets untuk menemukan batas |
-|---|---|
-| 200 | 3 |
-| 5.000 | 8 |
-| 20.000 | 10 |
-
-Batasnya lalu disimpan di Script Properties dan **diverifikasi setiap
-dipakai** (satu pembacaan 2 sel): baris sebelum batas harus masih di
-bawah tanggal, baris batas harus masih di atasnya. Verifikasi itu yang
-membuatnya aman terhadap penghapusan baris — kalau batasnya sudah tidak
-tepat, pencarian biner diulang.
+> **Dikoreksi di 1.0.26 — lihat bagian 8.** Versi pertama memakai
+> pencarian biner (~10 panggilan untuk 20.000 baris). Pengukuran di
+> spreadsheet produksi membuktikan itu arah yang salah. Penggantinya
+> membaca **ekor kolom B sekali jalan**: satu panggilan untuk kasus
+> biasa, paling banyak dua, tanpa simpanan apa pun.
 
 **Tidak ada jalur yang bisa menghasilkan data kurang secara diam-diam.**
 Sel waktu yang tidak terbaca, tanggal yang tidak dikenal, atau periode
@@ -384,3 +377,85 @@ POST ke web app dijawab redirect 302 lalu diikuti GET kedua, ditambah
 boot container — biasanya 1-3 detik. Jadi target "3 detik" hanya masuk
 akal kalau kerja servernya sendiri di bawah ~1 detik. `PROFILE_MASUK()`
 yang akan memberi tahu apakah sudah begitu.
+
+---
+
+## 8. KOREKSI KEDUA (1.0.26) — biaya membaca sheet itu PER PANGGILAN, bukan per sel
+
+Ditambahkan 18 Sep 2026, setelah `PROFILE_SHEETS()` dijalankan di
+spreadsheet produksi.
+
+### Angka yang mengubah kesimpulan
+
+| Sheet | Baris | Kolom | Sel | Baca |
+|---|---|---|---|---|
+| Announcements | 9 | 4 | 36 | **214 ms** |
+| MasterData | 55 | 7 | 385 | **188 ms** |
+| Users | 307 | 18 | 5.526 | **247 ms** |
+| Remarks | 809 | 16 | 12.944 | 236 ms |
+| running shift | 2.177 | 7 | 15.239 | 306 ms |
+| dbabsen | 5.167 | 20 | 103.340 | 736 ms |
+| Absensi | 3.431 | 30 | 102.930 | **1.218 ms** |
+| MASTER-CUTI | 7.511 | 25 | 187.775 | 827 ms |
+
+**36 sel dan 5.526 sel memakan waktu hampir sama.** Artinya biaya
+membaca sheet ≈ **200 ms ongkos tetap per panggilan** + sekitar
+0,003–0,010 ms per sel.
+
+Dua hal langsung terbaca dari situ:
+
+1. **Pencarian biner adalah arah yang salah.** Ia menukar sedikit sel
+   dengan banyak panggilan. Sepuluh pembacaan satu sel bukan "sangat
+   murah" seperti dugaan saya — itu **sekitar 2 detik**, dan dibayar
+   setiap kali batasnya belum tersimpan. Penggantinya membaca ekor
+   kolom B sekali jalan: **satu panggilan** (~215 ms) untuk jendela di
+   bawah 1.500 baris, **paling banyak dua** untuk yang lebih lebar.
+   Simpanan batas di Script Properties beserta verifikasi dan
+   pembersihannya ikut dihapus — tidak lagi dibutuhkan, dan itu
+   menghilangkan satu sumber bug saat ada baris dihapus.
+
+2. **Sheet `Absensi` 2-3× lebih mahal per sel daripada sheet lain**
+   (0,0099 ms/sel vs 0,0033 untuk MASTER-CUTI). Dugaan terkuat: kolom
+   tanggalnya — `Waktu`, `tglMulai`, `tglSelesai`, `timeStamp` — dan
+   setiap sel tanggal harus diterjemahkan menjadi objek `Date`. Belum
+   dibuktikan; kalau kelak perlu, bandingkan `getValues()` dengan
+   `getDisplayValues()` pada sheet yang sama.
+
+### Sejujurnya: pada ukuran sekarang, jendela nyaris impas
+
+Dengan 3.431 baris dan margin 180 hari, jendela masih memuat sebagian
+besar sheet. Hitungan kasarnya:
+
+| | Panggilan | Perkiraan |
+|---|---|---|
+| Baca penuh 13 kolom | 1 | ~640 ms |
+| Jendela (batas + isi) | 2 | ~600 ms |
+
+Jadi **hari ini jendela bukan penghematan besar** — nilainya adalah
+menahan biaya agar tidak ikut tumbuh. Pada 20.000 baris selisihnya
+menjadi ~2,8 detik lawan ~1,0 detik, dan di situlah ia benar-benar
+terbayar.
+
+`JENDELA_UJI()` sekarang mencetak selisih waktu yang sebenarnya, jadi
+klaim ini bisa diperiksa, bukan dipercaya.
+
+### Margin 180 hari tidak perlu ditebak lagi
+
+`JENDELA_UJI()` melaporkan **"selisih terjauh sebenarnya"**: dari semua
+baris yang jatuh di dalam periode aktif, berapa hari paling awal sebuah
+baris pernah diinput sebelum periode itu dimulai. Itulah margin minimum
+yang sah untuk data ini. Kalau angkanya jauh di bawah 180, margin boleh
+diturunkan — dan jendelanya langsung menyempit.
+
+Ia juga menghitung **baris yang kolom Waktu-nya tidak terbaca**. Seluruh
+keamanan jendela bersandar pada kolom B yang selalu terisi; baris yang
+dikosongkan manual di sheet tidak bisa dinilai posisinya. Jumlahnya
+sekarang dilaporkan, bukan diasumsikan nol.
+
+### Pelajarannya
+
+Dua koreksi berturut-turut di dokumen ini punya bentuk yang sama:
+**mengoptimalkan besaran yang salah.** Bagian 7 menghitung request
+padahal yang ditunggu karyawan adalah layar. Bagian 8 menghitung sel
+padahal yang dibayar adalah panggilan. Keduanya baru ketahuan setelah
+ada angka dari spreadsheet yang sebenarnya — bukan dari penalaran.

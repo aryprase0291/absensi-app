@@ -1,0 +1,11 @@
+{
+  "version": "1.0.26",
+  "releasedAt": "2026-09-18",
+  "required": true,
+  "notes": [
+    "Pencarian batas jendela sheet Absensi tidak lagi memakai pencarian biner. PROFILE_SHEETS di spreadsheet produksi menunjukkan biaya membaca sheet hampir seluruhnya adalah ongkos per panggilan (~200 ms), bukan jumlah selnya — 36 sel dan 5.526 sel memakan waktu hampir sama. Pencarian biner menukar sedikit sel dengan banyak panggilan, persis arah yang salah.",
+    "Penggantinya membaca ekor kolom B sekali jalan: satu panggilan untuk kasus biasa, paling banyak dua berapa pun ukuran sheetnya.",
+    "Simpanan batas jendela di Script Properties dihapus seluruhnya beserta verifikasi dan pembersihannya — tidak lagi dibutuhkan, dan itu menghilangkan satu sumber bug saat ada baris dihapus.",
+    "JENDELA_UJI() kini melaporkan tiga hal: baris periode yang terlewat, selisih terjauh yang benar-benar pernah terjadi (dasar sah untuk menyetel margin, bukan tebakan), dan jumlah baris yang kolom Waktu-nya tidak terbaca."
+  ]
+}
