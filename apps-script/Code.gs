@@ -250,7 +250,51 @@ function doPost(e) {
     if (action === 'delete_absensi') return handleDeleteAbsensi(data);
     if (action === 'update_absensi') return handleUpdateAbsensi(data);
 
-    // --- PENGUNCIAN PERANGKAT (lihat Devices.gs) ---
+    /**
+ * Log login untuk dashboard admin.
+ *
+ * Dua bentuk dalam satu action supaya layar cukup memanggil satu hal:
+ *   mode 'ringkas' -> kartu, grafik harian, daftar teratas
+ *   mode 'daftar'  -> tabel berhalaman, bisa dicari
+ *
+ * Log ini memuat alamat IP dan pola percobaan gagal. Karena itu
+ * gerbangnya dua lapis: ACTION_ROLES membatasinya ke admin, dan
+ * pemeriksaan di bawah mengulanginya dari role di dalam TOKEN — bukan
+ * dari apa pun yang dikirim klien.
+ */
+function handleGetLogLogin(data) {
+  const auth = data._auth || {};
+  const role = String(auth.r || '').trim().toLowerCase();
+  if (role !== 'admin') {
+    return responseJSON({ result: 'error', message: 'Hanya Admin yang boleh membuka log login.' });
+  }
+
+  if (typeof _sbLogLogin !== 'function') {
+    return responseJSON({ result: 'error', message: 'Jembatan Supabase belum terpasang di skrip ini.' });
+  }
+
+  const mode = String(data.mode || 'ringkas');
+  const muatan = {
+    dari: data.dari || '',
+    sampai: data.sampai || ''
+  };
+
+  try {
+    if (mode === 'daftar') {
+      muatan.cari = String(data.cari || '');
+      muatan.hanyaGagal = !!data.hanyaGagal;
+      muatan.batas = Number(data.batas) || 200;
+      muatan.offset = Number(data.offset) || 0;
+      return responseJSON(_sbLogLogin('daftar', muatan));
+    }
+    return responseJSON(_sbLogLogin('ringkas', muatan));
+  } catch (e) {
+    return responseJSON({ result: 'error', message: 'Gagal membaca log login: ' + e.message });
+  }
+}
+
+// --- PENGUNCIAN PERANGKAT (lihat Devices.gs) ---
+    if (action === 'get_log_login') return handleGetLogLogin(data);
     if (action === 'get_device_list') return handleGetDeviceList(data);
     if (action === 'get_device_audit') return handleGetDeviceAudit(data);
     if (action === 'save_device_config') return handleSaveDeviceConfig(data);

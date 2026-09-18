@@ -277,6 +277,7 @@ const ACTION_ROLES = {
   // --- PENGUNCIAN PERANGKAT (Devices.gs) — ADMIN SAJA ---
   // Daftar perangkat memuat pasangan siapa-memakai-HP-mana untuk seluruh
   // karyawan. Sengaja tanpa 'hrd', selaras dengan Dashboard GPS.
+  'get_log_login': ['admin'],
   'get_device_list': ['admin'],
   'get_device_audit': ['admin'],
   'save_device_config': ['admin'],

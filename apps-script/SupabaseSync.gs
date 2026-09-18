@@ -214,6 +214,10 @@ function SUPABASE_SINKRON_MASTER() {
     konfigurasi: [{ kunci: 'APP_VERSION', nilai: APP_VERSION }]
   });
 
+  // Perawatan yang menumpang jadwal yang sudah ada, supaya tidak perlu
+  // trigger tersendiri. Lihat SUPABASE_BERSIHKAN_LOG_LOGIN.
+  if (typeof SUPABASE_BERSIHKAN_LOG_LOGIN === 'function') SUPABASE_BERSIHKAN_LOG_LOGIN();
+
   const ms = new Date().getTime() - t0;
   console.log('Sinkron master selesai dalam ' + ms + ' ms — '
     + karyawan.length + ' karyawan, ' + areaGeofence.length + ' area, '
@@ -1128,4 +1132,45 @@ function SUPABASE_PERIKSA_KOLOM_T() {
   Logger.log('    denda sebesar epoch milidetiknya — miliaran rupiah. Periksa menu');
   Logger.log('    Rekapitulasi untuk NIK di atas sebelum memutuskan apa pun.');
   return terisi;
+}
+
+// =====================================================================
+// LOG LOGIN
+//
+// Tabelnya diisi Edge Function `login` (satu baris per percobaan,
+// berhasil maupun gagal). Apps Script hanya MEMBACA — dan pembacaannya
+// pun tidak pernah sampai ke browser karyawan: handler di Code.gs
+// menolak siapa pun yang bukan admin.
+// =====================================================================
+
+/** @private */
+function _sbLogLogin(aksi, muatan) {
+  const isi = muatan || {};
+  isi.aksi = aksi;
+  return _sbPanggil('log-login', isi);
+}
+
+/**
+ * Membuang baris log yang lebih tua dari 90 hari.
+ *
+ * Dipanggil dari SUPABASE_SINKRON_MASTER yang sudah berjalan tiap 10
+ * menit — bukan dari jalur login. Login adalah jalur terpanas aplikasi
+ * ini; ia tidak boleh menanggung pekerjaan perawatan hanya karena
+ * kebetulan ialah yang menulis barisnya.
+ *
+ * Kegagalan di sini sengaja tidak dilempar: log yang menumpuk beberapa
+ * hari lebih lama tidak merugikan siapa pun, sedangkan sinkronisasi
+ * master yang gagal karenanya merugikan semua orang.
+ */
+function SUPABASE_BERSIHKAN_LOG_LOGIN() {
+  try {
+    const hasil = _sbLogLogin('bersihkan', {});
+    if (hasil && Number(hasil.dibuang) > 0) {
+      console.log('Log login: ' + hasil.dibuang + ' baris lewat 90 hari dibuang.');
+    }
+    return hasil;
+  } catch (e) {
+    console.warn('Pembersihan log login gagal (diabaikan): ' + e.message);
+    return null;
+  }
 }

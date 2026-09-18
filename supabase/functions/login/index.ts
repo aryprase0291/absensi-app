@@ -27,6 +27,34 @@
 import { klienAdmin, jawab, CORS } from "../_bersama/util.ts";
 import { buatToken, buatSesiId } from "../_bersama/token.ts";
 
+// =====================================================================
+// PENCATAT LOG LOGIN
+//
+// Dicatat HANYA pada hasil yang menentukan: login yang benar-benar
+// berhasil, atau kredensial yang benar-benar salah. FALLBACK_APPS_SCRIPT
+// SENGAJA tidak dicatat di sini — ia bukan hasil, melainkan penyerahan
+// keputusan ke Apps Script, dan di sanalah hasilnya nanti dicatat.
+// Mencatat keduanya akan menghitung satu login sebagai dua baris.
+//
+// Kegagalan mencatat TIDAK BOLEH menggagalkan login. Log ini alat bantu
+// admin; karyawan yang mau bekerja tidak boleh tertahan karenanya.
+// =====================================================================
+async function catatLogin(db: ReturnType<typeof klienAdmin>, req: Request, isi: Record<string, unknown>) {
+  try {
+    // x-forwarded-for bisa berisi rantai proxy; yang pertama adalah
+    // klien aslinya.
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
+    const { error } = await db.from("log_login").insert({
+      ip,
+      jalur: "supabase",
+      ...isi,
+    });
+    if (error) console.error("log_login gagal: " + error.message);
+  } catch (e) {
+    console.error("log_login gagal: " + (e as Error).message);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -36,11 +64,16 @@ Deno.serve(async (req) => {
     const password = String(body.password || "");
     const deviceId = String(body.deviceId || "").trim();
 
+    const db = klienAdmin();
+
     if (!username || !password) {
+      await catatLogin(db, req, {
+        username, nama: "", karyawan_id: "", berhasil: false,
+        sebab: "Username atau password kosong",
+        device_id: deviceId, platform: String(body.devicePlatform || ""),
+      });
       return jawab({ result: "error", message: "Username/Password salah!" });
     }
-
-    const db = klienAdmin();
 
     // --- 1. Identitas ------------------------------------------------
     const { data: barisUser, error: galatUser } = await db
@@ -53,6 +86,16 @@ Deno.serve(async (req) => {
       // Pesannya disamakan dengan Apps Script. Membedakan "username tidak
       // ada" dari "password salah" akan memberi tahu penebak bahwa sebuah
       // username memang terdaftar.
+      //
+      // Di LOG boleh lebih terus terang: log hanya dibaca admin, dan
+      // justru perbedaan inilah yang menunjukkan apakah seseorang
+      // menebak-nebak NAMA AKUN atau menebak PASSWORD akun yang ia tahu
+      // ada.
+      await catatLogin(db, req, {
+        username, nama: "", karyawan_id: "", berhasil: false,
+        sebab: "Username tidak terdaftar atau password salah",
+        device_id: deviceId, platform: String(body.devicePlatform || ""),
+      });
       return jawab({ result: "error", message: "Username/Password salah!" });
     }
 
@@ -123,6 +166,13 @@ Deno.serve(async (req) => {
       divisi: u.divisi || "",
       lokasi: u.lokasi || "All",
     }, Deno.env.get("AUTH_SECRET")!);
+
+    await catatLogin(db, req, {
+      karyawan_id: u.id, username: u.username, nama: u.nama || "",
+      berhasil: true, sebab: "",
+      device_id: deviceId, platform: String(body.devicePlatform || ""),
+      sesi_id: sesiId,
+    });
 
     // Bentuknya sengaja SAMA PERSIS dengan handleLogin. Kalau ada field
     // yang ditambahkan di sana, tambahkan juga di sini — LoginScreen
