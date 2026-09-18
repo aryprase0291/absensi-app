@@ -281,22 +281,128 @@ function SUPABASE_TAMPILKAN_RAHASIA() {
   Logger.log('Pasang nilai itu di Supabase: Edge Functions > Secrets > AUTH_SECRET');
 }
 
-/**
- * BUKTI bahwa token buatan Edge Function benar-benar diterima Apps Script.
- *
- * Jalankan SETELAH Edge Function login ter-deploy. Tempel token yang
- * dikembalikannya ke TOKEN di bawah. Kalau fungsi ini berkata BERHASIL,
- * seluruh endpoint lama akan menerimanya juga — karena yang dipakai di
- * sini persis verifyAuthToken yang sama.
- */
-function SUPABASE_UJI_TOKEN() {
-  const TOKEN = ''; // <-- tempel token dari respons login Edge Function
+// =====================================================================
+// UJI MENYELURUH — SATU KLIK
+//
+// Menggantikan seluruh langkah 6 di SUPABASE-FASE1.md. Tidak perlu curl,
+// Postman, atau menyalin token dari mana pun: fungsi ini memanggil Edge
+// Function login sungguhan, lalu memverifikasi tokennya dengan
+// verifyAuthToken() yang asli — kode yang sama persis yang dipakai
+// setiap request aplikasi.
+//
+// Kalau ia berkata BERHASIL, itu bukan perkiraan. Artinya token terbitan
+// Supabase memang diterima seluruh endpoint Apps Script.
+//
+// ⚠️ PERINGATAN: login yang berhasil MENERBITKAN SESI BARU untuk akun
+// itu, persis seperti login sungguhan. Karyawan pemilik akun akan
+// terlempar ke layar login pada request berikutnya. Pakai akun uji, atau
+// akun Anda sendiri, atau jalankan di luar jam kerja.
+// =====================================================================
+function SUPABASE_UJI_LOGIN() {
+  const USERNAME = '';   // <-- isi username akun UJI
+  const PASSWORD = '';   // <-- isi kata sandinya
 
-  if (!TOKEN) {
-    Logger.log('Tempel dulu tokennya ke dalam fungsi SUPABASE_UJI_TOKEN.');
+  if (!USERNAME || !PASSWORD) {
+    Logger.log('Isi dulu USERNAME dan PASSWORD di dalam fungsi SUPABASE_UJI_LOGIN.');
+    Logger.log('PERINGATAN: akun itu akan mendapat sesi baru, sehingga sesi');
+    Logger.log('yang sedang berjalan di HP-nya akan digusur. Pakai akun uji.');
     return;
   }
 
+  const cfg = _sbKonfig();
+
+  // --- 1. Cari ID karyawan dari username ---------------------------
+  const rowsUser = bacaSheet(SS.getSheetByName(SHEET_USERS), 14);
+  let userId = '';
+  for (let i = 1; i < rowsUser.length; i++) {
+    if (String(rowsUser[i][1] || '').trim().toLowerCase() === USERNAME.trim().toLowerCase()) {
+      userId = String(rowsUser[i][0] || '').trim();
+      break;
+    }
+  }
+  if (!userId) {
+    Logger.log('>>> Username "' + USERNAME + '" tidak ada di sheet Users.');
+    return;
+  }
+
+  // --- 2. Cari perangkat yang MEMANG sudah terikat ke akun itu ------
+  //
+  // Edge Function sengaja hanya melayani perangkat yang sudah dikenal
+  // dan sudah terikat (lihat catatan di login/index.ts). Tanpa langkah
+  // ini, ujinya selalu berakhir FALLBACK_APPS_SCRIPT dan tokennya tidak
+  // pernah terbit — jadi yang paling ingin dibuktikan justru tidak ikut
+  // teruji.
+  let deviceId = '';
+  const shBind = SS.getSheetByName(DEVICE_USER_SHEET);
+  if (shBind) {
+    const b = bacaSheet(shBind, DEVICE_USER_HEADERS.length);
+    for (let i = 1; i < b.length; i++) {
+      if (String(b[i][1] || '').trim() !== userId) continue;
+      if (String(b[i][7] || '').trim().toLowerCase() === 'dilepas') continue;
+      deviceId = String(b[i][0] || '').trim();
+      if (deviceId) break;
+    }
+  }
+  if (!deviceId) {
+    Logger.log('>>> Akun ini belum punya perangkat terikat di sheet DeviceUser.');
+    Logger.log('>>> Edge Function akan menjawab FALLBACK_APPS_SCRIPT (itu memang');
+    Logger.log('>>> perilaku yang benar), tetapi tokennya jadi tidak bisa diuji.');
+    Logger.log('>>> Pakai akun yang sudah pernah login dari sebuah HP.');
+    return;
+  }
+  Logger.log('Menguji dengan userId=' + userId + ' deviceId=' + deviceId);
+
+  // --- 3. Panggil Edge Function login -------------------------------
+  const res = UrlFetchApp.fetch(cfg.url + '/functions/v1/login', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ username: USERNAME, password: PASSWORD, deviceId: deviceId }),
+    muteHttpExceptions: true
+  });
+  Logger.log('HTTP ' + res.getResponseCode());
+
+  let data;
+  try {
+    data = JSON.parse(res.getContentText());
+  } catch (e) {
+    Logger.log('>>> GAGAL: jawaban bukan JSON. Isi mentahnya:');
+    Logger.log(res.getContentText().substring(0, 500));
+    return;
+  }
+
+  if (data.code === 'FALLBACK_APPS_SCRIPT') {
+    Logger.log('>>> Edge Function menyerah (FALLBACK_APPS_SCRIPT).');
+    Logger.log('>>> Itu SAH — aplikasi akan memakai jalur Apps Script. Tapi untuk');
+    Logger.log('>>> menguji token, sebabnya harus dihilangkan dulu. Periksa:');
+    Logger.log('>>>   - sudahkah SUPABASE_SINKRON_MASTER() dijalankan?');
+    Logger.log('>>>   - apakah AUTH_SECRET sudah dipasang di Supabase?');
+    Logger.log('>>>   - apakah perangkat ' + deviceId + ' berstatus diblokir?');
+    return;
+  }
+
+  if (data.result !== 'success' || !data.user || !data.user.token) {
+    Logger.log('>>> Login ditolak: ' + (data.message || JSON.stringify(data).substring(0, 300)));
+    Logger.log('>>> Kalau pesannya "Username/Password salah!" padahal benar,');
+    Logger.log('>>> kemungkinan besar SUPABASE_SINKRON_MASTER() belum dijalankan');
+    Logger.log('>>> sehingga tabel karyawan di Postgres masih kosong.');
+    return;
+  }
+
+  Logger.log('Login BERHASIL di Supabase. Nama: ' + data.user.nama
+    + ' | sisa cuti: ' + data.user.sisaCuti
+    + ' | masterData: ' + (data.masterData || []).length + ' entri'
+    + ' | periode aktif: ' + ((data.periodsAktif || []).length));
+
+  // --- 4. Inti pengujian: apakah Apps Script menerima tokennya? -----
+  _sbPeriksaToken(data.user.token);
+}
+
+/**
+ * Memverifikasi sebuah token dengan verifyAuthToken() yang asli, lalu
+ * memastikan SessionID-nya sudah sampai ke Script Properties.
+ * @private
+ */
+function _sbPeriksaToken(token) {
   // Menjawab satu-satunya hal yang tidak bisa dipastikan dari sisi
   // Supabase: apakah base64EncodeWebSafe mempertahankan tanda '='.
   // 'YWI=' berarti YA (setelan bawaan token.ts sudah benar).
@@ -305,28 +411,50 @@ function SUPABASE_UJI_TOKEN() {
   Logger.log('base64EncodeWebSafe("ab") = "'
     + Utilities.base64EncodeWebSafe(Utilities.newBlob('ab').getBytes()) + '"');
 
-  const isi = verifyAuthToken(TOKEN);
+  const isi = verifyAuthToken(token);
   if (!isi) {
     Logger.log('>>> GAGAL: tanda tangan tidak cocok atau token kedaluwarsa.');
-    Logger.log('Penyebab paling sering: AUTH_SECRET di Supabase berbeda dengan');
-    Logger.log('yang ada di Script Properties. Bandingkan lewat SUPABASE_TAMPILKAN_RAHASIA().');
+    Logger.log('>>> Penyebab paling sering: AUTH_SECRET di Supabase berbeda');
+    Logger.log('>>> dengan yang ada di Script Properties. Bandingkan lewat');
+    Logger.log('>>> SUPABASE_TAMPILKAN_RAHASIA().');
+    Logger.log('>>> Kalau baris base64 di atas berbunyi "YWI" (tanpa "="),');
+    Logger.log('>>> sebabnya padding — lihat PERTAHANKAN_PADDING di token.ts.');
     return;
   }
 
   Logger.log('Tanda tangan COCOK. Isi token: ' + JSON.stringify(isi));
 
+  // Sesi harus sudah tertarik, kalau tidak request berikutnya ditolak.
+  SUPABASE_TARIK_SESI();
   const sesiBerlaku = deviceSesiBerlaku(isi.u);
-  Logger.log('SessionID di token          : ' + isi.s);
+  Logger.log('SessionID di token            : ' + isi.s);
   Logger.log('SessionID di Script Properties: ' + (sesiBerlaku || '(kosong)'));
 
-  if (!sesiBerlaku) {
-    Logger.log('>>> Sesi belum tertarik. Jalankan SUPABASE_TARIK_SESI() lalu ulangi.');
-  } else if (sesiBerlaku !== isi.s) {
-    Logger.log('>>> BELUM COCOK: penarik sesi belum sampai ke baris ini, atau');
-    Logger.log('>>> ada login lain sesudahnya. Jalankan SUPABASE_TARIK_SESI() lalu ulangi.');
-  } else {
-    Logger.log('>>> BERHASIL: token ini akan diterima semua endpoint Apps Script.');
+  if (sesiBerlaku !== isi.s) {
+    Logger.log('>>> BELUM COCOK. Jalankan SUPABASE_TARIK_SESI() sekali lagi;');
+    Logger.log('>>> kalau tetap beda, periksa log Edge Function sesi-terbaru.');
+    return;
   }
+
+  Logger.log('');
+  Logger.log('>>> BERHASIL. Token terbitan Supabase diterima Apps Script,');
+  Logger.log('>>> dan sesinya sudah tersalin. Langkah 7 aman dijalankan.');
+}
+
+/**
+ * Versi manual: kalau Anda sudah punya token dari tempat lain (curl,
+ * Postman), tempel di sini. Untuk pemakaian biasa, SUPABASE_UJI_LOGIN()
+ * di atas lebih mudah karena tidak perlu menyalin apa pun.
+ */
+function SUPABASE_UJI_TOKEN() {
+  const TOKEN = ''; // <-- tempel token dari respons login Edge Function
+
+  if (!TOKEN) {
+    Logger.log('Tempel dulu tokennya, atau pakai SUPABASE_UJI_LOGIN() yang');
+    Logger.log('mengerjakan seluruhnya sendiri tanpa perlu menyalin apa pun.');
+    return;
+  }
+  _sbPeriksaToken(TOKEN);
 }
 
 /** Memasang kedua trigger. Aman dipanggil berulang. */

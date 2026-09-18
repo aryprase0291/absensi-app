@@ -165,8 +165,16 @@ SUPABASE_SINKRON_MASTER()   -> harus melaporkan jumlah karyawan
 SUPABASE_PASANG_TRIGGER()   -> tarik sesi 1 menit, sinkron master 10 menit
 ```
 
-Lalu panggil Edge Function `login` sekali (curl atau Postman) dengan satu
-akun uji, tempel tokennya ke `SUPABASE_UJI_TOKEN()`, dan jalankan.
+Lalu isi `USERNAME` dan `PASSWORD` di dalam **`SUPABASE_UJI_LOGIN()`**
+dan jalankan. Tidak perlu curl, Postman, atau menyalin token: fungsi itu
+memanggil Edge Function login sungguhan, mencarikan sendiri perangkat
+yang sudah terikat ke akun itu, lalu memverifikasi tokennya dengan
+`verifyAuthToken()` yang asli — kode yang sama persis yang dipakai setiap
+request aplikasi.
+
+> ⚠️ Login yang berhasil **menerbitkan sesi baru**, persis seperti login
+> sungguhan. Karyawan pemilik akun itu akan terlempar ke layar login.
+> Pakai akun uji atau akun Anda sendiri.
 
 **Jangan lanjut ke langkah 7 sebelum fungsi itu berkata `>>> BERHASIL`.**
 Itu satu-satunya bukti bahwa token Supabase diterima Apps Script.
@@ -219,11 +227,25 @@ bukan sekadar dibaca:
 
 Apakah `Utilities.base64EncodeWebSafe` mempertahankan tanda `=` di ujung.
 Kalau ternyata tidak, tanda tangan token tidak akan pernah cocok.
-`SUPABASE_UJI_TOKEN()` mencetak jawabannya secara langsung, dan
+`SUPABASE_UJI_LOGIN()` mencetak jawabannya secara langsung, dan
 perbaikannya satu baris (`PERTAHANKAN_PADDING` di
 `supabase/functions/_bersama/token.ts`).
 
 Inilah alasan langkah 6 tidak boleh dilewati.
+
+### Yang TIDAK bisa dikerjakan dari sisi Claude
+
+Dua hal, dan keduanya memang seharusnya begitu:
+
+1. **Memasang secret di Supabase.** `AUTH_SECRET` tersimpan di Script
+   Properties milik Apps Script Anda. Tidak ada jalan mengambilnya dari
+   luar sana — dan kalau ada, itu justru lubang keamanan.
+2. **Membuka dashboard Supabase lewat browser.** Lingkungan Claude
+   terisolasi: tidak ada rute ke komputer Anda, dan kebijakan jaringannya
+   memblokir `*.supabase.co` untuk permintaan langsung. Yang bisa
+   dijangkau hanyalah API Supabase lewat konektor resmi — itulah yang
+   dipakai untuk membuat project, menjalankan migrasi, dan men-deploy
+   Edge Function.
 
 ---
 
