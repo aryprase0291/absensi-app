@@ -98,7 +98,7 @@ export const SUPABASE_BATAS_MS = 6000;
 // Cara menyalakan: ganti `false` di bawah menjadi `true`, lalu build
 // seperti biasa. Tidak perlu mengetik variabel apa pun di baris perintah.
 export const SUPABASE_IMPOR_AKTIF_SAKELAR =
-  process.env.REACT_APP_SUPABASE_IMPOR === '1' || false;
+  process.env.REACT_APP_SUPABASE_IMPOR === '1' || true;
 
 // true jika sedang memakai backend selain produksi.
 // Dipakai untuk menandai dengan jelas bahwa data yang tampil bukan data asli.
