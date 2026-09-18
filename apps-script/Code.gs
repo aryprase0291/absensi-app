@@ -3717,9 +3717,7 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
 // 1. UPDATE FUNGSI GET HISTORY (Agar menyertakan Divisi untuk Laporan Tally)
 function handleGetHistory(data) {
   const sheetAbsen = SS.getSheetByName(SHEET_ABSENSI);
-  const rowsAbsen = sheetAbsen.getDataRange().getValues();
   const sheetUser = SS.getSheetByName(SHEET_USERS);
-  const rowsUser = sheetUser.getDataRange().getValues();
   const periodeAktif = getPeriodeAbsenAktif_();
   // Tanpa filter dari user, histori memakai periode admin sebagai default.
   // Saat user mengisi tanggal sendiri, rentang itu dipakai sebagai pilihan
@@ -3733,6 +3731,47 @@ function handleGetHistory(data) {
     periodeFilter.mulai = periodeFilter.selesai;
     periodeFilter.selesai = sementara;
   }
+
+  // -------------------------------------------------------------
+  // PEMBACAAN SHEET — dipindah ke SINI, sesudah periodeFilter.
+  //
+  // Dulu dua baris di atas fungsi ini berbunyi getDataRange() untuk
+  // Absensi DAN Users: seluruh baris, seluruh kolom, setiap kali layar
+  // Riwayat dibuka — padahal yang ditampilkan cuma satu periode. Itulah
+  // sebabnya layar ini tertahan di "Memuat Riwayat...".
+  //
+  // JendelaAbsensi.gs sudah menyediakan obatnya sejak Sep 2026 dan sudah
+  // dipakai hitungStats, handleAbsen, dan handleEditAbsen. Handler ini
+  // terlewat. Jendelanya dicari dengan pencarian biner pada kolom Waktu
+  // Input — belasan pembacaan sel, bukan belasan ribu.
+  //
+  // Lebar 22 kolom BUKAN angka bebas: loop di bawah membaca indeks 21
+  // (kolom V, ID Akun). lebarBacaAbsensi menaikkannya lagi bila kolom
+  // Alamat berada lebih ke kanan, karena nilaiAlamatBaris membacanya
+  // dari baris yang sama.
+  //
+  // BATAS YANG PERLU DIKETAHUI: jendelanya dihitung dari kolom Waktu
+  // Input, sementara penyaringan di bawah memakai tglMulai/tglSelesai.
+  // Pengajuan yang dibuat LEBIH DARI 60 HARI sebelum tanggal yang
+  // diajukan karena itu bisa luput. Enam puluh hari adalah margin yang
+  // sama yang sudah dipakai hitungStats dan cek duplikat handleAbsen —
+  // jadi ini bukan kelonggaran baru, melainkan kelonggaran yang sama.
+  // Di bawah 6.000 baris, JendelaAbsensi memang membaca penuh, sehingga
+  // tidak ada satu baris pun yang bisa luput.
+  // -------------------------------------------------------------
+  const lebarAbsen = (typeof lebarBacaAbsensi === 'function')
+    ? lebarBacaAbsensi(sheetAbsen, 22)
+    : 22;
+
+  // .baris TIDAK memuat baris judul — elemen ke-0 adalah baris data
+  // pertama. Karena itu loop di bawah berhenti di 0, bukan 1.
+  const rowsAbsen = (typeof bacaAbsensiPeriode_ === 'function')
+    ? bacaAbsensiPeriode_(sheetAbsen, periodeFilter, lebarAbsen).baris
+    : bacaSheet(sheetAbsen, lebarAbsen).slice(1);
+
+  // Users juga tidak perlu getDataRange: kolom terjauh yang dipakai di
+  // bawah adalah indeks 13 (Lokasi), jadi 14 kolom sudah cukup.
+  const rowsUser = sheetUser ? bacaSheet(sheetUser, 14) : [];
   
   // Mapping User Data (Index 4 = Divisi, Index 7 = NoPayroll/ID Akun)
   const userMap = {};
@@ -3756,7 +3795,9 @@ function handleGetHistory(data) {
     return String(idToCheck) === String(data.userId);
   };
 
-  for (let i = rowsAbsen.length - 1; i >= 1; i--) {
+  // Mulai dari elemen TERAKHIR sampai 0 — bukan sampai 1. rowsAbsen di
+  // sini sudah tanpa baris judul (lihat catatan pembacaan di atas).
+  for (let i = rowsAbsen.length - 1; i >= 0; i--) {
     const rowUserId = String(rowsAbsen[i][2]);
     const userData = userMap[rowUserId] || { noPayroll: '-', nama: rowsAbsen[i][3], divisi: '-', lokasi: '' };
     
