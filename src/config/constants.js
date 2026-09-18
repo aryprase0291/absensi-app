@@ -36,13 +36,33 @@ export const SCRIPT_URL = process.env.REACT_APP_SCRIPT_URL || PRODUCTION_SCRIPT_
 // policy sehingga kunci ini tidak bisa membaca atau menulis apa pun.
 // Satu-satunya pintu masuk adalah Edge Function.
 //
-// Untuk pengujian lokal, isi lewat .env.local:
+// Untuk menguji ke project lain, timpa lewat .env.local:
 //   REACT_APP_SUPABASE_URL=https://xxxx.supabase.co
 //   REACT_APP_SUPABASE_ANON_KEY=...
 // ============================================================
-export const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || '';
-export const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || '';
-export const SUPABASE_AKTIF = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+const SUPABASE_URL_PRODUKSI = 'https://owbibqqaoeyrnatzqgso.supabase.co';
+const SUPABASE_ANON_PRODUKSI =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93YmlicXFhb2V5cm5hdHpxZ3NvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk3MTY5ODgsImV4cCI6MjEwNTI5Mjk4OH0.fYkvj16tWN-7yh4zvRSbRg7aIb3tp4dnZQapNK50J3Q';
+
+export const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || SUPABASE_URL_PRODUKSI;
+export const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || SUPABASE_ANON_PRODUKSI;
+
+// SAKELAR JALUR LOGIN BARU — SENGAJA MASIH MATI.
+//
+// Alamat dan kunci di atas sudah benar, tetapi menyalakannya sebelum
+// SUPABASE_UJI_TOKEN() berkata BERHASIL adalah satu-satunya cara fase
+// ini bisa merugikan: kalau AUTH_SECRET di Supabase berbeda dengan yang
+// ada di Apps Script, karyawan akan berhasil login lalu SEKETIKA
+// terlempar kembali ke layar login pada request berikutnya — dan itu
+// jauh lebih buruk daripada login yang lambat.
+//
+// Nyalakan dengan mengubah false menjadi true di bawah (atau
+// REACT_APP_SUPABASE_LOGIN=1 saat build), lalu `npm run build`.
+// Mematikannya kembali: kembalikan ke false, build, unggah. Selesai.
+export const SUPABASE_LOGIN_AKTIF =
+  process.env.REACT_APP_SUPABASE_LOGIN === '1' || false;
+
+export const SUPABASE_AKTIF = !!(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_LOGIN_AKTIF);
 
 // Batas tunggu login lewat Supabase. Lewat dari ini, aplikasi berhenti
 // menunggu dan mengulang ke Apps Script. Angkanya sengaja pendek: kalau

@@ -2,9 +2,17 @@
 
 Ditulis 18 Sep 2026. Lanjutan dari `PERFORMA-1.0.24.md`.
 
-**Status: kode siap, belum dinyalakan.** Selama `REACT_APP_SUPABASE_URL`
-kosong, aplikasi berjalan persis seperti sebelumnya. Tidak ada satu pun
-perilaku yang berubah sampai Anda memilih mengisinya.
+**Status: infrastruktur sudah berdiri, jalur login masih MATI.**
+Sakelarnya (`SUPABASE_LOGIN_AKTIF` di `src/config/constants.js`) masih
+`false`, jadi aplikasi berjalan persis seperti sebelumnya.
+
+| | |
+|---|---|
+| Project | `absensi-app`, region **Singapore** (`ap-southeast-1`) |
+| URL | `https://owbibqqaoeyrnatzqgso.supabase.co` |
+| Migrasi | sudah dijalankan & diuji di database itu |
+| Edge Function | `login`, `sinkron-master`, `sesi-terbaru` — ketiganya ACTIVE |
+| Yang belum | secret di Supabase, sisi Apps Script, dan sakelarnya |
 
 ---
 
@@ -100,45 +108,57 @@ ini (hash juga di sisi spreadsheet) layak dikerjakan terpisah.
 Setiap langkah bisa dihentikan tanpa merusak apa pun. Aplikasi baru
 memakai jalur baru pada langkah **7**.
 
-### 1. Buat project Supabase
+### 1. Buat project Supabase — ✅ SELESAI
 
-Region: **Singapore (ap-southeast-1)** — paling dekat ke Indonesia.
-Region tidak bisa diubah setelah project dibuat.
+`absensi-app` di region **Singapore** (`ap-southeast-1`), paling dekat ke
+Indonesia. Region tidak bisa diubah setelah project dibuat.
 
-> Dua project Anda yang sudah ada berada di Seoul dan Tokyo, dan keduanya
-> sedang *inactive*. Untuk absensi harian, pakai project baru di Singapore
-> dengan paket yang tidak menjeda project saat menganggur.
+### 2. Jalankan migrasi — ✅ SELESAI & DIUJI
 
-### 2. Jalankan migrasi
+Tiga bug ditemukan justru karena dijalankan di Supabase sungguhan, bukan
+di lingkungan tiruan:
 
-Isi `supabase/migrations/20260918000000_fase1_login.sql`, lewat SQL Editor
-atau `supabase db push`.
+| Bug | Kenapa tidak terlihat sebelumnya |
+|---|---|
+| `crypt()` tidak ditemukan | di Supabase, `pgcrypto` dipasang di skema `extensions`, bukan `public` — dan `search_path` ketiga fungsi memang dikunci |
+| `relation "_k" already exists` | `on commit drop` baru berlaku saat commit, jadi dua panggilan dalam satu transaksi gagal |
+| Geofence terhapus diam-diam | muatan berisi `karyawan` tanpa `geofence` ikut mengosongkan seluruh area |
 
-### 3. Pasang secret di Supabase
+Ketiganya sudah diperbaiki di berkas migrasi maupun di database.
+
+### 3. Pasang secret di Supabase — ⬜ GILIRAN ANDA
 
 Edge Functions → Secrets:
 
+Buka **Edge Functions → Secrets** di dashboard project, tambahkan dua:
+
 | Nama | Isi |
 |---|---|
-| `AUTH_SECRET` | **sama persis** dengan `AUTH_SECRET` di Script Properties — ambil lewat `SUPABASE_TAMPILKAN_RAHASIA()` |
-| `SINKRON_RAHASIA` | teks acak panjang, bebas, asal sama dengan yang dipasang di langkah 5 |
+| `AUTH_SECRET` | **sama persis** dengan `AUTH_SECRET` di Script Properties — ambil lewat `SUPABASE_TAMPILKAN_RAHASIA()` di editor Apps Script |
+| `SINKRON_RAHASIA` | teks acak panjang, bebas, asal **sama** dengan yang dipasang di langkah 5 |
 
 `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` sudah tersedia sendiri.
 
-### 4. Deploy Edge Function
+> `AUTH_SECRET` tidak bisa diambil dari luar Apps Script, dan memang tidak
+> seharusnya bisa. Inilah sebabnya langkah ini tidak dapat dikerjakan
+> untuk Anda.
 
-```
-supabase functions deploy login
-supabase functions deploy sinkron-master
-supabase functions deploy sesi-terbaru
-```
+### 4. Deploy Edge Function — ✅ SELESAI
 
-### 5. Siapkan Apps Script
+`login`, `sinkron-master`, dan `sesi-terbaru` sudah ACTIVE.
+
+Ketiganya dipasang dengan `verify_jwt: false` **karena masing-masing
+memeriksa wewenangnya sendiri**: `login` memverifikasi username/kata
+sandi, dua lainnya memeriksa `SINKRON_RAHASIA` dengan perbandingan
+berpanjang tetap. Menyandarkan diri pada kunci anon tidak menambah apa
+pun — kunci itu memang publik.
+
+### 5. Siapkan Apps Script — ⬜ GILIRAN ANDA
 
 Salin `apps-script/SupabaseSync.gs` ke editor, isi `URL` dan `RAHASIA` di
 dalam `SUPABASE_SETUP()`, lalu jalankan sekali.
 
-### 6. Isi cermin & buktikan tokennya
+### 6. Isi cermin & buktikan tokennya — ⬜ GILIRAN ANDA
 
 ```
 SUPABASE_SINKRON_MASTER()   -> harus melaporkan jumlah karyawan
@@ -151,22 +171,28 @@ akun uji, tempel tokennya ke `SUPABASE_UJI_TOKEN()`, dan jalankan.
 **Jangan lanjut ke langkah 7 sebelum fungsi itu berkata `>>> BERHASIL`.**
 Itu satu-satunya bukti bahwa token Supabase diterima Apps Script.
 
-### 7. Nyalakan di aplikasi
+### 7. Nyalakan di aplikasi — ⬜ GILIRAN ANDA, SATU BARIS
 
-Isi `.env.local` (atau env hosting):
+Alamat dan kunci project sudah tertanam di `src/config/constants.js`.
+Yang tersisa hanya sakelarnya:
 
+```js
+export const SUPABASE_LOGIN_AKTIF =
+  process.env.REACT_APP_SUPABASE_LOGIN === '1' || true;   // <- false menjadi true
 ```
-REACT_APP_SUPABASE_URL=https://xxxx.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=...
-```
 
-lalu `npm run build` dan unggah.
+lalu `npm run build` dan unggah isi `build/`.
+
+**Jangan lakukan ini sebelum langkah 6 berkata `>>> BERHASIL`.** Kalau
+`AUTH_SECRET` di Supabase berbeda, karyawan akan berhasil login lalu
+seketika terlempar kembali ke layar login — jauh lebih buruk daripada
+login yang lambat.
 
 ### 8. Mematikannya kembali
 
-Kosongkan kedua baris itu, build, unggah. Selesai — login kembali lewat
-Apps Script. Tidak ada data yang perlu dipulihkan, karena Postgres di fase
-ini hanya berisi cermin dan sesi.
+Kembalikan `true` menjadi `false`, build, unggah. Selesai — login kembali
+lewat Apps Script. Tidak ada data yang perlu dipulihkan, karena Postgres
+di fase ini hanya berisi cermin dan sesi.
 
 ---
 

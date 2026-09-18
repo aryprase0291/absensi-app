@@ -15,7 +15,18 @@
 -- tidak punya cara penyelesaian yang benar.
 -- =====================================================================
 
-create extension if not exists pgcrypto;
+-- pgcrypto dipasang di skema `extensions`, BUKAN `public`.
+--
+-- Itu bawaan Supabase, dan konsekuensinya baru terlihat saat migrasi
+-- dijalankan di sana: ketiga fungsi di bawah mengunci search_path-nya
+-- (lihat catatan SECURITY DEFINER), dan kalau `extensions` tidak ikut
+-- disebut, crypt() tidak ditemukan sama sekali —
+-- "function crypt(text, text) does not exist".
+--
+-- Mengunci search_path tetap wajib; yang perlu ditambahkan cuma skema
+-- tempat pgcrypto benar-benar berada.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ---------------------------------------------------------------------
 -- KARYAWAN — cermin sheet Users, digabung dengan data yang dulu tersebar
@@ -199,7 +210,7 @@ create or replace function login_periksa(p_username text, p_password text)
 returns setof karyawan
 language sql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
   select *
   from karyawan
@@ -227,7 +238,7 @@ create or replace function sinkron_kata_sandi(p_id text, p_password text)
 returns void
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   hash_lama text;
@@ -262,13 +273,20 @@ create or replace function sinkron_master(p jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
   jml_karyawan integer := 0;
 begin
   -- ---------- KARYAWAN ----------
   if p ? 'karyawan' then
+    -- `on commit drop` saja TIDAK cukup: ia baru berlaku saat transaksi
+    -- di-commit, sehingga memanggil fungsi ini dua kali di DALAM satu
+    -- transaksi gagal dengan "relation _k already exists". Di produksi
+    -- setiap panggilan memang punya transaksinya sendiri, tapi
+    -- mengandalkan itu membuat fungsinya rapuh terhadap pemakaian yang
+    -- sah — misalnya dua sinkronisasi berturut-turut dalam satu skrip.
+    drop table if exists _k;
     create temp table _k on commit drop as
       -- distinct on: satu username ganda di sheet tidak boleh
       -- menggagalkan SELURUH sinkronisasi. Yang pertama menang, sama
@@ -335,8 +353,15 @@ begin
     end if;
 
     -- Area geofence ikut di muatan yang sama supaya tetap satu transaksi.
-    delete from geofence_area;
+    --
+    -- Penghapusan HANYA dilakukan kalau muatannya memang menyertakan
+    -- 'geofence'. Tanpa syarat itu, muatan yang berisi karyawan saja
+    -- akan menghapus seluruh area tanpa menggantinya — dan akibatnya
+    -- tidak terlihat sebagai error, hanya sebagai geofence yang tiba-tiba
+    -- tidak berlaku lagi untuk siapa pun. Aturannya sama dengan bagian
+    -- lain di bawah: yang tidak dikirim, tidak disentuh.
     if p ? 'geofence' then
+      delete from geofence_area;
       insert into geofence_area (karyawan_id, nama, latitude, longitude, radius_meter, aktif)
       select g.karyawan_id, g.nama, g.latitude, g.longitude, g.radius_meter, coalesce(g.aktif, true)
       from jsonb_to_recordset(p->'geofence') as g(
