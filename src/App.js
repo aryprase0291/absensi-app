@@ -3,7 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
-  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp } from 'lucide-react';
+  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp, Menu } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION, TIMEOUT_LABEL, BOARD_ABSENSI_URL } from './config/constants';
 import { loginLewatSupabase } from './utils/loginSupabase';
 import { FRONTEND_VERSION } from './config/updateManifest';
@@ -7539,6 +7539,87 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   // padding, radius, dan warna border yang berbeda-beda.
   const inputCls = "w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-shadow focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5";
 
+  // ---------------------------------------------------------------
+  // DAFTAR MENU
+  //
+  // Dulu tiap item ditulis sebagai satu blok <button> tersendiri —
+  // empat belas blok yang isinya nyaris identik, dan menambah satu menu
+  // berarti menyalin selusin baris kelas Tailwind beserta peluang salah
+  // ketiknya. Sekarang bentuknya data: menambah menu cukup satu baris.
+  //
+  //   tab  -> berpindah tab DI DALAM panel ini
+  //   view -> keluar dari panel ini ke layar lain
+  //
+  // Kelompoknya mengikuti urusan, bukan urutan ditambahkannya fitur.
+  // "Laporan & Monitoring" sengaja dipisah dari "Data": ketiganya
+  // meninggalkan panel ini, sedangkan isi "Data" tetap di dalamnya.
+  // ---------------------------------------------------------------
+  const menuKelompok = [
+    {
+      judul: 'Pengguna',
+      item: [
+        { tab: 'user', label: 'Tambah user baru', ikon: UserRoundPlus },
+        { tab: 'master_user', label: 'Reset password user', ikon: KeyRound },
+      ]
+    },
+    {
+      judul: 'Data',
+      adminSaja: true,
+      item: [
+        { view: 'analysis', label: 'Analisa data', ikon: ChartColumn },
+        { tab: 'master', label: 'Master data', ikon: Database },
+        { tab: 'import_db', label: 'Import data mesin absen', ikon: FileUp },
+        { tab: 'geofence', label: 'Geofence absen online', ikon: LocateFixed },
+        { tab: 'period', label: 'Periode absensi', ikon: CalendarRange },
+        { tab: 'approval_team', label: 'Tim approval', ikon: UsersRound },
+        { tab: 'perangkat', label: 'Perangkat & sesi login', ikon: Smartphone },
+        { tab: 'wajah', label: 'Wajah karyawan', ikon: ScanFace },
+        { tab: 'board', label: 'Board absensi', ikon: FileSpreadsheet },
+      ]
+    },
+    {
+      judul: 'Laporan & Monitoring',
+      adminSaja: true,
+      item: [
+        { view: 'rekap_admin', label: 'Rekap, Koreksi & Export Excel', ikon: FileSpreadsheet, warna: 'emerald' },
+        { view: 'gps_dashboard', label: 'Dashboard GPS Karyawan', ikon: MapPin, warna: 'sky' },
+        { view: 'gps_audit', label: 'Monitoring Integritas GPS', ikon: Shield, warna: 'amber' },
+      ]
+    },
+    {
+      judul: 'Komunikasi',
+      item: [
+        { tab: 'news', label: 'Info HRD', ikon: Megaphone },
+      ]
+    },
+  ];
+
+  // Fungsi biasa, BUKAN komponen React. Komponen yang didefinisikan di
+  // dalam render akan di-mount ulang setiap kali panel ini render, dan
+  // itu membuang state anaknya tanpa alasan.
+  const renderItemMenu = (it, idx) => {
+    const aktif = it.tab && activeTab === it.tab;
+    const Ikon = it.ikon;
+    const warnaIkon = aktif ? 'text-white'
+      : it.warna === 'emerald' ? 'text-emerald-600'
+      : it.warna === 'sky' ? 'text-sky-600'
+      : it.warna === 'amber' ? 'text-amber-600'
+      : 'text-slate-400';
+
+    return (
+      <button
+        key={it.tab || it.view || idx}
+        onClick={() => { if (it.tab) { switchTab(it.tab); } else { setView(it.view); } setIsMenuOpen(false); }}
+        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[13px] text-left transition-colors
+          ${aktif ? 'bg-slate-900 text-white font-medium' : 'text-slate-600 hover:bg-slate-100'}`}
+      >
+        <Ikon className={`w-[17px] h-[17px] shrink-0 ${warnaIkon}`} strokeWidth={1.75} />
+        <span className="flex-1 leading-tight">{it.label}</span>
+        {it.view && <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${aktif ? 'text-white/70' : 'text-slate-300'}`} />}
+      </button>
+    );
+  };
+
   const getPageTitle = () => {
       switch(activeTab) {
           case 'user': return 'Tambah User Baru';
@@ -7557,140 +7638,67 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   };
 
   return (
-    <div className="p-4 h-full overflow-y-auto pb-20 bg-gray-50 min-h-screen">
-      
-      {/* HEADER */}
-      <div className="flex items-start justify-between mb-5 relative z-40">
-        <div className="pt-0.5">
+    <div className="min-h-screen bg-gray-50 lg:flex">
+
+      {/* ================= SIDEBAR =================
+          Di layar lebar ia menetap di kiri (lg:static). Di layar sempit
+          ia menjadi laci yang menggeser masuk — karena panel ini juga
+          dibuka dari HP, dan sidebar tetap selebar 264px di sana akan
+          memakan separuh layar. */}
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[264px] bg-white border-r border-slate-200 flex flex-col
+          transform transition-transform duration-200 lg:static lg:translate-x-0 lg:shrink-0
+          ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+
+        <div className="flex items-center gap-2.5 px-4 h-[60px] border-b border-slate-100 shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center shrink-0">
+            <SlidersHorizontal className="w-4 h-4 text-white" strokeWidth={2} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold text-slate-900 leading-tight truncate">Admin Panel</p>
+            <p className="text-[11px] text-slate-400 leading-tight truncate">{user.nama || user.username || 'Administrator'}</p>
+          </div>
+          <button onClick={() => setIsMenuOpen(false)} className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 transition-colors" aria-label="Tutup menu">
+            <X className="w-4 h-4" strokeWidth={2} />
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
+          {menuKelompok.map((k) => (
+            (k.adminSaja && user.role !== 'admin') ? null : (
+              <div key={k.judul}>
+                <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{k.judul}</p>
+                <div className="space-y-0.5">{k.item.map(renderItemMenu)}</div>
+              </div>
+            )
+          ))}
+        </nav>
+
+        <div className="px-2.5 py-3 border-t border-slate-100 shrink-0">
+          <button onClick={() => setView('dashboard')} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[13px] text-slate-600 hover:bg-slate-100 transition-colors">
+            <ChevronLeft className="w-[17px] h-[17px] shrink-0 text-slate-400" strokeWidth={1.75} />
+            <span className="flex-1 text-left leading-tight">Kembali ke dashboard</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Latar gelap hanya di layar sempit; di layar lebar sidebar memang
+          selalu terlihat sehingga tidak ada yang perlu ditutup. */}
+      {isMenuOpen && (
+        <div className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden" onClick={() => setIsMenuOpen(false)} />
+      )}
+
+      {/* ================= KONTEN ================= */}
+      <main className="flex-1 min-w-0 p-4 pb-20 lg:p-6">
+
+        <div className="flex items-center gap-2.5 mb-5">
+          <button onClick={() => setIsMenuOpen(true)} className="lg:hidden shrink-0 p-2 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors" aria-label="Buka menu">
+            <Menu className="w-4 h-4" strokeWidth={2} />
+          </button>
+          <div className="min-w-0">
             <p className="text-[11px] font-medium text-slate-400 tracking-tight">Admin panel</p>
-            <h2 className="text-[19px] font-semibold text-slate-900 tracking-tight leading-tight">{getPageTitle()}</h2>
+            <h2 className="text-[19px] font-semibold text-slate-900 tracking-tight leading-tight truncate">{getPageTitle()}</h2>
+          </div>
         </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-            <BackButton onClick={() => setView('dashboard')} />
-
-            {/* DROPDOWN MENU */}
-            <div className="relative">
-                <button
-                    onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    aria-expanded={isMenuOpen}
-                    className={`flex items-center gap-2 pl-3.5 pr-2.5 py-2.5 rounded-xl text-[13px] font-medium border transition-colors
-                        ${isMenuOpen ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                >
-                    Menu
-                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMenuOpen ? 'rotate-180' : ''}`} strokeWidth={2} />
-                </button>
-
-                {isMenuOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-[248px] bg-white rounded-xl border border-slate-200 shadow-lg shadow-slate-900/5 overflow-hidden animate-in fade-in zoom-in-95 duration-150 origin-top-right">
-
-                        {/* Dikelompokkan per urusan: pengguna, lalu data, lalu komunikasi.
-                            Sebelumnya enam item berderet tanpa pemisah. */}
-                        <p className="px-3.5 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Pengguna</p>
-
-                        <button onClick={() => switchTab('user')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'user' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                            <UserRoundPlus className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'user' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                            <span className="flex-1 leading-tight">Tambah user baru</span>
-                            {activeTab === 'user' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                        </button>
-
-                        <button onClick={() => switchTab('master_user')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'master_user' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                            <KeyRound className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'master_user' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                            <span className="flex-1 leading-tight">Reset password user</span>
-                            {activeTab === 'master_user' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                        </button>
-
-                        {user.role === 'admin' && (
-                        <>
-                            <p className="px-3.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 border-t border-slate-100 mt-1">Data</p>
-
-                            <button onClick={() => setView('analysis')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-600 hover:bg-slate-50 transition-colors">
-                                <ChartColumn className="w-[17px] h-[17px] shrink-0 text-slate-400" strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Analisa data</span>
-                            </button>
-
-                            <button onClick={() => switchTab('master')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'master' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <Database className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'master' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Master data</span>
-                                {activeTab === 'master' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-
-                            <button onClick={() => switchTab('import_db')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'import_db' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <FileUp className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'import_db' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Import data mesin absen</span>
-                                {activeTab === 'import_db' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-
-                            <button onClick={() => switchTab('geofence')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'geofence' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <LocateFixed className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'geofence' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Geofence absen online</span>
-                                {activeTab === 'geofence' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-
-                            <button onClick={() => switchTab('period')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'period' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <CalendarRange className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'period' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Periode absensi</span>
-                                {activeTab === 'period' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-
-                            <button onClick={() => switchTab('approval_team')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'approval_team' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <UsersRound className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'approval_team' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Tim approval</span>
-                                {activeTab === 'approval_team' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-
-                            <button onClick={() => switchTab('perangkat')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'perangkat' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <Smartphone className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'perangkat' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Perangkat & sesi login</span>
-                                {activeTab === 'perangkat' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-
-                            <button onClick={() => switchTab('wajah')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'wajah' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <ScanFace className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'wajah' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Wajah karyawan</span>
-                                {activeTab === 'wajah' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-
-                            <button onClick={() => setView('gps_dashboard')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-700 hover:bg-sky-50/50 hover:text-sky-800 transition-colors">
-                                <MapPin className="w-[17px] h-[17px] shrink-0 text-sky-600" strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight font-medium">Dashboard GPS Karyawan</span>
-                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                            </button>
-
-                            <button onClick={() => setView('gps_audit')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-700 hover:bg-amber-50/50 hover:text-amber-800 transition-colors">
-                                <Shield className="w-[17px] h-[17px] shrink-0 text-amber-600" strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight font-medium">Monitoring Integritas GPS</span>
-                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                            </button>
-
-                            <button onClick={() => setView('rekap_admin')} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left text-slate-700 hover:bg-emerald-50/50 hover:text-emerald-800 transition-colors">
-                                <FileSpreadsheet className="w-[17px] h-[17px] shrink-0 text-emerald-600" strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight font-medium">Rekap, Koreksi & Export Excel</span>
-                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                            </button>
-
-                            <button onClick={() => switchTab('board')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] text-left transition-colors ${activeTab === 'board' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                                <FileSpreadsheet className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'board' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                                <span className="flex-1 leading-tight">Board absensi</span>
-                                {activeTab === 'board' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                            </button>
-                        </>
-                        )}
-
-                        <p className="px-3.5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400 border-t border-slate-100 mt-1">Komunikasi</p>
-
-                        <button onClick={() => switchTab('news')} className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 mb-1 text-[13px] text-left transition-colors ${activeTab === 'news' ? 'bg-slate-50 font-medium text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}>
-                            <Megaphone className={`w-[17px] h-[17px] shrink-0 ${activeTab === 'news' ? 'text-slate-900' : 'text-slate-400'}`} strokeWidth={1.75}/>
-                            <span className="flex-1 leading-tight">Info HRD</span>
-                            {activeTab === 'news' && <Check className="w-3.5 h-3.5 shrink-0 text-slate-900" strokeWidth={2.5}/>}
-                        </button>
-                    </div>
-                )}
-            </div>
-        </div>
-      </div>
-
-      {isMenuOpen && <div className="fixed inset-0 z-30 bg-transparent" onClick={() => setIsMenuOpen(false)} />}
 
       {/* KONTEN TAB: MASTER USER */}
       {activeTab === 'master_user' && (
@@ -8772,6 +8780,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           </div>
         </div>
       )}
+      </main>
     </div>
   );
 }
