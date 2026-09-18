@@ -771,7 +771,7 @@ function SUPABASE_DBABSEN_MATIKAN() {
 // Biayanya dijaga oleh sidik isi: selama `versi` menjawab jumlah baris
 // dan stempel terbaru yang sama, TIDAK ADA satu sel pun yang ditulis.
 // ---------------------------------------------------------------------
-function SUPABASE_TARIK_DBABSEN() {
+function SUPABASE_TARIK_DBABSEN(paksa) {
   if (!sbDbAbsenAktif()) {
     Logger.log('Jalur dbabsen belum dinyalakan; penarikan dilewati.');
     return 0;
@@ -824,6 +824,28 @@ function SUPABASE_TARIK_DBABSEN() {
   }
 
   const lastRow = sheet.getLastRow();
+
+  // PENJAGA SEBELUM MENIMPA.
+  //
+  // Penarikan ini MENGHAPUS seluruh isi sheet lalu menulis ulang. Kalau
+  // Postgres kebetulan setengah terisi — penyemaian yang putus, tabel
+  // yang baru dibersihkan, import yang gagal di tengah — penulisan ulang
+  // itu memusnahkan data yang masih utuh di sheet, dan tidak ada Undo.
+  //
+  // Karena itu penyusutan drastis diperlakukan sebagai tanda bahaya,
+  // bukan sebagai perintah. Ambangnya longgar (setengah) supaya
+  // penyusutan wajar — periode bergulir, baris ganda dibersihkan — tetap
+  // lewat.
+  const barisSheetLama = Math.max(lastRow - 1, 0);
+  if (!paksa && barisSheetLama > 0 && keluar.length < barisSheetLama / 2) {
+    throw new Error(
+      'Penarikan DIBATALKAN demi keamanan: Postgres hanya punya ' + keluar.length +
+      ' baris sementara sheet punya ' + barisSheetLama + '. Menulis ulang sekarang akan ' +
+      'membuang lebih dari separuh isi sheet. Periksa dulu isi db_absen; kalau penyusutan ' +
+      'ini memang disengaja, jalankan SUPABASE_TARIK_DBABSEN_PAKSA().'
+    );
+  }
+
   if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, 19).clearContent();
   sheet.getRange(2, 1, keluar.length, 19).setValues(keluar);
 
@@ -925,4 +947,171 @@ function SUPABASE_UJI_DBABSEN(periodeDipaksa) {
   Logger.log(beda === 0
     ? '>>> BERHASIL: ' + contoh.length + ' NIK sama persis. Aman menyalakan sakelar.'
     : '>>> ADA ' + beda + ' NIK BERBEDA. JANGAN nyalakan sakelar sebelum ini dijelaskan.');
+}
+
+/** Melewati penjaga penyusutan. Hanya setelah isi db_absen diperiksa. */
+function SUPABASE_TARIK_DBABSEN_PAKSA() {
+  return SUPABASE_TARIK_DBABSEN(true);
+}
+
+// =====================================================================
+// PENGUJIAN FASE 2
+// =====================================================================
+
+/**
+ * Foto keadaan kedua sisi, berdampingan. Murah dan tidak mengubah apa
+ * pun, jadi boleh dijalankan sesering yang perlu.
+ *
+ * Pakai ini untuk membuktikan import baru benar-benar masuk: jalankan
+ * SEBELUM import, lalu SESUDAHNYA, dan bandingkan angkanya.
+ */
+function SUPABASE_HITUNG_DBABSEN() {
+  const versi = _sbDbAbsen('versi', {});
+  const sheet = SS.getSheetByName(SHEET_DB_ABSEN);
+  const barisSheet = sheet ? Math.max(sheet.getLastRow() - 1, 0) : 0;
+
+  Logger.log('Postgres : ' + versi.total + ' baris, terbaru ' + (versi.terbaru || '(kosong)'));
+  Logger.log('Sheet    : ' + barisSheet + ' baris');
+  Logger.log(versi.total === barisSheet
+    ? 'Keduanya SAMA — cermin sedang selaras.'
+    : 'BERBEDA ' + Math.abs(versi.total - barisSheet) + ' baris. Wajar kalau import baru '
+      + 'belum ditarik ke sheet; jalankan SUPABASE_TARIK_DBABSEN() untuk menyamakan.');
+
+  return { postgres: versi.total, sheet: barisSheet, terbaru: versi.terbaru };
+}
+
+/**
+ * Pemeriksaan menyeluruh Fase 2, satu kali jalan.
+ *
+ * Empat hal yang dibuktikan, berurutan — dan setiap tahap berhenti
+ * kalau tahap sebelumnya gagal, karena hasil tahap berikutnya tidak
+ * bisa dipercaya:
+ *
+ *   1. Sakelarnya memang menyala.
+ *   2. Jalur BACA riwayat mengambil dari Postgres, dan isinya sama
+ *      dengan yang dibaca dari sheet untuk NIK yang sama.
+ *   3. Angka STATISTIK dari Postgres sama dengan hitungan sheet.
+ *   4. Cermin sheet selaras dengan Postgres.
+ *
+ * Tidak ada yang ditulis kecuali Anda menjawab ya pada tahap 4.
+ */
+function SUPABASE_UJI_FASE2() {
+  Logger.log('=== 1. SAKELAR ===');
+  const nyala = sbDbAbsenAktif();
+  Logger.log(nyala ? 'MENYALA — pembacaan diarahkan ke Postgres.' : 'MATI — semua masih lewat sheet.');
+  if (!nyala) {
+    Logger.log('Hentikan di sini: tanpa sakelar, tahap berikutnya tidak menguji apa pun yang baru.');
+    return;
+  }
+
+  Logger.log('');
+  Logger.log('=== 2. JALUR BACA RIWAYAT ===');
+
+  // NIK contoh diambil dari sheet, bukan dari Postgres — supaya kalau
+  // Postgres kehilangan seseorang, kehilangan itu KETAHUAN, bukan
+  // tersembunyi karena orangnya tidak pernah ditanyakan.
+  const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
+  const barisSheet = bacaSheet(sheetDb, 19);
+  const hitungSheet = {};
+  for (let i = 1; i < barisSheet.length; i++) {
+    const nik = String(barisSheet[i][2] || '').trim();
+    if (nik) hitungSheet[nik] = (hitungSheet[nik] || 0) + 1;
+  }
+  const nikContoh = Object.keys(hitungSheet).sort(function (a, b) {
+    return hitungSheet[b] - hitungSheet[a];
+  }).slice(0, 5);
+
+  if (!nikContoh.length) {
+    Logger.log('Sheet dbabsen kosong — tidak ada yang bisa diuji.');
+    return;
+  }
+
+  let bedaBaca = 0;
+  for (let i = 0; i < nikContoh.length; i++) {
+    const nik = nikContoh[i];
+    const dariPg = _sbBarisMesin(nik).length - 1;   // dikurangi baris judul palsu
+    const dariSheet = hitungSheet[nik];
+    const sama = (dariPg === dariSheet);
+    if (!sama) bedaBaca++;
+    Logger.log((sama ? 'sama  ' : 'BEDA  ') + nik + ' -> sheet=' + dariSheet + ' postgres=' + dariPg);
+  }
+  if (bedaBaca) {
+    Logger.log('>>> ' + bedaBaca + ' NIK berbeda jumlah barisnya. JANGAN lanjut sebelum dijelaskan.');
+    return;
+  }
+  Logger.log('>>> Jalur baca riwayat COCOK untuk ' + nikContoh.length + ' NIK tersibuk.');
+
+  Logger.log('');
+  Logger.log('=== 3. ANGKA STATISTIK ===');
+  SUPABASE_UJI_DBABSEN();
+
+  Logger.log('');
+  Logger.log('=== 4. CERMIN SHEET ===');
+  SUPABASE_HITUNG_DBABSEN();
+  Logger.log('Kalau keduanya berbeda dan Anda memang baru mengimpor, jalankan');
+  Logger.log('SUPABASE_TARIK_DBABSEN() lalu ulangi SUPABASE_HITUNG_DBABSEN().');
+}
+
+/**
+ * Memeriksa kolom T sheet dbabsen pada BARIS DATA.
+ *
+ * KENAPA INI PENTING. Kolom T diisi stempel waktu oleh trigger onEdit
+ * setiap kali sebuah baris dbabsen diedit tangan. Tetapi
+ * handleGetRekapAdmin membacanya sebagai `existingNominal` — nominal
+ * denda yang sudah ditetapkan:
+ *
+ *     const nominal = _hitungNominalDenda(r[10] || telat, r[19]);
+ *
+ * dan di dalamnya `Number(existingNominal) > 0`. Objek Date yang
+ * di-Number() menjadi epoch milidetik, yaitu angka raksasa. Jadi setiap
+ * baris yang pernah diedit tangan menampilkan denda miliaran rupiah,
+ * bukan Rp 25.000.
+ *
+ * Selama dbabsen murni dari import, kolom itu kosong dan bug ini tidak
+ * pernah muncul. Fungsi ini membuktikannya — dan kalau ternyata TIDAK
+ * kosong, ia menunjukkan baris mana saja, supaya keputusan memindahkan
+ * rekap ke Postgres diambil dengan mata terbuka.
+ */
+function SUPABASE_PERIKSA_KOLOM_T() {
+  const sheet = SS.getSheetByName(SHEET_DB_ABSEN);
+  if (!sheet) { Logger.log('Sheet dbabsen tidak ditemukan.'); return; }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) { Logger.log('Sheet dbabsen tidak punya baris data.'); return; }
+
+  const kolomT = sheet.getRange(2, 20, lastRow - 1, 1).getValues();
+  const kolomNik = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+  const kolomTgl = sheet.getRange(2, 5, lastRow - 1, 1).getValues();
+
+  let terisi = 0;
+  const contoh = [];
+  for (let i = 0; i < kolomT.length; i++) {
+    const v = kolomT[i][0];
+    if (v === '' || v === null || v === undefined) continue;
+    terisi++;
+    if (contoh.length < 10) {
+      contoh.push('baris ' + (i + 2) + ' | NIK ' + kolomNik[i][0]
+        + ' | tgl ' + formatDateYMD_Strict(kolomTgl[i][0])
+        + ' | isi kolom T: ' + v + ' (Number -> ' + Number(v) + ')');
+    }
+  }
+
+  Logger.log('Baris data diperiksa : ' + kolomT.length);
+  Logger.log('Kolom T terisi       : ' + terisi);
+  Logger.log('');
+
+  if (terisi === 0) {
+    Logger.log('>>> BERSIH. Kolom T kosong di seluruh baris data, jadi denda selalu');
+    Logger.log('    dihitung dari kolom telat. Memindahkan rekap ke Postgres TIDAK');
+    Logger.log('    mengubah satu angka pun.');
+    return 0;
+  }
+
+  Logger.log('>>> ADA ' + terisi + ' BARIS dengan kolom T terisi. Contohnya:');
+  contoh.forEach(function (c) { Logger.log('    ' + c); });
+  Logger.log('');
+  Logger.log('    Kalau nilainya tanggal/jam, baris-baris itu SEKARANG menampilkan');
+  Logger.log('    denda sebesar epoch milidetiknya — miliaran rupiah. Periksa menu');
+  Logger.log('    Rekapitulasi untuk NIK di atas sebelum memutuskan apa pun.');
+  return terisi;
 }

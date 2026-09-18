@@ -1409,8 +1409,57 @@ function handleUpdateRemarkStatus(data) {
  */
 function _sbBarisMesin(nik) {
   const jawab = _sbDbAbsen('riwayat', { nik: String(nik) });
-  const list = (jawab && jawab.list) ? jawab.list : [];
+  return _sbKeBentukSheet((jawab && jawab.list) ? jawab.list : []);
+}
 
+/**
+ * SELURUH isi db_absen, juga dalam bentuk baris sheet.
+ *
+ * Dipakai handleGetRekapAdmin, yang memang butuh semua orang sekaligus.
+ * Ditarik berhalaman karena satu balasan berisi ribuan baris; urutannya
+ * (kunci, tanggal) pasti, jadi halaman tidak pernah saling tumpang
+ * tindih maupun melompat — lihat catatan pada aksi `semua` di
+ * functions/dbabsen.
+ *
+ * Bandingkan biayanya dengan yang digantikan: getDataRange() pada sheet
+ * dbabsen menarik SELURUH 49 kolom x ribuan baris — ratusan ribu sel —
+ * padahal yang dipakai cuma 19 kolom pertama.
+ *
+ * @private
+ */
+function _sbSemuaBarisMesin() {
+  const kumpulan = [];
+  let offset = 0;
+  for (;;) {
+    const hal = _sbDbAbsen('semua', { offset: offset, batas: 2000 });
+    const baris = hal.baris || [];
+    for (let i = 0; i < baris.length; i++) kumpulan.push(baris[i]);
+    if (hal.habis || !baris.length) break;
+    offset += baris.length;
+    if (offset > 200000) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
+  }
+  return _sbKeBentukSheet(kumpulan);
+}
+
+/**
+ * Mengubah baris Postgres menjadi larik 19 kolom, persis bentuk baris
+ * sheet dbabsen (0 = kolom A yang kosong, 1 = No.Akun, 2 = NIK, ...).
+ *
+ * Elemen ke-0 diisi baris kosong sebagai pengganti baris judul, karena
+ * seluruh loop lama mulai dari i = 1.
+ *
+ * CATATAN KOLOM T. Bentuk ini berhenti di indeks 18 (kolom S). Kolom T
+ * — indeks 19 — tidak punya padanan di Postgres, dan memang tidak
+ * seharusnya punya: isinya stempel waktu dari trigger onEdit, bukan
+ * data mesin. handleGetRekapAdmin membacanya sebagai nominal denda yang
+ * sudah ditetapkan, sehingga baris yang pernah diedit tangan
+ * menampilkan denda sebesar epoch milidetiknya. Di jalur ini indeks 19
+ * selalu undefined, jadi denda SELALU dihitung dari kolom telat — yang
+ * memang perilaku yang benar. Lihat SUPABASE_PERIKSA_KOLOM_T().
+ *
+ * @private
+ */
+function _sbKeBentukSheet(list) {
   const rows = [new Array(19).fill('')];   // pengganti baris judul
   for (let i = 0; i < list.length; i++) {
     const r = list[i];
@@ -1423,10 +1472,17 @@ function _sbBarisMesin(nik) {
     // WIB — dan kalender Data Absen ikut bergeser.
     b[4]  = r.tanggal ? new Date(String(r.tanggal) + 'T00:00:00') : '';
     b[5]  = r.jam_kerja || '';
+    b[6]  = r.mulai_tugas || '';
+    b[7]  = r.akhir_tugas || '';
     b[8]  = r.masuk || '';
     b[9]  = r.pulang || '';
     b[10] = r.telat || '';
+    b[11] = r.pulang_awal || '';
+    b[12] = r.bolos || '';
+    b[13] = r.durasi_kerja || '';
     b[14] = r.symbol || '';
+    b[15] = r.departemen || '';
+    b[16] = r.att_time || '';
     b[17] = r.waktu_scan || '';
     b[18] = r.minggu || '';
     rows.push(b);
@@ -4902,8 +4958,34 @@ function handleDeleteKoreksi(data) {
 
 function handleGetRekapAdmin(data) {
   // 1. Ambil data DB_ABSEN
+  //
+  // FASE 2. Yang digantikan di sini adalah pembacaan TERBERAT di seluruh
+  // skrip: getDataRange() pada sheet dbabsen menarik SELURUH kolom
+  // sampai kolom terakhir yang pernah dipakai — 49 kolom x ribuan baris,
+  // ratusan ribu sel — padahal handler ini hanya memakai 19 kolom
+  // pertama. Itulah yang membuat tombol "Refresh Data" terasa lama.
+  //
+  // Bentuk hasilnya sama persis dengan bentuk baris sheet, jadi seluruh
+  // pemetaan, penerapan koreksi, dan akumulasi ringkasan di bawah tidak
+  // berubah sebaris pun.
+  //
+  // Satu perbedaan yang DISENGAJA: indeks 19 (kolom T) tidak ikut.
+  // Lihat catatan pada _sbKeBentukSheet — kolom itu berisi stempel waktu
+  // onEdit, bukan nominal denda, dan membacanya sebagai nominal justru
+  // menghasilkan angka miliaran pada baris yang pernah diedit tangan.
   const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
-  const rowsDb = sheetDb ? sheetDb.getDataRange().getValues() : [];
+  let rowsDb = null;
+  if (typeof sbDbAbsenAktif === 'function' && sbDbAbsenAktif()) {
+    try {
+      rowsDb = _sbSemuaBarisMesin();
+    } catch (e) {
+      console.warn('Rekap: dbabsen Supabase gagal, kembali ke sheet: ' + e.message);
+      rowsDb = null;
+    }
+  }
+  if (rowsDb === null) {
+    rowsDb = sheetDb ? sheetDb.getDataRange().getValues() : [];
+  }
   
   // 2. Ambil data KOREKSI
   const sheetKoreksi = _pastikanSheetKoreksi();
