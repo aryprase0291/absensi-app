@@ -235,7 +235,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const rentangTerakhir = useRef(null);
 
   // Fetch Data from Apps Script
-  const fetchData = useCallback(async (dari, sampai) => {
+  const fetchData = useCallback(async (dariMasuk, sampaiMasuk) => {
+    // Hanya string yang boleh lewat. Kalau suatu saat ada pemanggil yang
+    // menyerahkan objek event lagi, yang terjadi adalah rentang kosong —
+    // bukan seluruh permintaan gagal dengan pesan yang menuduh server.
+    const dari   = typeof dariMasuk   === 'string' ? dariMasuk   : '';
+    const sampai = typeof sampaiMasuk === 'string' ? sampaiMasuk : '';
+
     const nomor = ++permintaanKe.current;
     setLoading(true);
     setServerError(null);
@@ -276,6 +282,19 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       if (nomor === permintaanKe.current) setLoading(false);
     }
   }, [doApiCall]);
+
+  // Muat ulang atas permintaan (tombol Refresh, tombol coba lagi).
+  //
+  // WAJIB dibungkus, tidak boleh dipasang langsung sebagai onClick:
+  // React menyerahkan objek event sebagai argumen pertama, dan sejak
+  // fetchData punya parameter (dari, sampai), event itu akan masuk
+  // sebagai `dari` lalu ikut di-JSON.stringify — yang LANGSUNG melempar
+  // karena SyntheticEvent punya acuan melingkar di dalamnya. Yang
+  // terlihat pengguna: "Gagal terhubung ke Web App", padahal server
+  // tidak pernah dihubungi sama sekali.
+  const muatUlang = useCallback(() => {
+    fetchData(filterTglMulai, filterTglSelesai);
+  }, [fetchData, filterTglMulai, filterTglSelesai]);
 
   // Rentang tanggal sekarang ikut turun ke server, jadi mengubahnya
   // berarti mengambil data lagi — bukan lagi menyaring yang sudah ada di
@@ -1029,7 +1048,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={fetchData}
+              onClick={() => muatUlang()}
               disabled={loading}
               className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-bold text-white flex items-center gap-2 transition active:scale-95 disabled:opacity-50"
               title="Refresh data dari server"
@@ -1120,7 +1139,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   </ol>
                 </div>
                 <button
-                  onClick={fetchData}
+                  onClick={() => muatUlang()}
                   disabled={loading}
                   className="mt-3.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition active:scale-95 disabled:opacity-50"
                 >
