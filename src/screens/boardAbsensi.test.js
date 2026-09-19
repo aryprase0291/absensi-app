@@ -1,6 +1,6 @@
 import {
   keYmd, labelTanggalPendek, labelTanggalPanjang, daftarTanggal,
-  susunBoard, boardKeSheet, BOARD_KOLOM_INFO, BOARD_KODE_HITUNG, BOARD_MAKS_HARI
+  susunBoard, boardKeSheet, bandingPayroll, BOARD_KOLOM_INFO, BOARD_KODE_HITUNG, BOARD_MAKS_HARI
 } from './boardAbsensi';
 
 const denda = (telat, nominal) => Number(nominal) || 0;
@@ -86,10 +86,35 @@ describe('susunBoard', () => {
     board.baris.forEach(b => expect(b.sel.length).toBe(3));
   });
 
-  test('diurutkan PT lalu nama, sama dengan tab Dashboard', () => {
+  test('diurutkan PT lalu payroll, seperti sheet BOARD template', () => {
     expect(board.baris.map(b => b.pt)).toEqual(['BSL', 'GMS BWI']);
     expect(board.baris[0].no).toBe(1);
     expect(board.baris[1].no).toBe(2);
+  });
+
+  test('urutan payroll dalam satu PT mengikuti blok KCM template', () => {
+    const kcm = ['C0049', 'C0009', 'C0105', 'C0018', 'C0010', 'C0103', 'C0019', 'C0033'];
+    const b = susunBoard({
+      records: kcm.map(pr => rec({ payroll: pr, nama: 'X ' + pr, departemen: 'KCM', tanggalYMD: '2026-07-21', id2: 'H' })),
+      dashboard: [], dari: '2026-07-21', sampai: '2026-07-21', hitungDenda: denda
+    });
+    expect(b.baris.map(x => x.payroll))
+      .toEqual(['C0009', 'C0010', 'C0018', 'C0019', 'C0033', 'C0049', 'C0103', 'C0105']);
+  });
+
+  test('PT dikelompokkan lebih dulu, payroll diurutkan di dalamnya', () => {
+    const b = susunBoard({
+      records: [
+        rec({ payroll: 'D0012', nama: 'D DUA', departemen: 'SPT', tanggalYMD: '2026-07-21', id2: 'H' }),
+        rec({ payroll: 'C0018', nama: 'C SATU', departemen: 'KCM', tanggalYMD: '2026-07-21', id2: 'H' }),
+        rec({ payroll: 'D0002', nama: 'D SATU', departemen: 'SPT', tanggalYMD: '2026-07-21', id2: 'H' }),
+        rec({ payroll: 'A0009', nama: 'A SATU', departemen: 'BSL', tanggalYMD: '2026-07-21', id2: 'H' }),
+        rec({ payroll: 'C0009', nama: 'C NOL', departemen: 'KCM', tanggalYMD: '2026-07-21', id2: 'H' })
+      ],
+      dashboard: [], dari: '2026-07-21', sampai: '2026-07-21', hitungDenda: denda
+    });
+    expect(b.baris.map(x => x.pt + ':' + x.payroll))
+      .toEqual(['BSL:A0009', 'KCM:C0009', 'KCM:C0018', 'SPT:D0002', 'SPT:D0012']);
   });
 
   test('simbol harian jatuh di kolom tanggalnya', () => {
@@ -241,5 +266,36 @@ describe('boardKeSheet', () => {
       expect(m.e.c).toBeLessThan(lebarTotal);
       expect(m.e.r).toBeLessThan(aoa.length);
     });
+  });
+});
+
+describe('bandingPayroll', () => {
+  const urut = (arr) => arr.slice().sort(bandingPayroll);
+
+  test('angka dibandingkan sebagai angka, bukan sebagai teks', () => {
+    // 'G0071' < 'G0621' benar secara teks; 'G71' vs 'G621' tidak.
+    expect(urut(['G621', 'G71', 'G8'])).toEqual(['G8', 'G71', 'G621']);
+  });
+
+  test('digit nol di depan tidak mengubah urutan', () => {
+    expect(urut(['C0010', 'C0009', 'C9'])).toEqual(['C0009', 'C9', 'C0010']);
+  });
+
+  test('awalan huruf dikelompokkan lebih dulu', () => {
+    expect(urut(['E0071', 'A0012', 'C0094', 'A0009', 'H0005']))
+      .toEqual(['A0009', 'A0012', 'C0094', 'E0071', 'H0005']);
+  });
+
+  test('kode tanpa huruf awalan ditaruh paling belakang', () => {
+    expect(urut(['2073', 'G0429', '607', 'G0540']))
+      .toEqual(['G0429', 'G0540', '607', '2073']);
+  });
+
+  test('huruf kecil dan spasi tidak membuat urutan meleset', () => {
+    expect(urut([' c0018 ', 'c0009'])).toEqual(['c0009', ' c0018 ']);
+  });
+
+  test('nilai kosong tidak melempar dan tidak menyusup ke tengah', () => {
+    expect(urut(['C0010', '', 'C0009', null])).toEqual(['C0009', 'C0010', '', null]);
   });
 });

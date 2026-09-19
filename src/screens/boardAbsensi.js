@@ -117,6 +117,41 @@ export function daftarTanggal(dariYmd, sampaiYmd, maksHari = BOARD_MAKS_HARI) {
   return { tanggal, terpotong: dipakai < total, totalHari: total };
 }
 
+/**
+ * Membandingkan dua kode payroll secara "natural": huruf awalan dulu, lalu
+ * angkanya sebagai ANGKA.
+ *
+ * Perbandingan string biasa tidak cukup. Kode payroll punya panjang angka
+ * yang tidak seragam — di template ada G0071 dan ada 607 — dan
+ * 'C0009' < 'C0010' memang benar secara string hanya SELAMA jumlah digitnya
+ * sama. Begitu ada kode berdigit lain, urutannya diam-diam melenceng.
+ *
+ * Kode tanpa huruf awalan (2073, 2118) ditaruh SETELAH yang berhuruf.
+ * Ini pilihan, bukan aturan yang bisa dibaca dari template: tiap blok PT di
+ * sana selalu dibuka kode berhuruf, dan menempatkan kode telanjang di atas
+ * akan mengubah baris pertama tiap blok.
+ */
+export function bandingPayroll(a, b) {
+  const pecah = function (v) {
+    const t = String(v || '').trim().toUpperCase();
+    const m = t.match(/^([A-Z]*)0*(\d*)(.*)$/);
+    if (!m) return { awalan: t, angka: 0, sisa: '', telanjang: true };
+    return {
+      awalan: m[1],
+      angka: m[2] ? Number(m[2]) : 0,
+      sisa: m[3] || '',
+      telanjang: !m[1]
+    };
+  };
+  const x = pecah(a);
+  const y = pecah(b);
+  if (x.telanjang !== y.telanjang) return x.telanjang ? 1 : -1;
+  if (x.awalan !== y.awalan) return x.awalan < y.awalan ? -1 : 1;
+  if (x.angka !== y.angka) return x.angka - y.angka;
+  if (x.sisa !== y.sisa) return x.sisa < y.sisa ? -1 : 1;
+  return 0;
+}
+
 /** Kunci karyawan. Urutannya sama dengan empSummary di handleGetRekapAdmin. */
 function kunciKaryawan(payroll, noAkun, nama) {
   return String(payroll || noAkun || nama || '').trim().toLowerCase();
@@ -218,11 +253,24 @@ export function susunBoard(opsi) {
 
   const baris = Object.keys(orang).map(function (k) { return orang[k]; });
 
-  // Urutan PT lalu nama, sama dengan tab Dashboard. Board dan dashboard
-  // hampir selalu dibaca berdampingan; dua urutan berbeda untuk daftar
-  // orang yang sama membuat keduanya sulit dicocokkan baris demi baris.
+  // URUTAN: PT dulu, lalu PAYROLL menaik.
+  //
+  // Diambil dari sheet BOARD template, bukan dari tab Dashboard. Blok KCM
+  // dan SPT di sana berurut payroll persis (C0009, C0010, C0018, C0019,
+  // C0033, ...), dan itu pola yang berlaku di hampir seluruh sheet.
+  //
+  // Blok BSL adalah satu-satunya yang menyimpang (A0009, A0012, E0071,
+  // C0094, H0005, A0013, ...). Urutan itu tidak mengikuti payroll, nama,
+  // maupun tanggal masuk — kemungkinan besar disusun tangan dan tidak
+  // pernah dirapikan. TIDAK ditiru di sini: menyalin urutan yang tidak
+  // punya aturan berarti tidak ada yang bisa menebak di mana sebuah nama
+  // akan muncul.
+  //
+  // Nama dipakai sebagai pemutus seri supaya dua orang dengan payroll yang
+  // sama persis tidak bertukar tempat tiap kali board disusun ulang.
   baris.sort(function (a, b) {
     return String(a.pt || '').localeCompare(String(b.pt || '')) ||
+           bandingPayroll(a.payroll, b.payroll) ||
            String(a.nama || '').localeCompare(String(b.nama || ''));
   });
 
