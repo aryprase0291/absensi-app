@@ -1462,7 +1462,7 @@ function _sbBarisMesin(nik) {
  * Dipakai handleGetRekapAdmin, yang memang butuh semua orang sekaligus.
  * Ditarik berhalaman karena satu balasan berisi ribuan baris; urutannya
  * (kunci, tanggal) pasti, jadi halaman tidak pernah saling tumpang
- * tindih maupun melompat — lihat catatan pada aksi `semua` di
+ * tindih maupun melompat — lihat catatan pada aksi `halaman` di
  * functions/dbabsen.
  *
  * Bandingkan biayanya dengan yang digantikan: getDataRange() pada sheet
@@ -1471,32 +1471,89 @@ function _sbBarisMesin(nik) {
  *
  * @private
  */
-function _sbSemuaBarisMesin() {
-  // Jumlah yang SEHARUSNYA didapat, diambil lebih dulu. Tanpa patokan
-  // ini, penarikan yang kurang sempurna tidak menghasilkan error apa
-  // pun — ia cuma menghasilkan rekap yang angkanya lebih kecil, dan
-  // tidak ada yang tahu sampai seseorang membandingkannya dengan
-  // dbabsen.
-  const seharusnya = Number((_sbDbAbsen('versi', {}) || {}).total || 0);
+function _sbSemuaBarisMesin(dari, sampai) {
+  const d1 = String(dari || '');
+  const d2 = String(sampai || '');
 
+  // Jumlah yang SEHARUSNYA didapat UNTUK RENTANG INI, diambil lebih
+  // dulu. Tanpa patokan ini, penarikan yang kurang sempurna tidak
+  // menghasilkan error apa pun — ia cuma menghasilkan rekap yang
+  // angkanya lebih kecil, dan tidak ada yang tahu sampai seseorang
+  // membandingkannya dengan dbabsen.
+  //
+  // Dulu memakai `versi`, yang menghitung SELURUH tabel. Sejak rekap
+  // meminta satu rentang saja, angka itu tidak lagi bisa dibandingkan
+  // dengan apa yang ditarik — karena itu `jumlah`, yang menghitung
+  // rentang yang sama persis.
+  const seharusnya = Number((_sbDbAbsen('jumlah', { dari: d1, sampai: d2 }) || {}).total || 0);
+
+  // ===================================================================
+  // KURSOR KEYSET, BUKAN OFFSET (19 Sep 2026)
+  //
+  // Yang diubah di sini BUKAN datanya, tapi jumlah perjalanan HTTPS.
+  // Terukur di log produksi pada jalur `semua` yang lama:
+  //
+  //     12:09:08 -> 12:09:17  =  9,3 detik   (12 permintaan)
+  //     07:09:08 -> 07:09:20  = 11,7 detik   (12 permintaan)
+  //
+  // Hampir seluruhnya waktu jaringan Apps Script -> Singapura; query
+  // Postgres-nya sendiri beberapa milidetik. Dua sebabnya:
+  //
+  //   1. PostgREST memotong di 1.000 baris per permintaan dan batas itu
+  //      TIDAK bisa dinaikkan dari sini — permintaan 2.000 tetap
+  //      dijawab 1.000. 10.977 baris = 11 halaman.
+  //   2. Loop lama hanya berhenti pada halaman KOSONG, jadi selalu ada
+  //      satu permintaan tambahan yang tidak membawa apa-apa.
+  //
+  // Aksi `halaman` menjawab lewat RPC yang mengembalikan satu nilai
+  // jsonb. Batas 1.000 itu menghitung BARIS, dan satu skalar jsonb
+  // adalah satu baris berapa pun isinya — jadi 5.000 record pulang
+  // sekali angkut: 10.977 baris cukup 3 permintaan.
+  //
+  // Kursornya (kunci, tanggal) — primary key db_absen — bukan offset.
+  // OFFSET memaksa Postgres menyusuri baris yang dilewati: halaman di
+  // offset 9.000 terukur 195 ms, sementara seek keyset di titik yang
+  // sama 0,8 ms.
+  //
+  // Jalur `semua` yang lama SENGAJA masih hidup di Edge Function. Untuk
+  // membatalkan perubahan ini, cukup kembalikan fungsi ini — tidak
+  // perlu menyentuh Supabase sama sekali.
+  // ===================================================================
   const kumpulan = [];
-  let offset = 0;
-  for (;;) {
-    const hal = _sbDbAbsen('semua', { offset: offset, batas: 2000 });
+  let kunci = null;
+  let tanggal = null;
+
+  for (let putaran = 0; ; putaran++) {
+    const hal = _sbDbAbsen('halaman', {
+      sesudah_kunci: kunci,
+      sesudah_tanggal: tanggal,
+      dari: d1,
+      sampai: d2,
+      batas: 5000
+    });
     const baris = hal.baris || [];
     for (let i = 0; i < baris.length; i++) kumpulan.push(baris[i]);
 
-    // BERHENTI HANYA PADA HALAMAN KOSONG.
+    // BERHENTI PADA FLAG `habis`, BUKAN PADA HALAMAN KOSONG.
     //
-    // Sebelumnya berhenti begitu satu halaman berisi kurang dari yang
-    // diminta. Itu keliru: PostgREST punya batas baris per permintaan
-    // (bawaannya 1.000), jadi permintaan 2.000 baris dijawab 1.000 —
-    // lebih sedikit dari yang diminta, padahal masih ada sisanya.
-    // Akibatnya penarikan berhenti di baris ke-1.000 tanpa error, dan
-    // rekap hanya menghitung seperlima data.
-    if (!baris.length) break;
-    offset += baris.length;
-    if (offset > 200000) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
+    // Sekarang boleh dipercaya justru karena batas 1.000 itu tidak lagi
+    // ikut bermain: `habis` dihitung di dalam RPC dengan membandingkan
+    // jumlah baris terhadap batas yang BENAR-BENAR dipakai, bukan yang
+    // diminta. Inilah yang menghapus satu perjalanan kosong per tarikan.
+    if (hal.habis || !baris.length) break;
+
+    // Kursor kosong padahal halaman berisi berarti RPC dan pemanggil
+    // tidak sepaham. Berhenti di sini; kalau diteruskan, putaran
+    // berikutnya akan mengulang halaman pertama dan menghasilkan baris
+    // kembar yang tidak akan tertangkap pemeriksaan jumlah di bawah.
+    if (!hal.kunci_akhir || !hal.tanggal_akhir) {
+      throw new Error('Penarikan dbabsen berhenti: halaman berisi ' + baris.length
+        + ' baris tapi tidak mengembalikan kursor.');
+    }
+    kunci = hal.kunci_akhir;
+    tanggal = hal.tanggal_akhir;
+
+    if (putaran > 200) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
   }
 
   // Jaring terakhir. Lebih baik rekap menolak tampil daripada tampil
@@ -5083,18 +5140,47 @@ function handleGetRekapAdmin(data) {
   // Lihat catatan pada _sbKeBentukSheet — kolom itu berisi stempel waktu
   // onEdit, bukan nominal denda, dan membacanya sebagai nominal justru
   // menghasilkan angka miliaran pada baris yang pernah diedit tangan.
+  // RENTANG TANGGAL (19 Sep 2026).
+  //
+  // Dulu handler ini selalu mengirim SELURUH isi dbabsen — dua bulan,
+  // 10.977 baris, ~3,8 MB JSON — lalu layar rekap membuang yang di luar
+  // rentang pilihan di browser. Sekarang rentangnya ikut turun sampai ke
+  // Postgres, jadi yang tidak akan ditampilkan tidak pernah dibaca,
+  // tidak pernah dipetakan, dan tidak pernah dikirim.
+  //
+  // Kosong = tanpa batas, sama seperti perilaku lama. Itu yang membuat
+  // pemanggil lama (dan jalur sheet di bawah) tetap sah.
+  const dariYMD   = formatDateYMD_Strict(data && data.dari)   || String((data && data.dari)   || '').slice(0, 10);
+  const sampaiYMD = formatDateYMD_Strict(data && data.sampai) || String((data && data.sampai) || '').slice(0, 10);
+
   const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
   let rowsDb = null;
   if (typeof sbDbAbsenAktif === 'function' && sbDbAbsenAktif()) {
     try {
-      rowsDb = _sbSemuaBarisMesin();
+      rowsDb = _sbSemuaBarisMesin(dariYMD, sampaiYMD);
     } catch (e) {
       console.warn('Rekap: dbabsen Supabase gagal, kembali ke sheet: ' + e.message);
       rowsDb = null;
     }
   }
   if (rowsDb === null) {
-    rowsDb = sheetDb ? sheetDb.getDataRange().getValues() : [];
+    // Jalur sheet tidak bisa menyaring sebelum membaca — getDataRange
+    // menarik semuanya apa pun yang terjadi. Penyaringannya karena itu
+    // dilakukan sesudahnya: bukan untuk menghemat pembacaan, tapi supaya
+    // angka yang keluar dari kedua jalur SAMA PERSIS.
+    const semuaSheet = sheetDb ? sheetDb.getDataRange().getValues() : [];
+    if (!dariYMD && !sampaiYMD) {
+      rowsDb = semuaSheet;
+    } else {
+      rowsDb = [semuaSheet.length ? semuaSheet[0] : []];
+      for (let z = 1; z < semuaSheet.length; z++) {
+        const ymd = formatDateYMD_Strict(semuaSheet[z][4]) || '';
+        if (!ymd) continue;
+        if (dariYMD && ymd < dariYMD) continue;
+        if (sampaiYMD && ymd > sampaiYMD) continue;
+        rowsDb.push(semuaSheet[z]);
+      }
+    }
   }
   
   // 2. Ambil data KOREKSI
@@ -5114,6 +5200,37 @@ function handleGetRekapAdmin(data) {
       id2: String(kr[6] || '').trim().toUpperCase(),
       keterangan: String(kr[7] || '')
     });
+  }
+
+  // INDEKS KOREKSI.
+  //
+  // Loop lama mencocokkan SETIAP baris dbabsen dengan SETIAP koreksi, dan
+  // memanggil toLowerCase() pada keduanya di dalam perbandingan — jadi
+  // biayanya O(baris x koreksi) dengan alokasi string di setiap langkah.
+  // Pada 11.000 baris itu berarti puluhan ribu sampai jutaan perbandingan
+  // untuk mencari kecocokan yang jumlahnya segelintir.
+  //
+  // Di sini kuncinya dinormalkan SEKALI per koreksi, lalu pencocokan per
+  // baris menjadi tiga pencarian peta. Tanggalnya tetap diperiksa satu
+  // per satu karena satu karyawan bisa punya beberapa koreksi.
+  const koreksiPeta = {};
+  const _korDaftar = function (kunci) {
+    if (!kunci) return null;
+    return koreksiPeta[kunci] || null;
+  };
+  for (let c = 0; c < koreksiList.length; c++) {
+    const kor = koreksiList[c];
+    const kunciKor = [
+      String(kor.payroll || '').trim().toLowerCase(),
+      String(kor.noAkun  || '').trim().toLowerCase(),
+      String(kor.nama    || '').trim().toLowerCase()
+    ];
+    for (let q = 0; q < kunciKor.length; q++) {
+      const kk = kunciKor[q];
+      if (!kk) continue;
+      if (!koreksiPeta[kk]) koreksiPeta[kk] = [];
+      if (koreksiPeta[kk].indexOf(kor) === -1) koreksiPeta[kk].push(kor);
+    }
   }
 
   // 3. Ambil data Users / Master Pegawai untuk Dept, Jabatan, Sisa Cuti
@@ -5165,19 +5282,24 @@ function handleGetRekapAdmin(data) {
     const week = String(r[18] || '').trim();
     const nominal = _hitungNominalDenda(r[10] || telat, r[19]);
 
-    // Periksa apakah ada koreksi yang cocok
+    // Periksa apakah ada koreksi yang cocok — lewat indeks, bukan
+    // pemindaian seluruh daftar. Urutan kunci (payroll, lalu no.akun,
+    // lalu nama) sengaja sama dengan urutan pada loop lama, supaya
+    // koreksi yang dipilih tetap koreksi yang sama.
     let isKoreksi = false;
     let koreksiKet = '';
-    for (let c = 0; c < koreksiList.length; c++) {
-      const kor = koreksiList[c];
-      const matchEmp = (payroll && kor.payroll && payroll.toLowerCase() === kor.payroll.toLowerCase()) ||
-                       (noAkun && kor.noAkun && noAkun === kor.noAkun) ||
-                       (nama && kor.nama && nama.toLowerCase() === kor.nama.toLowerCase());
-      if (matchEmp && tglYMD >= kor.tglMulai && tglYMD <= kor.tglSelesai) {
-        id2 = kor.id2;
-        isKoreksi = true;
-        koreksiKet = kor.keterangan;
-        break;
+    const _kandidat = _korDaftar(payroll.toLowerCase()) ||
+                      _korDaftar(noAkun.toLowerCase()) ||
+                      _korDaftar(nama.toLowerCase());
+    if (_kandidat) {
+      for (let c = 0; c < _kandidat.length; c++) {
+        const kor = _kandidat[c];
+        if (tglYMD >= kor.tglMulai && tglYMD <= kor.tglSelesai) {
+          id2 = kor.id2;
+          isKoreksi = true;
+          koreksiKet = kor.keterangan;
+          break;
+        }
       }
     }
 
@@ -5206,6 +5328,11 @@ function handleGetRekapAdmin(data) {
         nama: nama || uInfo.nama || '-',
         jabatan: uInfo.role || 'Staff',
         payroll: payroll || noAkun,
+        // Dibawa serta supaya pencocokan koreksi di bawah punya ketiga
+        // kunci yang sama dengan yang dipakai saat memetakan baris.
+        // Tanpa ini, karyawan yang koreksinya tercatat atas nama no.akun
+        // tidak akan pernah cocok.
+        noAkun: noAkun,
         sisaCuti: cutiInfo.tersedia !== undefined ? cutiInfo.tersedia : (uInfo.sisaCuti !== undefined ? uInfo.sisaCuti : 0),
         cutiDiambil: 0,
         cutiAwal: cutiInfo.terpakai !== undefined ? cutiInfo.terpakai : (uInfo.cutiAwal || 0),
@@ -5224,16 +5351,46 @@ function handleGetRekapAdmin(data) {
       empSummary[empKey].nominalTerlambat += Number(nominal);
     }
 
+    // ATURAN PENCACAHAN — SATU DEFINISI (19 Sep 2026)
+    //
+    // Sampai hari ini ada DUA rumus yang menghitung angka yang sama:
+    // yang di sini, dan satu lagi di RekapExcelScreen.js yang berjalan
+    // ulang di browser setiap kali filter tanggal disentuh. Keduanya
+    // TIDAK SAMA: yang ini mencacah C/S/A/I dari semua baris termasuk
+    // yang kena koreksi, sementara yang di browser justru MELEWATI baris
+    // ber-koreksi lalu menghitung koreksinya terpisah per hari.
+    //
+    // Akibatnya periode yang sama bisa menampilkan angka berbeda
+    // tergantung filternya kosong atau tidak — pada angka yang dipakai
+    // menghitung gaji. Yang dipertahankan adalah rumus browser, karena
+    // itulah yang selama ini dilihat orang saat memfilter, dan karena
+    // mencacah koreksi per HARI memang lebih benar: koreksi berlaku
+    // untuk rentang tanggalnya, termasuk hari yang tidak punya baris
+    // mesin sama sekali.
     const sym = id2.toUpperCase();
-    if (['C', 'CB', 'CUTI', 'CUTI BERSAMA'].includes(sym)) {
-      empSummary[empKey].cutiDiambil++;
-    } else if (['S', 'SAKIT'].includes(sym)) {
-      empSummary[empKey].sakit++;
-    } else if (['A', 'AC', 'ALPA'].includes(sym)) {
-      empSummary[empKey].alpa++;
-    } else if (['I', 'IJIN'].includes(sym)) {
-      empSummary[empKey].ijin++;
-    } else if (['H', 'ONL', 'HADIR'].includes(sym)) {
+
+    // Baris yang isinya berasal dari koreksi TIDAK dicacah di sini.
+    // Koreksinya dihitung sekali per hari sesudah loop ini selesai;
+    // mencacahnya di sini juga akan menghitungnya dua kali.
+    if (!isKoreksi) {
+      if (['C', 'CB', 'CUTI', 'CUTI BERSAMA'].includes(sym)) {
+        empSummary[empKey].cutiDiambil++;
+      } else if (['S', 'SAKIT'].includes(sym)) {
+        empSummary[empKey].sakit++;
+      } else if (['A', 'AC', 'ALPA'].includes(sym)) {
+        empSummary[empKey].alpa++;
+      } else if (['I', 'IJIN'].includes(sym)) {
+        empSummary[empKey].ijin++;
+      }
+    }
+
+    // Hadir tetap dicacah dari baris mesin apa adanya. Inilah satu angka
+    // yang rumus browser TIDAK pernah hitung ulang — ia meneruskan nilai
+    // dari server begitu saja, sehingga tampilan yang difilter satu
+    // minggu tetap menunjukkan jumlah hadir SELURUH periode. Sejak
+    // rentangnya turun ke server, angka ini ikut rentang seperti yang
+    // lain.
+    if (['H', 'ONL', 'HADIR'].includes(sym)) {
       empSummary[empKey].hadir++;
     }
 
@@ -5243,13 +5400,58 @@ function handleGetRekapAdmin(data) {
     if (['SO', 'TSO', 'SISO'].includes(sym)) {
       empSummary[empKey].tdkAbsenPulang++;
     }
-    if (['T', 'TPC', 'TSI', 'TSO'].includes(sym) || (telat && telat !== '-' && telat !== '00:00')) {
+    // '0' ikut dianggap tidak telat — menyamakan dengan rumus browser,
+    // yang memang sudah memeriksanya.
+    if (['T', 'TPC', 'TSI', 'TSO'].includes(sym) ||
+        (telat && telat !== '-' && telat !== '00:00' && telat !== '0')) {
       empSummary[empKey].telat++;
     }
   }
 
+  // CACAH KOREKSI PER HARI.
+  //
+  // Dihitung dari rentang tanggal koreksi itu sendiri, dipotong rentang
+  // yang diminta — bukan dari baris dbabsen. Itu disengaja: koreksi
+  // berlaku untuk hari-harinya, termasuk hari yang tidak punya baris
+  // mesin (libur, atau mesin yang tidak merekam apa pun).
+  const _hariDalamRentang = function (mulai, selesai, batasBawah, batasAtas) {
+    if (!mulai) return 0;
+    const a = mulai;
+    const b = selesai || mulai;
+    const dari = batasBawah && batasBawah > a ? batasBawah : a;
+    const sampai = batasAtas && batasAtas < b ? batasAtas : b;
+    if (dari > sampai) return 0;
+    const d1 = new Date(dari + 'T00:00:00');
+    const d2 = new Date(sampai + 'T00:00:00');
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
+    return Math.floor((d2.getTime() - d1.getTime()) / 86400000) + 1;
+  };
+
+  Object.keys(empSummary).forEach(function (empKey) {
+    const emp = empSummary[empKey];
+    const kandidat = _korDaftar(String(emp.payroll || '').trim().toLowerCase()) ||
+                     _korDaftar(String(emp.noAkun  || '').trim().toLowerCase()) ||
+                     _korDaftar(String(emp.nama    || '').trim().toLowerCase());
+    if (!kandidat) return;
+
+    for (let c = 0; c < kandidat.length; c++) {
+      const kor = kandidat[c];
+      const hari = _hariDalamRentang(kor.tglMulai, kor.tglSelesai, dariYMD, sampaiYMD);
+      if (!hari) continue;
+      const sym = String(kor.id2 || '').toUpperCase().trim();
+      if (['C', 'CB', 'CUTI', 'CUTI BERSAMA'].includes(sym)) emp.cutiDiambil += hari;
+      else if (['S', 'SAKIT'].includes(sym)) emp.sakit += hari;
+      else if (['A', 'AC', 'ALPA'].includes(sym)) emp.alpa += hari;
+      else if (['I', 'IJIN'].includes(sym)) emp.ijin += hari;
+    }
+  });
+
+  const adaRentang = !!(dariYMD || sampaiYMD);
   const dashboardList = Object.values(empSummary).map(function(emp) {
-    if (emp.cutiDiambil === 0 && emp.cutiAwal > 0) {
+    // Cadangan dari MASTER-CUTI hanya berlaku untuk tampilan SELURUH
+    // periode. Begitu rentang diminta, nol memang berarti nol — sama
+    // seperti yang selama ini dilakukan rumus browser saat difilter.
+    if (!adaRentang && emp.cutiDiambil === 0 && emp.cutiAwal > 0) {
       emp.cutiDiambil = emp.cutiAwal;
     }
     delete emp.cutiAwal;
@@ -5261,7 +5463,12 @@ function handleGetRekapAdmin(data) {
     result: 'success',
     rawRecords: dbRecords,
     dashboardData: dashboardList,
-    koreksiList: koreksiList
+    koreksiList: koreksiList,
+    // Rentang yang BENAR-BENAR dipakai, dipantulkan balik. Layar rekap
+    // memakainya untuk memastikan jawaban yang datang memang milik
+    // rentang yang sedang ditampilkan — jawaban lama yang datang
+    // terlambat sesudah filter diubah lagi harus dibuang, bukan dipasang.
+    rentang: { dari: dariYMD || '', sampai: sampaiYMD || '' }
   });
 }
 

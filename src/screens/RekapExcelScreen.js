@@ -217,12 +217,24 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     return await res.json();
   }, [customFetchApi]);
 
+  // Nomor urut permintaan. Filter tanggal sekarang memicu permintaan ke
+  // server, jadi dua permintaan bisa melayang bersamaan — dan yang
+  // berangkat lebih dulu bisa pulang belakangan. Tanpa penjaga ini,
+  // jawaban lama akan menimpa jawaban yang benar dan layar menampilkan
+  // rentang yang tidak sedang dipilih siapa pun.
+  const permintaanKe = useRef(0);
+
   // Fetch Data from Apps Script
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (dari, sampai) => {
+    const nomor = ++permintaanKe.current;
     setLoading(true);
     setServerError(null);
     try {
-      const data = await doApiCall('get_rekap_admin');
+      const data = await doApiCall('get_rekap_admin', {
+        dari: dari || '',
+        sampai: sampai || ''
+      });
+      if (nomor !== permintaanKe.current) return;   // sudah ada yang lebih baru
       if (data && data.result === 'success') {
         setRawRecords(data.rawRecords || []);
         setDashboardData(data.dashboardData || []);
@@ -232,18 +244,23 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         setServerError(errMsg);
       }
     } catch (e) {
+      if (nomor !== permintaanKe.current) return;
       console.error('Fetch rekap error:', e);
       setServerError('Gagal terhubung ke Web App Google Apps Script. Pastikan URL Web App aktif dan backend terbaru sudah di-deploy.');
     } finally {
-      setLoading(false);
+      if (nomor === permintaanKe.current) setLoading(false);
     }
   }, [doApiCall]);
 
+  // Rentang tanggal sekarang ikut turun ke server, jadi mengubahnya
+  // berarti mengambil data lagi — bukan lagi menyaring yang sudah ada di
+  // browser. Ditunda 400 ms supaya mengetik tanggal tidak menembakkan
+  // satu permintaan per ketikan.
   useEffect(() => {
-    if (isAdmin) {
-      fetchData();
-    }
-  }, [isAdmin, fetchData]);
+    if (!isAdmin) return undefined;
+    const jeda = setTimeout(() => { fetchData(filterTglMulai, filterTglSelesai); }, 400);
+    return () => clearTimeout(jeda);
+  }, [isAdmin, fetchData, filterTglMulai, filterTglSelesai]);
 
   // Unique Departments
   const deptList = useMemo(() => {
@@ -303,74 +320,23 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, [koreksiList, filterTglMulai, filterTglSelesai, isKoreksiRangeOverlaps]);
 
   // Enriched Dashboard Data with calculated nominal & correct counts
-  const enrichedDashboardData = useMemo(() => {
-    return dashboardData.map(d => {
-      const prKey = String(d.payroll || '').trim().toLowerCase();
-      const akunKey = String(d.noAkun || '').trim().toLowerCase();
-      const namaKey = String(d.nama || '').trim().toLowerCase();
-      const userRecords = (prKey && recordsByPayroll[prKey]) ||
-                          (akunKey && recordsByPayroll[akunKey]) ||
-                          (namaKey && recordsByPayroll[namaKey]) || [];
-
-      let calcNominal = 0;
-      let cntCuti = 0, cntSakit = 0, cntAlpa = 0, cntIjin = 0;
-      let cntTdkMasuk = 0, cntTdkPulang = 0, cntTelat = 0;
-
-      userRecords.forEach(r => {
-        calcNominal += hitungDendaTelat(r.telat, r.nominal);
-        const sym = String(r.id2 || '').toUpperCase().trim();
-        const hasTelat = Boolean(r.telat && r.telat !== '-' && r.telat !== '00:00' && r.telat !== '0');
-        if (!r.isKoreksi) {
-          if (['C', 'CB', 'CUTI', 'CUTI BERSAMA'].includes(sym)) cntCuti++;
-          else if (['S', 'SAKIT'].includes(sym)) cntSakit++;
-          else if (['A', 'AC', 'ALPA'].includes(sym)) cntAlpa++;
-          else if (['I', 'IJIN'].includes(sym)) cntIjin++;
-        }
-        if (['SI', 'TSI', 'SISO', 'SIPC'].includes(sym)) cntTdkMasuk++;
-        if (['SO', 'TSO', 'SISO'].includes(sym)) cntTdkPulang++;
-        if (['T', 'TPC', 'TSI', 'TSO'].includes(sym) || hasTelat) cntTelat++;
-      });
-
-      koreksiList.forEach(k => {
-        const kPr = String(k.payroll || '').trim().toLowerCase();
-        const kAkun = String(k.noAkun || '').trim().toLowerCase();
-        const kNama = String(k.nama || '').trim().toLowerCase();
-        const matchEmp = (prKey && kPr === prKey) || (akunKey && kAkun === akunKey) || (namaKey && kNama === namaKey);
-        if (!matchEmp) return;
-        const sym = String(k.id2 || '').toUpperCase().trim();
-        const start = k.tglMulai ? new Date(String(k.tglMulai).slice(0, 10)) : null;
-        const end = k.tglSelesai ? new Date(String(k.tglSelesai).slice(0, 10)) : (start ? new Date(start) : null);
-        if (!start || isNaN(start.getTime())) return;
-        const last = end && !isNaN(end.getTime()) ? end : start;
-        const fStart = filterTglMulai ? new Date(filterTglMulai) : new Date(-8640000000000000);
-        const fEnd = filterTglSelesai ? new Date(filterTglSelesai) : new Date(8640000000000000);
-        let cnt = 0;
-        const cur = new Date(start);
-        while (cur <= last) {
-          if (cur >= fStart && cur <= fEnd) cnt++;
-          cur.setDate(cur.getDate() + 1);
-        }
-        if (cnt === 0) return;
-        if (['C', 'CB', 'CUTI', 'CUTI BERSAMA'].includes(sym)) cntCuti += cnt;
-        else if (['S', 'SAKIT'].includes(sym)) cntSakit += cnt;
-        else if (['A', 'AC', 'ALPA'].includes(sym)) cntAlpa += cnt;
-        else if (['I', 'IJIN'].includes(sym)) cntIjin += cnt;
-      });
-
-      return {
-        ...d,
-        sisaCuti: d.sisaCuti !== undefined && d.sisaCuti !== null ? d.sisaCuti : 0,
-        cutiDiambil: cntCuti > 0 || (filterTglMulai || filterTglSelesai) ? cntCuti : (d.cutiDiambil !== undefined && d.cutiDiambil !== null ? d.cutiDiambil : 0),
-        sakit: cntSakit > 0 || (filterTglMulai || filterTglSelesai) ? cntSakit : (Number(d.sakit) || 0),
-        alpa: cntAlpa > 0 || (filterTglMulai || filterTglSelesai) ? cntAlpa : (Number(d.alpa) || 0),
-        ijin: cntIjin > 0 || (filterTglMulai || filterTglSelesai) ? cntIjin : (Number(d.ijin) || 0),
-        tdkAbsenMasuk: cntTdkMasuk > 0 || (filterTglMulai || filterTglSelesai) ? cntTdkMasuk : (Number(d.tdkAbsenMasuk) || 0),
-        tdkAbsenPulang: cntTdkPulang > 0 || (filterTglMulai || filterTglSelesai) ? cntTdkPulang : (Number(d.tdkAbsenPulang) || 0),
-        telat: cntTelat > 0 || (filterTglMulai || filterTglSelesai) ? cntTelat : (Number(d.telat) || 0),
-        nominalTerlambat: (filterTglMulai || filterTglSelesai) ? calcNominal : ((d.nominalTerlambat && Number(d.nominalTerlambat) > 0) ? Number(d.nominalTerlambat) : calcNominal)
-      };
-    });
-  }, [dashboardData, recordsByPayroll, koreksiList, filterTglMulai, filterTglSelesai, isDateInRange]);
+  // ANGKA DASHBOARD — DARI SERVER, TIDAK DIHITUNG ULANG (19 Sep 2026)
+  //
+  // Di sini dulu ada rumus kedua yang mencacah ulang cuti/sakit/alpa/
+  // ijin/telat/denda dari rawRecords setiap kali filter berubah. Rumus
+  // itu TIDAK SAMA dengan rumus server: yang ini melewati baris
+  // ber-koreksi lalu menghitung koreksi terpisah per hari, sementara
+  // server mencacah semua baris apa adanya. Periode yang sama karena itu
+  // bisa menunjukkan angka berbeda tergantung filternya kosong atau
+  // tidak — pada angka yang dipakai menghitung gaji.
+  //
+  // Aturan yang benar (yang ini) sekarang dipakai di server, dan
+  // rentangnya ikut dikirim ke sana. Satu definisi, satu jawaban.
+  //
+  // `hadir` ikut terperbaiki sekalian: rumus lama tidak pernah
+  // menghitungnya ulang, jadi tampilan yang difilter satu minggu tetap
+  // memperlihatkan jumlah hadir seluruh periode.
+  const enrichedDashboardData = useMemo(() => dashboardData, [dashboardData]);
 
   // Filtered Raw Records (DB_FIX) with Multi-Token Comprehensive Search
   const filteredRecords = useMemo(() => {
