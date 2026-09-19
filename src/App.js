@@ -3263,13 +3263,22 @@ function RemarkScreen({ user, setView }) {
     const userRole = user.role ? String(user.role).toLowerCase() : '';
     const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
 
-    const [tglKoreksi, setTglKoreksi] = useState('');
+    // Tombol "Lapor HRD" dari Data Mesin dapat membawa konteks tanggal yang
+    // sudah lewat batas pengajuan izin. Data ini hanya dipakai sekali agar
+    // membuka menu Lapor HRD secara biasa tidak pernah mewarisi laporan lama.
+    const [laporanAwal] = useState(() => {
+        try {
+            const raw = sessionStorage.getItem('laporan_hrd_awal');
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) { return {}; }
+    });
+    const [tglKoreksi, setTglKoreksi] = useState(laporanAwal.tgl || '');
     const [modeTanggalKoreksi, setModeTanggalKoreksi] = useState('single');
     const [tglKoreksiSelesai, setTglKoreksiSelesai] = useState('');
     const [tanggalPilihan, setTanggalPilihan] = useState([]);
     const [tanggalUntukDitambah, setTanggalUntukDitambah] = useState('');
-    const [kategori, setKategori] = useState('Koreksi Absensi');
-    const [pesan, setPesan] = useState('');
+    const [kategori, setKategori] = useState(laporanAwal.kategori || 'Koreksi Absensi');
+    const [pesan, setPesan] = useState(laporanAwal.pesan || '');
     const [file, setFile] = useState(null);
     const [fileName, setFileName] = useState('');
     const [loading, setLoading] = useState(false);
@@ -3298,6 +3307,12 @@ function RemarkScreen({ user, setView }) {
     const [activeReportFilter, setActiveReportFilter] = useState(null);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10); // Default 10 baris
+
+    useEffect(() => {
+        // Hapus setelah state formulir terbentuk, bukan saat membaca, agar
+        // React Strict Mode tidak kehilangan prefill pada render pengembangan.
+        sessionStorage.removeItem('laporan_hrd_awal');
+    }, []);
 
     // --- HELPER FORMAT TANGGAL (DD-MM-YYYY) ---
     const formatDateDisplay = (value) => {
@@ -9856,6 +9871,37 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
     return selisihHari >= 0 && selisihHari <= 4;   // batas 4 hari ke belakang
   };
 
+  // Ketika tanggal yang membutuhkan koreksi sudah melewati jendela 4 hari,
+  // pengajuan izin tidak boleh lagi dibuat. Namun karyawan tetap perlu jalur
+  // yang jelas untuk meminta penanganan HRD atas tanggal tersebut.
+  const lewatBatasAjukan = (item) => {
+    if (!TARGET_CODES.includes(item.symbol)) return false;
+    const d = parseDate(item.tanggal);
+    if (!d) return false;
+    const hariIni = new Date(); hariIni.setHours(0, 0, 0, 0);
+    d.setHours(0, 0, 0, 0);
+    const selisihHari = Math.ceil((hariIni - d) / (1000 * 60 * 60 * 24));
+    return selisihHari > 4;
+  };
+
+  const handleLaporHrd = (item) => {
+    let tanggalYMD = item.tanggalRaw || '';
+    if (!tanggalYMD) {
+      const d = parseDate(item.tanggal);
+      if (d && !isNaN(d.getTime())) {
+        tanggalYMD = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+    }
+    try {
+      sessionStorage.setItem('laporan_hrd_awal', JSON.stringify({
+        tgl: tanggalYMD,
+        kategori: 'Koreksi Absensi (Ijin, Lupa Absen Masuk/Pulang)',
+        pesan: `Mohon koreksi absensi untuk tanggal ${tanggalYMD || item.tanggal || '-'}. Pengajuan Form Ijin sudah melewati batas waktu.`
+      }));
+    } catch (e) { /* mode penyimpanan privat: form tetap dapat dibuka */ }
+    setView('remark');
+  };
+
   return (
     <div className="p-4 h-full overflow-y-auto pb-24 bg-slate-50">
       {/* ================= KEPALA ================= */}
@@ -10211,6 +10257,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                 // Syaratnya pindah ke bolehAjukan() supaya panel detail di
                 // tampilan kalender memakai aturan yang sama persis.
                 const showButton = bolehAjukan(item);
+                const showLaporHrd = lewatBatasAjukan(item);
                 const isIjinDisabled = ijinCount >= 4;
                 const adaOnline = Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0;
 
@@ -10239,11 +10286,11 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                 </div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                                     <div className="relative pl-3 border-l-2 border-green-400">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Masuk online' : 'Masuk mesin'}</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Masuk online' : 'Masuk'}</p>
                                         <p className="text-base font-black text-slate-800">{formatTimeOnly(item.masuk)}</p>
                                     </div>
                                     <div className="relative pl-3 border-l-2 border-red-400">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Pulang online' : 'Pulang mesin'}</p>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Pulang online' : 'Pulang'}</p>
                                         <p className="text-base font-black text-slate-800">{formatTimeOnly(item.pulang)}</p>
                                     </div>
                                 </div>
@@ -10295,6 +10342,17 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                 </button>
                             </div>
                         )}
+                        {showLaporHrd && (
+                            <div className="px-3 pb-3 pt-1">
+                                <button
+                                    onClick={() => handleLaporHrd(item)}
+                                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all border bg-white text-blue-600 border-blue-200 hover:bg-blue-50 shadow-sm"
+                                >
+                                    <MessageSquareText className="w-3.5 h-3.5" />
+                                    Lapor HRD
+                                </button>
+                            </div>
+                        )}
                     </div>
                 );
             })}
@@ -10315,6 +10373,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
         const adaTelat = itemDipilih && itemDipilih.telat && itemDipilih.telat !== 'FALSE' && itemDipilih.telat !== '00:00:00';
         const adaAbsenOnline = itemDipilih && Array.isArray(itemDipilih.onlineRecords) && itemDipilih.onlineRecords.length > 0;
         const bisaAjukan = itemDipilih ? bolehAjukan(itemDipilih) : false;
+        const perluLaporHrd = itemDipilih ? lewatBatasAjukan(itemDipilih) : false;
         const ijinHabis = ijinCount >= 4;
 
         return (
@@ -10393,7 +10452,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                   <div className="rounded-2xl border border-slate-200/80 p-3.5">
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      <span className="text-[10.5px] font-medium text-slate-500">{itemDipilih.sumber === 'online' ? 'Masuk online' : 'Masuk mesin'}</span>
+                      <span className="text-[10.5px] font-medium text-slate-500">{itemDipilih.sumber === 'online' ? 'Masuk online' : 'Masuk'}</span>
                     </div>
                     <p className="mt-2 text-[26px] leading-none font-semibold text-slate-900 tabular-nums tracking-tight">
                       {formatTimeOnly(itemDipilih.masuk)}
@@ -10402,7 +10461,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                   <div className="rounded-2xl border border-slate-200/80 p-3.5">
                     <div className="flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                      <span className="text-[10.5px] font-medium text-slate-500">{itemDipilih.sumber === 'online' ? 'Pulang online' : 'Pulang mesin'}</span>
+                      <span className="text-[10.5px] font-medium text-slate-500">{itemDipilih.sumber === 'online' ? 'Pulang online' : 'Pulang'}</span>
                     </div>
                     <p className="mt-2 text-[26px] leading-none font-semibold text-slate-900 tabular-nums tracking-tight">
                       {formatTimeOnly(itemDipilih.pulang)}
@@ -10479,6 +10538,16 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                   >
                     <FileText className="w-4 h-4" strokeWidth={2} />
                     {ijinHabis ? 'Kuota Form Ijin sudah habis (4×)' : 'Ajukan Form Ijin'}
+                  </button>
+                )}
+
+                {perluLaporHrd && (
+                  <button
+                    onClick={() => handleLaporHrd(itemDipilih)}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[13px] font-semibold transition-all border active:scale-[0.99] bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                  >
+                    <MessageSquareText className="w-4 h-4" strokeWidth={2} />
+                    Lapor HRD
                   </button>
                 )}
 
