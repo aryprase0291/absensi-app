@@ -4,10 +4,14 @@ import {
   FileSpreadsheet, Download, Edit3, Trash2, Plus, Search,
   Building, RefreshCcw, Check, X, Loader2,
   ShieldAlert, Layers, PieChart, Sparkles, Tag, AlertTriangle,
-  Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck
+  Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
+import {
+  susunBoard, boardKeSheet, labelTanggalPendek,
+  BOARD_KOLOM_INFO, BOARD_KODE_HITUNG, BOARD_MAKS_HARI
+} from './boardAbsensi';
 
 // Pilihan Simbol Koreksi (ID2)
 const OPSI_SIMBOL_KOREKSI = [
@@ -113,8 +117,52 @@ const formatNominal = (val) => {
   return num.toLocaleString('id-ID');
 };
 
+// Lebar kolom info pada board, dalam piksel. Dipakai dua kali: sebagai
+// minWidth kolomnya, dan untuk menghitung offset kolom yang menempel —
+// keduanya harus dari angka yang sama, kalau tidak kolom yang menempel akan
+// meleset sedikit dan menutupi tetangganya saat digulir.
+const BOARD_LEBAR_INFO = [44, 84, 48, 200, 80, 88, 170, 150, 64];
+
+// Empat kolom pertama (NO, PAYROLL, HRD, NAMA) menempel di kiri, sepadan
+// dengan setFrozenColumns(4) pada BoardAbsensi.gs.
+const BOARD_OFFSET_KIRI = BOARD_LEBAR_INFO.slice(0, 4).reduce((acc, w, i) => {
+  acc.push(i === 0 ? 0 : acc[i - 1] + BOARD_LEBAR_INFO[i - 1]);
+  return acc;
+}, []);
+
+// Warna sel simbol pada board. Sengaja dipisah dari OPSI_SIMBOL_KOREKSI:
+// daftar itu hanya memuat simbol yang boleh DIPILIH admin saat mengoreksi,
+// sementara mesin absensi juga mengeluarkan NF, So, Si, PC, dan turunannya
+// yang tidak boleh diinput manual tapi tetap harus terbaca di board.
+const BOARD_WARNA_SIMBOL = {
+  H: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  ONL: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  O: 'bg-slate-100 text-slate-500 border-slate-200',
+  NF: 'bg-violet-50 text-violet-700 border-violet-200',
+  C: 'bg-teal-50 text-teal-700 border-teal-200',
+  CB: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  EO: 'bg-lime-50 text-lime-700 border-lime-200',
+  DL: 'bg-sky-50 text-sky-700 border-sky-200',
+  I: 'bg-blue-50 text-blue-700 border-blue-200',
+  S: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
+  A: 'bg-rose-50 text-rose-700 border-rose-200',
+  T: 'bg-amber-50 text-amber-800 border-amber-200',
+  SI: 'bg-orange-50 text-orange-700 border-orange-200',
+  SO: 'bg-orange-50 text-orange-700 border-orange-200',
+  SISO: 'bg-orange-100 text-orange-800 border-orange-300',
+  TSI: 'bg-orange-100 text-orange-800 border-orange-300',
+  TSO: 'bg-orange-100 text-orange-800 border-orange-300',
+  PC: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  TPC: 'bg-indigo-100 text-indigo-800 border-indigo-300'
+};
+
+const warnaSimbolBoard = (sym) => {
+  const k = String(sym || '').trim().toUpperCase();
+  return BOARD_WARNA_SIMBOL[k] || 'bg-slate-50 text-slate-600 border-slate-200';
+};
+
 export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard' }) {
-  const [activeTab, setActiveTab] = useState(initialTab); // 'tabel' | 'koreksi' | 'dashboard'
+  const [activeTab, setActiveTab] = useState(initialTab); // 'tabel' | 'koreksi' | 'dashboard' | 'board'
   const [loading, setLoading] = useState(false);
   const [rawRecords, setRawRecords] = useState([]);
   const [dashboardData, setDashboardData] = useState([]);
@@ -490,6 +538,35 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       koreksiCount: filteredKoreksiByDate.length
     };
   }, [filteredDashboard, filteredKoreksiByDate]);
+
+  // BOARD ABSENSI — matriks satu baris per karyawan, satu pasang kolom
+  // (ABSEN | TELAT) per tanggal. Bentuknya mengikuti sheet BOARD pada
+  // BOARD_ABSENSI_2026; aturannya ada di boardAbsensi.js.
+  //
+  // Sumbernya SENGAJA bukan filteredRecords: filter simbol di tab Tabel
+  // membuang baris yang simbolnya tidak dipilih, dan matriks yang kehilangan
+  // baris hanya akan memperlihatkan sel kosong pada hari yang sebenarnya
+  // ada isinya. Board hanya ikut filter yang masuk akal untuknya —
+  // departemen dan pencarian — sementara rentang tanggalnya sudah disaring
+  // di server.
+  const recordsUntukBoard = useMemo(() => {
+    const queryTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    return filteredRawRecordsByDate.filter(r => {
+      if (filterDept !== 'ALL' && r.departemen !== filterDept) return false;
+      if (queryTokens.length === 0) return true;
+      const teks = [r.nama || '', r.payroll || '', r.noAkun || '', r.departemen || '']
+        .join(' ').toLowerCase();
+      return queryTokens.every(token => teks.includes(token));
+    });
+  }, [filteredRawRecordsByDate, filterDept, searchQuery]);
+
+  const boardData = useMemo(() => susunBoard({
+    records: recordsUntukBoard,
+    dashboard: filteredDashboard,
+    dari: filterTglMulai,
+    sampai: filterTglSelesai,
+    hitungDenda: hitungDendaTelat
+  }), [recordsUntukBoard, filteredDashboard, filterTglMulai, filterTglSelesai]);
 
   const getDetailCategoryRecords = useCallback((employee, category) => {
     if (!employee) return [];
@@ -957,7 +1034,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       XLSX.utils.book_append_sheet(wb, wsRec, 'DB_FIX');
     }
 
-    if (mode === 'dashboard' || mode === 'all') {
+    // Mode 'board' ikut menulis DASHBOARD supaya satu berkas memuat kedua
+    // sheet persis seperti template BOARD_ABSENSI_2026 — DASHBOARD lebih
+    // dulu, lalu BOARD.
+    if (mode === 'dashboard' || mode === 'board' || mode === 'all') {
       const dashRows = filteredDashboard.map((d, idx) => ({
         'NO': idx + 1,
         'DEPT': d.dept || '',
@@ -978,6 +1058,22 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       XLSX.utils.book_append_sheet(wb, wsDash, 'DASHBOARD');
     }
 
+    if (mode === 'board' || mode === 'all') {
+      // Sheet BOARD ditulis sebagai array-of-arrays, bukan json_to_sheet:
+      // headernya dua baris dengan sel gabungan, dan json_to_sheet hanya
+      // bisa satu baris header dari nama properti. Susunan sel, merge, dan
+      // lebar kolomnya disiapkan boardKeSheet() supaya bentuk yang dipakai
+      // layar dan yang dipakai file ini berasal dari satu tempat.
+      const { aoa, merges, lebarKolom } = boardKeSheet(boardData);
+      const wsBoard = XLSX.utils.aoa_to_sheet(aoa);
+      wsBoard['!merges'] = merges;
+      wsBoard['!cols'] = lebarKolom;
+      // Pembekuan panel TIDAK ditulis: xlsx 0.18.5 edisi komunitas tidak
+      // menulis elemen <pane>, jadi memasang '!freeze' hanya akan diam-diam
+      // diabaikan. Di layar, kolom kiri dan header tetap menempel.
+      XLSX.utils.book_append_sheet(wb, wsBoard, 'BOARD');
+    }
+
     if (mode === 'koreksi' || mode === 'all') {
       const korRows = filteredKoreksi.map((k, idx) => ({
         'NO': idx + 1,
@@ -996,6 +1092,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
     const filename = mode === 'all'
       ? `DATABASE_ABSENSI_LENGKAP_${timestamp}.xlsx`
+      : mode === 'board'
+        ? `BOARD_ABSENSI_${timestamp}.xlsx`
       : mode === 'dashboard'
         ? `REKAP_DASHBOARD_ABSENSI_${timestamp}.xlsx`
         : mode === 'koreksi'
@@ -1099,6 +1197,18 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 {koreksiList.length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('board')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+              activeTab === 'board'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4" />
+            <span>Board Absensi Harian</span>
           </button>
 
           <button
@@ -1440,6 +1550,182 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB BOARD: MATRIKS ABSENSI HARIAN (mengikuti sheet BOARD template) */}
+        {activeTab === 'board' && (
+          <div className="space-y-4 w-full">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm w-full overflow-hidden">
+
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="truncate">{boardData.judul}</span>
+                  </h2>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {boardData.baris.length} pegawai &middot; {boardData.tanggal.length} hari &middot;
+                    {' '}satu pasang kolom per tanggal (ABSEN &amp; TELAT), sama seperti template BOARD_ABSENSI_2026.
+                  </p>
+                </div>
+                <button
+                  onClick={() => exportToExcel('board')}
+                  disabled={boardData.baris.length === 0}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-xs font-bold text-white flex items-center gap-2 shadow-sm transition active:scale-95 shrink-0"
+                  title="Download Excel berisi sheet DASHBOARD dan sheet BOARD"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Excel (DASHBOARD + BOARD)</span>
+                </button>
+              </div>
+
+              {boardData.terpotong && (
+                <div className="mx-4 sm:mx-5 mt-4 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <p className="text-[11px] text-amber-900 leading-relaxed">
+                    Rentang yang dipilih {boardData.totalHari} hari, melebihi batas {BOARD_MAKS_HARI} kolom tanggal.
+                    Board menampilkan {boardData.tanggal.length} hari pertama saja &mdash; persempit filter tanggal
+                    untuk melihat sisanya. Batas ini juga berlaku pada berkas yang di-download.
+                  </p>
+                </div>
+              )}
+
+              {/* KETERANGAN SIMBOL */}
+              <div className="px-4 sm:px-5 pt-4 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Simbol</span>
+                {OPSI_SIMBOL_KOREKSI.map(o => (
+                  <span
+                    key={o.kode}
+                    title={o.label}
+                    className={`px-1.5 py-0.5 rounded border text-[10px] font-bold ${o.color}`}
+                  >
+                    {o.kode}
+                  </span>
+                ))}
+              </div>
+
+              {/* MATRIKS. Header dua baris dan empat kolom kiri menempel saat
+                  digulir — pengganti freeze pane, yang tidak bisa ditulis ke
+                  berkas xlsx oleh pustaka edisi komunitas. */}
+              <div className="p-4 sm:p-5">
+                <div className="overflow-auto max-h-[70vh] border border-slate-200 rounded-xl">
+                  <table className="text-left border-collapse min-w-max text-[11px]">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
+                        {BOARD_KOLOM_INFO.map((h, i) => (
+                          <th
+                            key={h}
+                            rowSpan={2}
+                            style={i < 4 ? { left: BOARD_OFFSET_KIRI[i], minWidth: BOARD_LEBAR_INFO[i] } : { minWidth: BOARD_LEBAR_INFO[i] }}
+                            className={`p-2 border-r border-b border-slate-200 bg-slate-100 sticky top-0 align-middle ${i < 4 ? 'z-30' : 'z-20'}`}
+                          >
+                            {h}
+                          </th>
+                        ))}
+                        {boardData.tanggal.map(t => (
+                          <th
+                            key={t}
+                            colSpan={2}
+                            className="p-1.5 border-r border-b border-slate-200 bg-slate-100 sticky top-0 z-20 text-center whitespace-nowrap"
+                          >
+                            {labelTanggalPendek(t)}
+                          </th>
+                        ))}
+                        <th
+                          colSpan={BOARD_KODE_HITUNG.length}
+                          className="p-1.5 border-r border-b border-slate-200 bg-slate-200/80 sticky top-0 z-20 text-center whitespace-nowrap"
+                        >
+                          Ketidakhadiran
+                        </th>
+                      </tr>
+                      <tr className="bg-slate-50 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                        {boardData.tanggal.map(t => (
+                          <React.Fragment key={t}>
+                            <th className="px-1 py-1 border-r border-b border-slate-200 bg-slate-50 sticky top-[29px] z-20 text-center" style={{ minWidth: 34 }}>Absen</th>
+                            <th className="px-1 py-1 border-r border-b border-slate-200 bg-slate-50 sticky top-[29px] z-20 text-center" style={{ minWidth: 52 }}>Telat</th>
+                          </React.Fragment>
+                        ))}
+                        {BOARD_KODE_HITUNG.map(k => (
+                          <th
+                            key={k.kode}
+                            title={k.judul}
+                            className="px-1 py-1 border-r border-b border-slate-200 bg-slate-100 sticky top-[29px] z-20 text-center"
+                            style={{ minWidth: 34 }}
+                          >
+                            {k.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {loading ? (
+                        <tr>
+                          <td colSpan={BOARD_KOLOM_INFO.length + boardData.tanggal.length * 2 + BOARD_KODE_HITUNG.length} className="p-8 text-center text-slate-400">
+                            <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500 mb-2" />
+                            <span>Menyusun board absensi...</span>
+                          </td>
+                        </tr>
+                      ) : boardData.baris.length === 0 ? (
+                        <tr>
+                          <td colSpan={Math.max(BOARD_KOLOM_INFO.length + boardData.tanggal.length * 2 + BOARD_KODE_HITUNG.length, 1)} className="p-8 text-center text-slate-400">
+                            {serverError
+                              ? 'Data belum dapat dimuat dari server.'
+                              : (boardData.tanggal.length === 0
+                                  ? 'Isi rentang tanggal pada filter di atas untuk menyusun board.'
+                                  : 'Tidak ada data absensi yang sesuai filter.')}
+                          </td>
+                        </tr>
+                      ) : (
+                        boardData.baris.map(o => (
+                          <tr key={o.payroll + '|' + o.nama} className="hover:bg-blue-50/40 transition-colors">
+                            <td style={{ left: BOARD_OFFSET_KIRI[0] }} className="p-2 border-r border-slate-100 text-center font-mono text-slate-400 bg-white sticky z-10">{o.no}</td>
+                            <td style={{ left: BOARD_OFFSET_KIRI[1] }} className="p-2 border-r border-slate-100 font-mono text-slate-600 bg-white sticky z-10 whitespace-nowrap">{o.payroll || '-'}</td>
+                            <td style={{ left: BOARD_OFFSET_KIRI[2] }} className="p-2 border-r border-slate-100 text-slate-400 bg-white sticky z-10 text-center">{o.hrd || '-'}</td>
+                            <td style={{ left: BOARD_OFFSET_KIRI[3] }} className="p-2 border-r border-slate-100 font-bold text-slate-900 bg-white sticky z-10 whitespace-nowrap">{o.nama || '-'}</td>
+                            <td className="p-2 border-r border-slate-100 text-slate-600 whitespace-nowrap">{o.pt || '-'}</td>
+                            <td className="p-2 border-r border-slate-100 text-slate-400 text-center">{o.tglMasuk || '-'}</td>
+                            <td className="p-2 border-r border-slate-100 text-slate-500 whitespace-nowrap">{o.jabatan || '-'}</td>
+                            <td className="p-2 border-r border-slate-100 text-slate-400 whitespace-nowrap">{o.atasan || '-'}</td>
+                            <td className="p-2 border-r border-slate-100 text-center font-bold text-slate-800 bg-slate-50/60">{o.hariKerja}</td>
+
+                            {boardData.tanggal.map((t, i) => {
+                              const sel = o.sel[i];
+                              const sym = sel && sel.absen ? sel.absen : '';
+                              return (
+                                <React.Fragment key={t}>
+                                  <td className="px-1 py-1.5 border-r border-slate-100 text-center">
+                                    {sym ? (
+                                      <span
+                                        title={sel.koreksi ? sym + ' (hasil koreksi)' : sym}
+                                        className={`inline-block min-w-[22px] px-1 py-0.5 rounded border text-[10px] font-bold ${warnaSimbolBoard(sym)} ${sel.koreksi ? 'ring-1 ring-amber-400' : ''}`}
+                                      >
+                                        {sym}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-200">&middot;</span>
+                                    )}
+                                  </td>
+                                  <td className="px-1 py-1.5 border-r border-slate-100 text-center font-mono text-[10px] text-amber-700 whitespace-nowrap">
+                                    {sel && sel.denda ? formatNominal(sel.denda) : ''}
+                                  </td>
+                                </React.Fragment>
+                              );
+                            })}
+
+                            {BOARD_KODE_HITUNG.map(k => (
+                              <td key={k.kode} className="px-1 py-1.5 border-r border-slate-100 text-center font-bold bg-slate-50/60 text-slate-700">
+                                {o.hitung[k.kode] || <span className="text-slate-300">0</span>}
+                              </td>
+                            ))}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
