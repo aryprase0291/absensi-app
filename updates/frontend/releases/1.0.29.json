@@ -1,0 +1,10 @@
+{
+  "version": "1.0.29",
+  "releasedAt": "2026-09-19",
+  "required": true,
+  "notes": [
+    "Tombol Refresh Data dan Coba Muat Ulang Data berfungsi kembali. Keduanya sempat menampilkan pesan 'Gagal terhubung ke Web App' padahal server tidak pernah dihubungi.",
+    "Rekapitulasi membuka periode aktif secara otomatis, tidak lagi menarik seluruh isi dbabsen setiap kali dibuka.",
+    "Tombol Koreksi tersedia langsung di baris Dashboard dan Tabel Data (DB_FIX); baris yang sudah terkoreksi membuka koreksinya untuk diubah, bukan menumpuk koreksi baru."
+  ]
+}

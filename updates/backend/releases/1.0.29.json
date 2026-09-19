@@ -1,0 +1,13 @@
+{
+  "version": "1.0.29",
+  "releasedAt": "2026-09-19",
+  "required": true,
+  "notes": [
+    "Rekap admin menarik dbabsen lewat aksi `halaman` dengan kursor keyset (kunci, tanggal) menggantikan `semua` dengan offset. PostgREST memotong 1.000 baris per permintaan dan batas itu tidak bisa dinaikkan dari sisi klien, sehingga 10.977 baris dulu butuh 13 perjalanan HTTPS berurutan: terukur 9,3 detik (19 Sep 12:09) dan 11,7 detik (07:09). Aksi baru menjawab lewat RPC yang membalas satu nilai jsonb, jadi 5.000 record pulang sekali angkut.",
+    "Rentang tanggal ikut turun sampai ke Postgres. Rekap yang tidak menyebut rentang sama sekali kini diartikan sebagai periode aktif, bukan seluruh isi: Agustus 5.400 baris lawan 10.977 baris dua bulan penuh. Rentang yang sengaja dikosongkan tetap berarti semua, dibedakan lewat penanda `semua`.",
+    "Rumus agregasi rekap disatukan. Sebelumnya server mencacah C/S/A/I dari semua baris termasuk yang kena koreksi, sementara browser justru melewati baris ber-koreksi lalu menghitung koreksinya per hari — periode yang sama bisa menunjukkan angka berbeda tergantung filternya kosong atau tidak, pada angka yang dipakai menghitung gaji. Aturan browser yang dipertahankan, dan sekarang hanya ada satu.",
+    "Jumlah `hadir` ikut mengikuti rentang. Rumus lama tidak pernah menghitungnya ulang, sehingga tampilan yang difilter satu minggu tetap memperlihatkan jumlah hadir seluruh periode.",
+    "Pencocokan koreksi memakai indeks, bukan pemindaian O(baris x koreksi) dengan toLowerCase di setiap perbandingan.",
+    "Cermin sheet SUPABASE_TARIK_DBABSEN memakai kursor keyset yang sama: 13 permintaan menjadi 4."
+  ]
+}
