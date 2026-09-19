@@ -224,6 +224,16 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // rentang yang tidak sedang dipilih siapa pun.
   const permintaanKe = useRef(0);
 
+  // Sudah pernahkah rentang terisi? Ini yang membedakan "belum diisi"
+  // dari "sengaja dikosongkan" — dua keadaan yang sama-sama berupa string
+  // kosong, tapi artinya berlawanan. Belum diisi = server pakai periode
+  // aktif; sengaja dikosongkan = admin memang minta seluruh periode.
+  const rentangSudahDiisi = useRef(false);
+  // Rentang yang permintaannya terakhir dikirim. Dipakai supaya
+  // pengisian otomatis dari jawaban server tidak memicu permintaan kedua
+  // untuk rentang yang datanya baru saja diterima.
+  const rentangTerakhir = useRef(null);
+
   // Fetch Data from Apps Script
   const fetchData = useCallback(async (dari, sampai) => {
     const nomor = ++permintaanKe.current;
@@ -232,13 +242,28 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     try {
       const data = await doApiCall('get_rekap_admin', {
         dari: dari || '',
-        sampai: sampai || ''
+        sampai: sampai || '',
+        semua: (!dari && !sampai && rentangSudahDiisi.current) ? '1' : ''
       });
       if (nomor !== permintaanKe.current) return;   // sudah ada yang lebih baru
       if (data && data.result === 'success') {
         setRawRecords(data.rawRecords || []);
         setDashboardData(data.dashboardData || []);
         setKoreksiList(data.koreksiList || []);
+
+        // Pemuatan pertama: server menjawab dengan periode aktif dan
+        // memantulkan rentangnya. Kotak tanggal diisi supaya admin
+        // melihat periode mana yang sedang ditampilkan — kalau dibiarkan
+        // kosong, layar seolah menampilkan semuanya padahal tidak.
+        if (!rentangSudahDiisi.current) {
+          rentangSudahDiisi.current = true;
+          const r = data.rentang || {};
+          if (r.dari || r.sampai) {
+            rentangTerakhir.current = (r.dari || '') + '|' + (r.sampai || '');
+            setFilterTglMulai(r.dari || '');
+            setFilterTglSelesai(r.sampai || '');
+          }
+        }
       } else {
         const errMsg = data?.message || 'Server belum mengenali action get_rekap_admin.';
         setServerError(errMsg);
@@ -258,7 +283,14 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // satu permintaan per ketikan.
   useEffect(() => {
     if (!isAdmin) return undefined;
-    const jeda = setTimeout(() => { fetchData(filterTglMulai, filterTglSelesai); }, 400);
+    const kunci = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
+    // Rentang ini sudah diminta — termasuk saat kotak tanggal barusan
+    // diisi otomatis dari jawaban server.
+    if (rentangTerakhir.current === kunci) return undefined;
+    const jeda = setTimeout(() => {
+      rentangTerakhir.current = kunci;
+      fetchData(filterTglMulai, filterTglSelesai);
+    }, 400);
     return () => clearTimeout(jeda);
   }, [isAdmin, fetchData, filterTglMulai, filterTglSelesai]);
 
@@ -752,6 +784,60 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     setShowKoreksiModal(true);
   };
 
+  // Koreksi yang SUDAH menutupi baris ini, kalau ada.
+  //
+  // Tanpa pencarian ini, tombol koreksi pada baris yang sudah terkoreksi
+  // akan menumpuk koreksi kedua di atas yang pertama. Keduanya lalu
+  // bersaing — yang menang cuma yang kebetulan lebih dulu ditemukan —
+  // dan menghapus salah satunya tidak mengembalikan keadaan semula.
+  const cariKoreksiCocok = useCallback((sumber, tgl) => {
+    if (!tgl) return null;
+    const pr = String(sumber.payroll || '').trim().toLowerCase();
+    const ak = String(sumber.noAkun || '').trim().toLowerCase();
+    const nm = String(sumber.nama || '').trim().toLowerCase();
+    return koreksiList.find(k => {
+      const cocokOrang = (pr && String(k.payroll || '').trim().toLowerCase() === pr) ||
+                         (ak && String(k.noAkun  || '').trim().toLowerCase() === ak) ||
+                         (nm && String(k.nama    || '').trim().toLowerCase() === nm);
+      if (!cocokOrang) return false;
+      const a = k.tglMulai || '';
+      const b = k.tglSelesai || a;
+      return a && tgl >= a && tgl <= b;
+    }) || null;
+  }, [koreksiList]);
+
+  // Membuka form koreksi yang sudah terisi dari baris yang diklik.
+  // Kalau baris itu sudah punya koreksi, yang dibuka adalah MODE EDIT
+  // atas koreksi itu — bukan form kosong yang akan menambah satu lagi.
+  const bukaKoreksiUntuk = useCallback((sumber, tglMulai, tglSelesai) => {
+    const t1 = tglMulai || sumber.tanggalYMD || '';
+    const adaKoreksi = cariKoreksiCocok(sumber, t1);
+    if (adaKoreksi) {
+      setEditKoreksiItem(adaKoreksi);
+      setFormKoreksi({
+        noAkun: adaKoreksi.noAkun || '',
+        payroll: adaKoreksi.payroll || '',
+        nama: adaKoreksi.nama || '',
+        tglMulai: adaKoreksi.tglMulai || t1,
+        tglSelesai: adaKoreksi.tglSelesai || adaKoreksi.tglMulai || t1,
+        id2: adaKoreksi.id2 || 'H',
+        keterangan: adaKoreksi.keterangan || ''
+      });
+    } else {
+      setEditKoreksiItem(null);
+      setFormKoreksi({
+        noAkun: sumber.noAkun || '',
+        payroll: sumber.payroll || '',
+        nama: sumber.nama || '',
+        tglMulai: t1,
+        tglSelesai: tglSelesai || t1,
+        id2: sumber.id2 || 'H',
+        keterangan: ''
+      });
+    }
+    setShowKoreksiModal(true);
+  }, [cariKoreksiCocok]);
+
   // Submit Koreksi
   const handleSaveKoreksi = async (e) => {
     e.preventDefault();
@@ -781,7 +867,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       if (data && data.result === 'success') {
         alert(data.message || 'Koreksi berhasil disimpan.');
         setShowKoreksiModal(false);
-        fetchData();
+        // Rentang yang sedang ditampilkan HARUS ikut, kalau tidak
+        // penyegaran ini diam-diam menarik seluruh periode dan filter di
+        // layar tidak lagi cocok dengan isi tabelnya.
+        rentangTerakhir.current = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
+        fetchData(filterTglMulai, filterTglSelesai);
       } else {
         alert(data?.message || 'Gagal menyimpan koreksi. Pastikan script Google Apps Script terbaru sudah di-deploy.');
       }
@@ -801,7 +891,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       const data = await doApiCall('delete_koreksi', { id });
       if (data && data.result === 'success') {
         alert('Koreksi berhasil dihapus.');
-        fetchData();
+        rentangTerakhir.current = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
+        fetchData(filterTglMulai, filterTglSelesai);
       } else {
         alert(data?.message || 'Gagal menghapus koreksi.');
       }
@@ -1299,17 +1390,31 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
                           {/* ACTION VIEW / KARTU DETAIL */}
                           <td className="p-3 text-center">
-                            <button
-                              onClick={() => {
-                                setDetailModalEmployee(d);
-                                setDetailActiveCategory('TELAT');
-                                setShowDetailNominal(true);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200/80 font-bold text-[11px] flex items-center gap-1.5 mx-auto transition active:scale-95 shadow-sm"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>View</span>
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setDetailModalEmployee(d);
+                                  setDetailActiveCategory('TELAT');
+                                  setShowDetailNominal(true);
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200/80 font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>View</span>
+                              </button>
+                              {/* Baris dashboard adalah RINGKASAN satu orang, bukan satu
+                                  hari — jadi tanggalnya diambil dari rentang yang sedang
+                                  ditampilkan. Admin tinggal mempersempitnya di form. */}
+                              <button
+                                type="button"
+                                onClick={() => bukaKoreksiUntuk(d, filterTglMulai, filterTglSelesai)}
+                                title="Buat koreksi untuk pegawai ini"
+                                className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white border border-amber-200/80 font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>Koreksi</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -1440,14 +1545,23 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                             </td>
                             
                             <td className="px-3 py-2.5 text-center">
-                              {r.isKoreksi ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-100/80 border border-amber-300 px-2 py-0.5 rounded-md" title={r.koreksiKet}>
-                                  <Sparkles className="w-3 h-3 text-amber-600" />
-                                  <span>Koreksi</span>
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 font-medium">Asli</span>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => bukaKoreksiUntuk(r, r.tanggalYMD, r.tanggalYMD)}
+                                title={r.isKoreksi
+                                  ? ('Sudah dikoreksi' + (r.koreksiKet ? ': ' + r.koreksiKet : '') + ' \u2014 klik untuk mengubah')
+                                  : 'Koreksi baris ini'}
+                                className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md border transition active:scale-95 ${
+                                  r.isKoreksi
+                                    ? 'text-amber-700 bg-amber-100/80 border-amber-300 hover:bg-amber-200'
+                                    : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-blue-600 hover:text-white hover:border-blue-600'
+                                }`}
+                              >
+                                {r.isKoreksi
+                                  ? <Sparkles className="w-3 h-3" />
+                                  : <Edit3 className="w-3 h-3" />}
+                                <span>Koreksi</span>
+                              </button>
                             </td>
                           </tr>
                         );

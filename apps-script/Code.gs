@@ -5150,8 +5150,34 @@ function handleGetRekapAdmin(data) {
   //
   // Kosong = tanpa batas, sama seperti perilaku lama. Itu yang membuat
   // pemanggil lama (dan jalur sheet di bawah) tetap sah.
-  const dariYMD   = formatDateYMD_Strict(data && data.dari)   || String((data && data.dari)   || '').slice(0, 10);
-  const sampaiYMD = formatDateYMD_Strict(data && data.sampai) || String((data && data.sampai) || '').slice(0, 10);
+  let dariYMD   = formatDateYMD_Strict(data && data.dari)   || String((data && data.dari)   || '').slice(0, 10);
+  let sampaiYMD = formatDateYMD_Strict(data && data.sampai) || String((data && data.sampai) || '').slice(0, 10);
+
+  // BAWAAN: PERIODE AKTIF, BUKAN SELURUH ISI.
+  //
+  // Layar rekap membuka filter tanggalnya dalam keadaan kosong, dan kosong
+  // berarti "semua" — jadi setiap kali layar itu dibuka ia menarik dua
+  // bulan penuh (10.977 baris, 4 permintaan, ~5 detik terukur 19 Sep
+  // 18:12) padahal yang dikerjakan admin hampir selalu periode berjalan.
+  //
+  // Karena itu rentang yang TIDAK disebut sama sekali diartikan sebagai
+  // periode aktif. Rentang yang sengaja dikosongkan tetap berarti semua,
+  // dan itu dibedakan lewat penanda `semua` — bukan lewat string kosong,
+  // yang tidak bisa membedakan "belum diisi" dari "sengaja dikosongkan".
+  const mintaSemua = String((data && data.semua) || '') === '1';
+  if (!dariYMD && !sampaiYMD && !mintaSemua) {
+    try {
+      const per = getPeriodeAbsenAktif_();
+      if (per && per.mulai) {
+        dariYMD = per.mulai;
+        sampaiYMD = per.selesai || '';
+      }
+    } catch (e) {
+      // Periode tidak terbaca bukan alasan menolak melayani — rekap
+      // tetap tampil, hanya kembali selebar dulu.
+      console.warn('Periode aktif tidak terbaca, rekap memakai seluruh rentang: ' + e.message);
+    }
+  }
 
   const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
   let rowsDb = null;
