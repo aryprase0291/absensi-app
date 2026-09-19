@@ -659,6 +659,17 @@ const SB_PROP_DBABSEN_CAP  = 'SUPABASE_DBABSEN_CAP';    // sidik isi terakhir ya
 // satu eksekusi Apps Script.
 const SB_DBABSEN_POTONGAN = 2000;
 
+// Ukuran halaman PENARIKAN — sengaja terpisah dari SB_DBABSEN_POTONGAN
+// di atas, yang mengatur besar potongan PENGIRIMAN saat menyemai.
+//
+// Keduanya dulu memakai angka yang sama, dan itu menyesatkan: batas
+// pengiriman ditentukan besar muatan yang boleh diterima Edge Function,
+// sedangkan batas penarikan dulu ditentukan batas baris PostgREST
+// (1.000) yang membuat permintaan 2.000 tetap dijawab 1.000. Sejak
+// penarikan lewat RPC yang membalas satu nilai jsonb, batas itu tidak
+// berlaku lagi — 5.000 baris pulang sekali angkut.
+const SB_DBABSEN_HALAMAN = 5000;
+
 // Urutannya HARUS sama dengan kolom B..S sheet dbabsen. Dipakai dua
 // arah — menyemai ke Postgres dan menulis balik ke sheet — supaya tidak
 // ada dua daftar kolom yang bisa berbeda diam-diam.
@@ -795,21 +806,50 @@ function SUPABASE_TARIK_DBABSEN(paksa) {
   // Seluruh isi ditarik lebih dulu ke memori. Sheet baru disentuh
   // setelah penarikan BERHASIL SELURUHNYA — kalau putus di tengah,
   // sheet lama tetap utuh, bukan setengah jadi.
+  // KURSOR KEYSET, BUKAN OFFSET (19 Sep 2026) — alasannya sama persis
+  // dengan _sbSemuaBarisMesin di Code.gs, dan catatan panjangnya ada di
+  // sana. Ringkasnya:
+  //
+  //   • aksi `halaman` membalas satu nilai jsonb lewat RPC, jadi batas
+  //     1.000 baris PostgREST tidak berlaku: 10.977 baris cukup 3
+  //     permintaan, bukan 11;
+  //   • berhenti pada flag `habis`, jadi tidak ada lagi satu permintaan
+  //     halaman-kosong di ujung setiap penarikan;
+  //   • kursor (kunci, tanggal) adalah primary key, jadi halaman
+  //     terakhir tidak lagi membayar OFFSET yang menyusuri ribuan baris
+  //     yang dilewati.
+  //
+  // Penarikan ini jalan di trigger, bukan di depan orang — tapi ia
+  // MENULIS ULANG seluruh sheet, jadi makin pendek waktu ia berjalan,
+  // makin kecil peluangnya bertabrakan dengan pembacaan lain.
   const semua = [];
-  let offset = 0;
-  for (;;) {
-    const hal = _sbDbAbsen('semua', { offset: offset, batas: SB_DBABSEN_POTONGAN });
+  let kunciAkhir = null;
+  let tanggalAkhir = null;
+
+  for (let putaran = 0; ; putaran++) {
+    const hal = _sbDbAbsen('halaman', {
+      sesudah_kunci: kunciAkhir,
+      sesudah_tanggal: tanggalAkhir,
+      batas: SB_DBABSEN_HALAMAN
+    });
     const baris = hal.baris || [];
     for (let i = 0; i < baris.length; i++) semua.push(baris[i]);
 
-    // Berhenti HANYA pada halaman kosong — bukan pada halaman yang lebih
-    // kecil dari yang diminta. PostgREST membatasi baris per permintaan
-    // (bawaannya 1.000), jadi halaman yang "kurang" adalah hal biasa,
-    // bukan tanda sudah habis. Lihat catatan panjang di
-    // _sbSemuaBarisMesin (Code.gs).
-    if (!baris.length) break;
-    offset += baris.length;
-    if (offset > 200000) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
+    if (hal.habis || !baris.length) break;
+
+    // Kursor kosong padahal halaman berisi berarti RPC dan pemanggil
+    // tidak sepaham. Berhenti terang: kalau diteruskan, putaran
+    // berikutnya mengulang halaman pertama dan menghasilkan baris
+    // kembar — yang justru akan LOLOS pemeriksaan jumlah di bawah kalau
+    // kebetulan totalnya pas.
+    if (!hal.kunci_akhir || !hal.tanggal_akhir) {
+      throw new Error('Penarikan dbabsen berhenti: halaman berisi ' + baris.length
+        + ' baris tapi tidak mengembalikan kursor.');
+    }
+    kunciAkhir = hal.kunci_akhir;
+    tanggalAkhir = hal.tanggal_akhir;
+
+    if (putaran > 200) throw new Error('Penarikan dbabsen melebihi batas wajar; dihentikan.');
   }
 
   if (!semua.length) {
