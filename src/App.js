@@ -12,6 +12,7 @@ import BackButton from './components/BackButton';
 import RekapExcelScreen from './screens/RekapExcelScreen';
 import GpsAuditScreen from './screens/GpsAuditScreen';
 import GpsDashboardScreen from './screens/GpsDashboardScreen';
+import DashboardKerani from './screens/DashboardKerani';
 import GpsGateScreen from './screens/GpsGateScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import { ImportJobProvider } from './context/ImportJobContext';
@@ -957,6 +958,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
                view === 'analysis' ? 'Analisa Kehadiran' :
                view === 'gps_audit' ? 'Monitoring Integritas GPS' :
                view === 'gps_dashboard' ? 'Dashboard GPS Karyawan' :
+               view === 'dashboard_kerani' ? 'Absen Online Kerani Pabrik' :
                view === 'input_shift' ? 'Jadwal Running Shift' :
                view === 'remark' ? 'Respon / Lapor HRD' :
                view === 'ganti_password' ? 'Ubah Kata Sandi' : 'Menu Aplikasi'}
@@ -972,7 +974,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice} bootAwal={bootAwal} bootMenunggu={bootMenunggu}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='log_login'&&<LogLoginScreen user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice} bootAwal={bootAwal} bootMenunggu={bootMenunggu}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='log_login'&&<LogLoginScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='dashboard_kerani'&&<DashboardKerani user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
       <GpsGateScreen
         status={gpsGate.status}
         pesan={gpsGate.pesan}
@@ -7666,6 +7668,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         { view: 'rekap_admin', label: 'Rekap, Koreksi & Export Excel', ikon: FileSpreadsheet, warna: 'emerald' },
         { view: 'gps_dashboard', label: 'Dashboard GPS Karyawan', ikon: MapPin, warna: 'sky' },
         { view: 'gps_audit', label: 'Monitoring Integritas GPS', ikon: Shield, warna: 'amber' },
+        { view: 'dashboard_kerani', label: 'Absen Online Kerani Pabrik', ikon: ClipboardList, warna: 'emerald' },
         { view: 'log_login', label: 'Log Login Pengguna', ikon: KeyRound, warna: 'sky' },
       ]
     },
