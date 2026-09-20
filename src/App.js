@@ -509,7 +509,11 @@ const performUpdate = async () => {
   try { percobaan = Number(localStorage.getItem('update_percobaan') || 0) + 1; } catch (e) { percobaan = 1; }
 
   try { localStorage.clear(); } catch (e) { /* mode privat iOS: abaikan */ }
-  try { sessionStorage.clear(); } catch (e) { /* abaikan */ }
+  // Jangan mengosongkan sessionStorage di sini. Kredensial sesi yang
+  // dipulihkan otomatis saat halaman dimuat ulang tersimpan pada
+  // `app_user`; menghapusnya membuat pembaruan terasa seperti logout.
+  // Cache berkas aplikasi tetap dibersihkan di bawah, jadi reload tetap
+  // mengambil bundle terbaru tanpa meminta pengguna login kembali.
   try { localStorage.setItem('update_percobaan', String(percobaan)); } catch (e) { /* abaikan */ }
 
   if ('serviceWorker' in navigator) {
@@ -10250,16 +10254,17 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
             )}
 
             {filteredList.map((item, idx) => {
-                const style = getStatusStyle(item.symbol);
                 const dateParts = splitDate(item.tanggal, item.week);
-                const keterangan = KETERANGAN_MAP[item.symbol] || '-';
+                const adaOnline = Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0;
+                const isAbsenOnline = adaOnline || String(item.symbol || '').toUpperCase() === 'ONL' || item.sumber === 'online';
+                const style = getStatusStyle(isAbsenOnline ? 'H' : item.symbol);
+                const keterangan = isAbsenOnline ? 'HADIR - Absen Online' : (KETERANGAN_MAP[item.symbol] || '-');
                 
                 // Syaratnya pindah ke bolehAjukan() supaya panel detail di
                 // tampilan kalender memakai aturan yang sama persis.
                 const showButton = bolehAjukan(item);
                 const showLaporHrd = lewatBatasAjukan(item);
                 const isIjinDisabled = ijinCount >= 4;
-                const adaOnline = Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0;
 
                 return (
                     <div key={idx} className="bg-white rounded-2xl p-0 shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-all duration-300 group">
@@ -10275,13 +10280,12 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{dateParts.dayName}</p>
                                         <div className="flex flex-wrap items-center gap-1.5">
                                             <div className={`inline-flex items-center px-2.5 py-1 rounded-lg border ${style.bg} ${style.border} ${style.text}`}>
-                                                <span className="text-[10px] font-extrabold tracking-wide uppercase">{keterangan}</span>
+                                                <span className={`text-[10px] font-extrabold tracking-wide ${isAbsenOnline ? '' : 'uppercase'}`}>{keterangan}</span>
                                             </div>
-                                            {adaOnline && <span className="inline-flex items-center rounded-lg border border-indigo-100 bg-indigo-50 px-2 py-1 text-[10px] font-semibold text-indigo-700">Absen online</span>}
                                         </div>
                                     </div>
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black border-2 ${style.bg} ${style.border} ${style.text}`}>
-                                        {item.symbol}
+                                        {isAbsenOnline ? 'H' : item.symbol}
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
