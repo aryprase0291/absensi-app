@@ -8,9 +8,12 @@ import {
 const DARI = '2026-09-01';
 const SAMPAI = '2026-09-07';
 
+// Bentuk ini mengikuti sheet Users yang sebenarnya: "KERANI PABRIK"
+// tersimpan di kolom DIVISI (yang tampil sebagai POSISI di layar
+// Laporan), sedangkan kolom Jabatan berisi peran aplikasi.
 const KERANI = [
-  { id: 'U1', nama: 'ANI', divisi: 'PABRIK A', jabatan: 'KERANI PABRIK' },
-  { id: 'U2', nama: 'BUDI', divisi: 'PABRIK A', jabatan: 'Kerani Timbang' }
+  { id: 'U1', nama: 'ANI', divisi: 'KERANI PABRIK', jabatan: 'karyawan' },
+  { id: 'U2', nama: 'BUDI', divisi: 'KERANI PABRIK', jabatan: 'karyawan' }
 ];
 
 function absen(id, tipe, tgl, extra) {
@@ -49,27 +52,46 @@ describe('rentangTanggal & hariKerja', () => {
 
 describe('saringKerani', () => {
   const orang = KERANI.concat([
-    { id: 'U3', nama: 'CITRA', divisi: 'KANTOR', jabatan: 'KERANI KANTOR' },
-    { id: 'U4', nama: 'DEDI', divisi: 'PABRIK A', jabatan: 'Mandor' }
+    // Cocok lewat kolom JABATAN, bukan divisi — bentuk yang juga harus
+    // tertangkap kalau suatu saat sheet-nya dirapikan.
+    { id: 'U3', nama: 'CITRA', divisi: 'KANTOR PUSAT', jabatan: 'KERANI ADMIN' },
+    { id: 'U4', nama: 'DEDI', divisi: 'KERANI PABRIK', jabatan: 'karyawan' },
+    { id: 'U5', nama: 'EKO', divisi: 'SOPIR', jabatan: 'karyawan' }
   ]);
 
+  // Ini yang dulu gagal: "KERANI PABRIK" ada di kolom DIVISI, jadi
+  // saringan yang hanya melihat kolom Jabatan mengembalikan nol orang
+  // padahal datanya ada.
+  test('kata kunci cocok lewat kolom DIVISI', () => {
+    expect(saringKerani(KERANI, 'KERANI', []).map((x) => x.id)).toEqual(['U1', 'U2']);
+  });
+
+  test('kata kunci cocok lewat kolom JABATAN', () => {
+    const h = saringKerani(orang, 'KERANI ADMIN', []);
+    expect(h.map((x) => x.id)).toEqual(['U3']);
+  });
+
+  test('yang tidak cocok di kolom mana pun tetap terbuang', () => {
+    expect(saringKerani(orang, 'KERANI', []).map((x) => x.id))
+      .toEqual(['U1', 'U2', 'U3', 'U4']);
+  });
+
   test('kata kunci tidak peduli besar-kecil huruf', () => {
-    const h = saringKerani(orang, 'kerani', []);
-    expect(h.map((x) => x.id)).toEqual(['U1', 'U2', 'U3']);
+    expect(saringKerani(orang, 'kerani', [])).toHaveLength(4);
   });
 
   test('daftar divisi kosong berarti SEMUA divisi, bukan nol', () => {
-    expect(saringKerani(orang, 'KERANI', [])).toHaveLength(3);
+    expect(saringKerani(orang, 'KERANI', [])).toHaveLength(4);
   });
 
   test('divisi mempersempit hasil', () => {
-    const h = saringKerani(orang, 'KERANI', ['PABRIK A']);
-    expect(h.map((x) => x.id)).toEqual(['U1', 'U2']);
+    const h = saringKerani(orang, 'KERANI', ['KERANI PABRIK']);
+    expect(h.map((x) => x.id)).toEqual(['U1', 'U2', 'U4']);
   });
 
   test('daftarDivisi unik dan terurut, melewati tanda strip', () => {
-    expect(daftarDivisi(orang.concat([{ id: 'U5', divisi: '-' }])))
-      .toEqual(['KANTOR', 'PABRIK A']);
+    expect(daftarDivisi(orang.concat([{ id: 'U6', divisi: '-' }])))
+      .toEqual(['KANTOR PUSAT', 'KERANI PABRIK', 'SOPIR']);
   });
 });
 
@@ -117,11 +139,30 @@ describe('susunRekapKerani', () => {
     expect(r.perOrang.find((b) => b.id === 'U1').sel['2026-09-01']).toBe(STATUS.HADIR);
   });
 
-  test('Pulang tanpa Hadir tidak menjadikan hari itu hadir', () => {
+  test('Pulang saja tetap hadir, tapi tidak lengkap', () => {
     const r = susunRekapKerani({ ...dasar, history: [absen('U1', 'Pulang', '2026-09-01')] });
     const ani = r.perOrang.find((b) => b.id === 'U1');
-    expect(ani.sel['2026-09-01']).toBe(STATUS.KOSONG);
+    expect(ani.sel['2026-09-01']).toBe(STATUS.HADIR);
+    expect(ani.hadir).toBe(1);
     expect(ani.lengkap).toBe(0);
+    expect(ani.tidakAbsen).toBe(5);
+  });
+
+  // Pola nyata dari data: satu orang bisa punya hari yang hanya absen
+  // masuk, hari yang hanya absen pulang, hari Standby, dan hari kosong.
+  test('pola campuran masuk-saja / pulang-saja / standby', () => {
+    const r = susunRekapKerani({ ...dasar, history: [
+      absen('U1', 'Hadir', '2026-09-01'),
+      absen('U1', 'Pulang', '2026-09-02'),
+      absen('U1', 'Hadir', '2026-09-03'),
+      absen('U1', 'Pulang', '2026-09-03'),
+      absen('U1', 'Standby', '2026-09-04')
+    ] });
+    const ani = r.perOrang.find((b) => b.id === 'U1');
+    expect(ani.hadir).toBe(3);
+    expect(ani.standby).toBe(1);
+    expect(ani.lengkap).toBe(1);
+    expect(ani.tidakAbsen).toBe(2);
   });
 
   test('cuti menutup seluruh harinya dan keluar dari penyebut produktifitas', () => {

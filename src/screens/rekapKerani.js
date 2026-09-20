@@ -90,12 +90,20 @@ export function hariKerja(dariYmd, sampaiYmd, opsi) {
 /**
  * Menyaring daftar pegawai menjadi kerani pabrik.
  *
- * Dua saringan, keduanya harus lolos:
- *   - JABATAN mengandung `kataKunci` (bawaan 'KERANI'), dari kolom
- *     Role/Jabatan sheet Users;
- *   - DIVISI termasuk dalam `divisiDipilih`. Daftar kosong berarti
- *     "semua divisi" — bukan "tidak ada satu pun", karena layar memuat
- *     daftar divisinya SESUDAH pegawai datang.
+ * KATA KUNCI DICOCOKKAN KE DUA KOLOM, BUKAN SATU.
+ *   Di sheet Users, "KERANI PABRIK" ternyata tersimpan di kolom DIVISI
+ *   (kolom E) — itu yang tampil sebagai "POSISI" di layar Laporan &
+ *   Cetak Data. Kolom Role/Jabatan (kolom F) berisi peran aplikasi
+ *   (karyawan / admin / hrd), bukan jabatan pekerjaan.
+ *
+ *   Menyaring kolom Jabatan saja karena itu menghasilkan NOL kerani
+ *   padahal datanya ada — persis kegagalan yang sempat terjadi. Karena
+ *   dua tempat yang sama-sama masuk akal, keduanya diperiksa: cocok di
+ *   salah satunya sudah cukup.
+ *
+ * Saringan kedua, DIVISI, tetap berlaku dan dipilih di layar. Daftar
+ * kosong berarti "semua divisi" — bukan "tidak ada satu pun", karena
+ * layar memuat daftar divisinya SESUDAH pegawai datang.
  */
 export function saringKerani(pegawai, kataKunci, divisiDipilih) {
   const kunci = String(kataKunci || 'KERANI').trim().toUpperCase();
@@ -105,9 +113,10 @@ export function saringKerani(pegawai, kataKunci, divisiDipilih) {
 
   return (pegawai || []).filter(function (p) {
     const jab = String(p.jabatan || '').trim().toUpperCase();
-    if (kunci && jab.indexOf(kunci) === -1) return false;
+    const div = String(p.divisi || '').trim().toUpperCase();
+    if (kunci && jab.indexOf(kunci) === -1 && div.indexOf(kunci) === -1) return false;
     if (!pilih.length) return true;
-    return !!setDivisi[String(p.divisi || '').trim().toUpperCase()];
+    return !!setDivisi[div];
   });
 }
 
@@ -230,12 +239,17 @@ export function susunRekapKerani(opsi) {
       const m = tanda[b.id + '|' + t];
       let st = STATUS.KOSONG;
       if (m) {
-        if (m.hadir) st = STATUS.HADIR;
+        // Absen PULANG saja sudah menjadikan hari itu hadir.
+        //
+        // "Tidak absen sama sekali" harus berarti benar-benar tidak ada
+        // satu baris pun. Orang yang hari itu hanya sempat absen pulang
+        // tetap mengabsen — menyebutnya tidak absen akan menaikkan angka
+        // pelanggaran atas orang yang sebenarnya bekerja. Yang kurang
+        // pada hari seperti itu adalah KELENGKAPANnya, dan itu memang
+        // sudah ditangkap terpisah oleh `lengkap` di bawah.
+        if (m.hadir || m.pulang) st = STATUS.HADIR;
         else if (m.standby) st = STATUS.STANDBY;
         else if (m.izin) st = STATUS.IZIN;
-        // Baris Pulang tanpa Hadir sengaja TIDAK menjadikan hari itu
-        // hadir. Absen pulang tanpa absen masuk adalah cacat data yang
-        // harus terlihat, bukan lubang yang ditambal diam-diam.
       }
       b.sel[t] = st;
 

@@ -55,7 +55,7 @@ const WARNA = {
 // Legenda, urutan tumpukan, dan urutan kolom tabel — satu daftar, supaya
 // ketiganya tidak pernah berbeda urutan.
 const KEADAAN = [
-  { kunci: 'hadir',   status: STATUS.HADIR,   label: 'Hadir',            ikon: CheckCircle2, warna: WARNA.hadir },
+  { kunci: 'hadir',   status: STATUS.HADIR,   label: 'Hadir (masuk/pulang)', ikon: CheckCircle2, warna: WARNA.hadir },
   { kunci: 'standby', status: STATUS.STANDBY, label: 'Standby',          ikon: Clock,        warna: WARNA.standby },
   { kunci: 'izin',    status: STATUS.IZIN,    label: 'Izin / Cuti / Dinas', ikon: FileText,  warna: WARNA.izin },
   { kunci: 'tidak',   status: STATUS.KOSONG,  label: 'Tidak absen',      ikon: XCircle,      warna: WARNA.tidak }
@@ -307,10 +307,10 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
               className="px-3 py-2 rounded-lg border border-slate-200 text-[13px] text-slate-900 outline-none focus:border-slate-400" />
           </div>
           <div>
-            <label className="block text-[11px] font-medium text-slate-500 mb-1">Kata kunci jabatan</label>
+            <label className="block text-[11px] font-medium text-slate-500 mb-1">Kata kunci jabatan / posisi</label>
             <input value={kataKunci} onChange={(e) => setKataKunci(e.target.value)}
               placeholder="KERANI"
-              className="w-[130px] px-3 py-2 rounded-lg border border-slate-200 text-[13px] text-slate-900 outline-none focus:border-slate-400" />
+              className="w-[150px] px-3 py-2 rounded-lg border border-slate-200 text-[13px] text-slate-900 outline-none focus:border-slate-400" />
           </div>
           <div className="flex-1 min-w-[170px]">
             <label className="block text-[11px] font-medium text-slate-500 mb-1">Cari nama / divisi</label>
@@ -392,7 +392,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
         <Kartu ikon={CalendarDays} label="Hari kerja" nilai={R.hariKerja}
           catatan={R.totalHariOrang + ' hari-orang' + (hitungMinggu ? '' : ' · Minggu & libur dikecualikan')} />
         <Kartu ikon={CheckCircle2} label="Hadir" nilai={pct(R.persenHadir)} warna={WARNA.hadir}
-          catatan={R.hadir + ' hari-orang'} />
+          catatan={R.hadir + ' hari-orang · ' + R.lengkap + ' di antaranya lengkap'} />
         <Kartu ikon={Gauge} label="Produktifitas" nilai={pct(R.persenProduktif)} warna={WARNA.hadir}
           catatan={R.lengkap + ' absen lengkap / ' + R.hariEfektif + ' hari efektif'} />
       </div>
@@ -408,7 +408,8 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
 
         {!adaKerani ? (
           <p className="py-10 text-center text-[13px] text-slate-400">
-            Belum ada kerani yang cocok. Periksa kata kunci jabatan dan pilihan divisi.
+            Belum ada kerani yang cocok. Kata kunci dicocokkan ke kolom Jabatan MAUPUN
+            Posisi/Divisi di sheet Users — periksa ejaannya dan pilihan divisi di atas.
           </p>
         ) : (
           <>
@@ -488,7 +489,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
                         <p>Standby {h.standby}</p>
                         <p>Izin {h.izin}</p>
                         <p>Tidak absen {h.tidakAbsen}</p>
-                        <p className="mt-1 pt-1 border-t border-white/20">Absen lengkap {h.lengkap}</p>
+                        <p className="mt-1 pt-1 border-t border-white/20">Di antaranya lengkap {h.lengkap}</p>
                       </div>
                     )}
                   </div>
@@ -561,9 +562,10 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
         </div>
 
         <p className="px-4 py-3 text-[11px] text-slate-400 leading-relaxed border-t border-slate-100">
-          Produktifitas = hari dengan absen LENGKAP (ada Hadir dan ada Pulang) dibagi hari kerja
-          efektif — yaitu hari kerja dikurangi hari izin/cuti/sakit/dinas orang itu. Hadir tanpa
-          absen pulang tidak dihitung lengkap.
+          Hadir = hari yang punya absen masuk ATAU pulang. Tidak absen = hari tanpa satu baris pun.
+          Produktifitas = hari dengan absen LENGKAP (ada masuk DAN ada pulang) dibagi hari kerja
+          efektif — yaitu hari kerja dikurangi hari izin/cuti/sakit/dinas orang itu. Selisih antara
+          kolom Hadir dan kolom Lengkap adalah hari yang absennya hanya sebelah.
         </p>
       </div>
     </div>
