@@ -1740,6 +1740,7 @@ function handleGetDbAbsen(data) {
   // tetap muncul di kalender Data Absen.
   // ================================================================
   const onlineByDate = {};
+  const standbyByDate = {};
   let latestOnlineTimestamp = 0;
   const sheetOnline = SS.getSheetByName(SHEET_ABSENSI);
   // Lebar baca mengikuti posisi kolom "Alamat" yang dibuat Geocode.gs.
@@ -1755,9 +1756,9 @@ function handleGetDbAbsen(data) {
     const tipe = String(row[4] || '').trim();
     const status = String(row[12] || '').trim();
 
-    // Hanya catatan tombol Absen Masuk/Pulang yang ditampilkan sebagai
-    // presensi online. Pengajuan Ijin/Cuti tetap berada di menu masing-masing.
-    if (rowUserId !== String(data.userId) || status === 'Rejected' || !['Hadir', 'Pulang'].includes(tipe)) continue;
+    // Hanya presensi online dan Standby yang diringkas di Data Absen.
+    // Pengajuan Ijin/Cuti tetap berada di menu masing-masing.
+    if (rowUserId !== String(data.userId) || status === 'Rejected' || !['Hadir', 'Pulang', 'Standby'].includes(tipe)) continue;
 
     const waktu = row[1];
     const tanggalRaw = formatDateYMD_Strict(waktu);
@@ -1766,11 +1767,6 @@ function handleGetDbAbsen(data) {
     const timestamp = new Date(waktu).getTime();
     if (!isNaN(timestamp) && timestamp > latestOnlineTimestamp) latestOnlineTimestamp = timestamp;
 
-    if (!onlineByDate[tanggalRaw]) {
-      onlineByDate[tanggalRaw] = { masuk: '', pulang: '', onlineRecords: [], _sortDate: timestamp || new Date(tanggalRaw).getTime() };
-    }
-
-    const bucket = onlineByDate[tanggalRaw];
     const record = {
       tipe: tipe,
       waktu: formatTimeOnly_Backend(waktu),
@@ -1779,6 +1775,18 @@ function handleGetDbAbsen(data) {
       lokasi: row[5] || '-',
       alamat: (typeof nilaiAlamatBaris === 'function' ? nilaiAlamatBaris(sheetOnline, row) : '')
     };
+
+    if (tipe === 'Standby') {
+      if (!standbyByDate[tanggalRaw]) standbyByDate[tanggalRaw] = { records: [], _sortDate: timestamp || new Date(tanggalRaw).getTime() };
+      standbyByDate[tanggalRaw].records.push(record);
+      continue;
+    }
+
+    if (!onlineByDate[tanggalRaw]) {
+      onlineByDate[tanggalRaw] = { masuk: '', pulang: '', onlineRecords: [], _sortDate: timestamp || new Date(tanggalRaw).getTime() };
+    }
+
+    const bucket = onlineByDate[tanggalRaw];
     bucket.onlineRecords.push(record);
 
     // Jika ada lebih dari satu tap pada hari yang sama, masuk mengambil
@@ -1810,10 +1818,11 @@ function handleGetDbAbsen(data) {
     return '';
   };
 
-  const semuaTanggal = [...new Set([...Object.keys(machineByDate), ...Object.keys(onlineByDate)])];
+  const semuaTanggal = [...new Set([...Object.keys(machineByDate), ...Object.keys(onlineByDate), ...Object.keys(standbyByDate)])];
   const mergedList = semuaTanggal.map((tanggalRaw) => {
     const mesin = machineByDate[tanggalRaw];
     const online = onlineByDate[tanggalRaw];
+    const standby = standbyByDate[tanggalRaw];
 
     if (mesin) {
       // Bila ada masuk online di tanggal yang sama, catatan mesin yang masih
@@ -1822,11 +1831,12 @@ function handleGetDbAbsen(data) {
       const alpaTertutupOnline = online && simbolOnline(online) && ['A', 'AC'].includes(String(mesin.symbol));
       return {
         ...mesin,
-        sumber: online ? 'mesin+online' : 'mesin',
+        sumber: online ? 'mesin+online' : (standby ? 'mesin+standby' : 'mesin'),
         symbol: alpaTertutupOnline ? simbolOnline(online) : mesin.symbol,
         onlineMasuk: online ? online.masuk : '',
         onlinePulang: online ? online.pulang : '',
-        onlineRecords: online ? online.onlineRecords : []
+        onlineRecords: online ? online.onlineRecords : [],
+        standbyRecords: standby ? standby.records : []
       };
     }
 
@@ -1836,23 +1846,24 @@ function handleGetDbAbsen(data) {
     return {
       nik: userNik,
       nama: namaUser,
-      tanggal: formatDate(online._sortDate || tanggalRaw),
+      tanggal: formatDate((online || standby)._sortDate || tanggalRaw),
       tanggalRaw: tanggalRaw,
       jamKerja: '-',
       masuk: online.masuk || '-',
       pulang: online.pulang || '-',
       telat: '-',
-      symbol: simbolOnline(online) || 'ONL',
+      symbol: online ? (simbolOnline(online) || 'ONL') : 'STB',
       waktuScan: '-',
       week: '',
-      _sortDate: online._sortDate || new Date(tanggalRaw).getTime(),
+      _sortDate: (online || standby)._sortDate || new Date(tanggalRaw).getTime(),
       canRequestIjin: false,
       shiftStart: '',
       shiftEnd: '',
-      sumber: 'online',
-      onlineMasuk: online.masuk,
-      onlinePulang: online.pulang,
-      onlineRecords: online.onlineRecords
+      sumber: online ? 'online' : 'standby',
+      onlineMasuk: online ? online.masuk : '',
+      onlinePulang: online ? online.pulang : '',
+      onlineRecords: online ? online.onlineRecords : [],
+      standbyRecords: standby ? standby.records : []
     };
   });
 

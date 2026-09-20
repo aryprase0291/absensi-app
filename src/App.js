@@ -3,7 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
-  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp, Menu } from 'lucide-react';
+  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp, Menu, ArrowUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION, TIMEOUT_LABEL, BOARD_ABSENSI_URL } from './config/constants';
 import { loginLewatSupabase } from './utils/loginSupabase';
 import LogLoginScreen from './screens/LogLoginScreen';
@@ -337,6 +337,44 @@ const TombolLokasiMaps = ({ lokasi, alamat, label = 'Lokasi Maps', className = '
       className={`inline-flex items-center gap-1.5 text-[10px] font-bold text-rose-600 hover:text-rose-700 ${className}`}>
       <MapPin className="w-3.5 h-3.5" strokeWidth={2} /> {label}
     </a>
+  );
+};
+
+// Dipasang sekali pada kerangka aplikasi. Listener capture juga menangkap
+// layar yang memakai area scroll sendiri, bukan hanya scroll halaman utama.
+const TombolKembaliKeAtas = () => {
+  const [tampil, setTampil] = useState(false);
+  const targetScrollRef = useRef(null);
+
+  useEffect(() => {
+    const periksaScroll = (event) => {
+      const target = event && event.target;
+      const scrollInternal = target && target !== document && typeof target.scrollTop === 'number'
+        ? target.scrollTop : 0;
+      const scrollHalaman = window.scrollY || document.documentElement.scrollTop || 0;
+      if (scrollInternal > 0 && target && typeof target.scrollTo === 'function') targetScrollRef.current = target;
+      setTampil(Math.max(scrollInternal, scrollHalaman) > 360);
+    };
+    window.addEventListener('scroll', periksaScroll, { passive: true });
+    document.addEventListener('scroll', periksaScroll, true);
+    periksaScroll();
+    return () => {
+      window.removeEventListener('scroll', periksaScroll);
+      document.removeEventListener('scroll', periksaScroll, true);
+    };
+  }, []);
+
+  if (!tampil) return null;
+  return (
+    <button type="button" onClick={() => {
+      const target = targetScrollRef.current;
+      if (target && target.scrollTop > 0) target.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }}
+      className="fixed bottom-5 right-4 z-[200] inline-flex h-11 items-center gap-1.5 rounded-full bg-slate-900 px-4 text-[11px] font-bold text-white shadow-lg shadow-slate-900/30 transition hover:bg-blue-600 active:scale-95 sm:bottom-6 sm:right-6"
+      aria-label="Kembali ke atas">
+      <ArrowUp className="h-4 w-4" strokeWidth={2.5} /> Kembali ke atas
+    </button>
   );
 };
 
@@ -945,7 +983,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
         onKeluar={handleLogout}
         onLanjutDarurat={lanjutTanpaGps}
       />
-    )}</div></div>);}
+    )}{user && view !== 'login' && <TombolKembaliKeAtas />}</div></div>);}
 
     // PEMBUNGKUS APLIKASI
     // Provider dipasang di luar komponen utama, bukan di dalamnya, supaya
@@ -9573,7 +9611,7 @@ function DbAbsenScreen({ user, setView }) {
       'H': 'Hadir', 'T': 'Terlambat', 'O': 'Off / Libur', 'CB': 'Cuti Bersama',
       'PC': 'Pulang Cepat', 'Si': 'Tidak Absen Masuk', 'So': 'Tidak Absen Pulang',
       'I': 'Ijin', 'S': 'Sakit', 'C': 'Cuti', 'A': 'Alpa',
-      'DL': 'Dinas Luar', 'ONL': 'Absen online', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
+      'DL': 'Dinas Luar', 'ONL': 'Absen online', 'STB': 'Standby', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
       'TSi': 'Telat & No Scan In', 'SiSo': 'Tdk Absen IN & OUT',
       'SiPC': 'Tdk Absen IN & Pulang Cepat', 'AC': 'Alpa (Lebih Cuti)',
       'EO': 'Extra Ordinary', 'NF': 'Tidak Absen'
@@ -10280,6 +10318,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
             {filteredList.map((item, idx) => {
                 const dateParts = splitDate(item.tanggal, item.week);
                 const adaOnline = Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0;
+                const adaStandby = Array.isArray(item.standbyRecords) && item.standbyRecords.length > 0;
                 const isAbsenOnline = adaOnline || String(item.symbol || '').toUpperCase() === 'ONL' || item.sumber === 'online';
                 const adaMasukOnline = !!(item.onlineMasuk && item.onlineMasuk !== '-');
                 const adaPulangOnline = !!(item.onlinePulang && item.onlinePulang !== '-');
@@ -10348,6 +10387,25 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                         </div>
                                     </div>
                                 )}
+                                {adaStandby && (
+                                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Standby</p>
+                                      <span className="text-[10px] font-medium text-slate-500">{item.standbyRecords.length} catatan</span>
+                                    </div>
+                                    <div className="mt-1.5 space-y-1.5">
+                                      {item.standbyRecords.map((record, recordIndex) => (
+                                        <div key={`${record.waktu}-${recordIndex}`} className="flex items-center justify-between gap-3">
+                                          <div>
+                                            <p className="text-xs font-semibold text-slate-800">Standby <span className="font-mono">{formatTimeOnly(record.waktu)}</span></p>
+                                            <TombolLokasiMaps lokasi={record.lokasi} alamat={record.alamat} label="Maps" className="mt-1" />
+                                          </div>
+                                          {record.catatan && record.catatan !== '-' && <span className="max-w-[120px] truncate text-[10px] text-slate-500">{record.catatan}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                             </div>
                         </div>
                         <div className="bg-slate-50/50 px-4 py-3 border-t border-slate-100 flex items-center justify-between">
@@ -10414,6 +10472,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
         const ket = itemDipilih ? (KETERANGAN_MAP[itemDipilih.symbol] || itemDipilih.symbol || '-') : null;
         const adaTelat = itemDipilih && itemDipilih.telat && itemDipilih.telat !== 'FALSE' && itemDipilih.telat !== '00:00:00';
         const adaAbsenOnline = itemDipilih && Array.isArray(itemDipilih.onlineRecords) && itemDipilih.onlineRecords.length > 0;
+        const adaStandby = itemDipilih && Array.isArray(itemDipilih.standbyRecords) && itemDipilih.standbyRecords.length > 0;
         const bisaAjukan = itemDipilih ? bolehAjukan(itemDipilih) : false;
         const perluLaporHrd = itemDipilih ? lewatBatasAjukan(itemDipilih) : false;
         const ijinHabis = ijinCount >= 4;
@@ -10563,6 +10622,26 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                             <TombolLokasiMaps lokasi={record.lokasi} alamat={record.alamat} className="mt-1.5" />
                           </div>
                           <span className="font-mono text-[15px] font-semibold tabular-nums text-indigo-950">{formatTimeOnly(record.waktu)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {adaStandby && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-200 text-slate-700"><Clock className="h-4 w-4" strokeWidth={2}/></span>
+                        <div><p className="text-[12px] font-semibold text-slate-900">Standby</p><p className="text-[10px] text-slate-500">Terbaca dari aplikasi</p></div>
+                      </div>
+                      <span className="rounded-lg bg-white px-2 py-1 text-[10px] font-semibold text-slate-600">{itemDipilih.standbyRecords.length} catatan</span>
+                    </div>
+                    <div className="divide-y divide-slate-200">
+                      {itemDipilih.standbyRecords.map((record, index) => (
+                        <div key={`${record.waktu}-${index}`} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                          <div className="min-w-0"><p className="text-[11px] font-medium text-slate-700">Standby</p><TombolLokasiMaps lokasi={record.lokasi} alamat={record.alamat} label="Maps" className="mt-1" /></div>
+                          <span className="font-mono text-[15px] font-semibold tabular-nums text-slate-900">{formatTimeOnly(record.waktu)}</span>
                         </div>
                       ))}
                     </div>
