@@ -318,6 +318,28 @@ const LabelKecil = ({ children }) => (
   <label className="block text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-400 mb-1.5">{children}</label>
 );
 
+// Lokasi pada sheet lama berbentuk "lat, lng", sedangkan data yang lebih
+// baru juga membawa alamat hasil reverse geocoding. Keduanya dapat dibuka
+// langsung di Google Maps; alamat dipakai sebagai cadangan bila koordinat
+// tidak tersedia.
+const urlGoogleMaps = (lokasi, alamat) => {
+  const teksLokasi = String(lokasi || '').trim();
+  const cocok = teksLokasi.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+  const query = cocok ? `${cocok[1]},${cocok[2]}` : String(alamat || '').trim();
+  return query && query !== '-' ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : '';
+};
+
+const TombolLokasiMaps = ({ lokasi, alamat, label = 'Lokasi Maps', className = '' }) => {
+  const href = urlGoogleMaps(lokasi, alamat);
+  if (!href) return null;
+  return (
+    <a href={href} target="_blank" rel="noreferrer" title={alamat || lokasi}
+      className={`inline-flex items-center gap-1.5 text-[10px] font-bold text-rose-600 hover:text-rose-700 ${className}`}>
+      <MapPin className="w-3.5 h-3.5" strokeWidth={2} /> {label}
+    </a>
+  );
+};
+
     // MAIN APP COMPONENT
     //
     // Dibungkus <ImportJobProvider> di bawah (lihat AppAbsensi). Provider itu
@@ -6799,6 +6821,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           {displayData.map((item, idx) => {
             const canEdit = isEditable(item.waktu, item.status);
             const isRegularAbsen = item.tipe === 'Hadir' || item.tipe === 'Pulang';
+            const bisaLihatMaps = ['Hadir', 'Pulang', 'Dinas', 'Standby'].includes(item.tipe);
             const showResendButton = APPROVAL_TYPES.includes(item.tipe) && item.status === 'Pending' && !canViewAll;
             return (
               <div key={idx} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm relative group transition-all hover:border-blue-200">
@@ -6831,6 +6854,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                 <div className="flex gap-2 mt-2">
                     {item.foto && item.foto.length > 10 && item.foto !== 'Error Upload' && <a href={item.foto} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[9px] font-bold text-blue-600 hover:underline"><Camera className="w-3 h-3"/> Foto</a>}
                     {item.lampiran && item.lampiran.length > 10 && item.lampiran !== '-' && <a href={item.lampiran} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[9px] font-bold text-orange-600 hover:underline"><FileIcon className="w-3 h-3"/> Lampiran</a>}
+                    {bisaLihatMaps && <TombolLokasiMaps lokasi={item.lokasi} alamat={item.alamat} />}
                 </div>
                 {showResendButton && <button onClick={() => handleRequestApproval(item)} disabled={sendingEmail} className="w-full mt-2 bg-purple-50 text-purple-700 py-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 hover:bg-purple-100 border border-purple-200 transition-colors">{sendingEmail ? 'Mengirim...' : <><CheckSquare className="w-3 h-3"/> Kirim Ulang Email</>}</button>}
               </div>
@@ -9547,7 +9571,7 @@ function DbAbsenScreen({ user, setView }) {
 
   const KETERANGAN_MAP = {
       'H': 'Hadir', 'T': 'Terlambat', 'O': 'Off / Libur', 'CB': 'Cuti Bersama',
-      'PC': 'Pulang Cepat', 'Si': 'Tdk Absen IN', 'So': 'Tdk Absen OUT',
+      'PC': 'Pulang Cepat', 'Si': 'Tidak Absen Masuk', 'So': 'Tidak Absen Pulang',
       'I': 'Ijin', 'S': 'Sakit', 'C': 'Cuti', 'A': 'Alpa',
       'DL': 'Dinas Luar', 'ONL': 'Absen online', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
       'TSi': 'Telat & No Scan In', 'SiSo': 'Tdk Absen IN & OUT',
@@ -10257,8 +10281,14 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                 const dateParts = splitDate(item.tanggal, item.week);
                 const adaOnline = Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0;
                 const isAbsenOnline = adaOnline || String(item.symbol || '').toUpperCase() === 'ONL' || item.sumber === 'online';
-                const style = getStatusStyle(isAbsenOnline ? 'H' : item.symbol);
-                const keterangan = isAbsenOnline ? 'HADIR - Absen Online' : (KETERANGAN_MAP[item.symbol] || '-');
+                const adaMasukOnline = !!(item.onlineMasuk && item.onlineMasuk !== '-');
+                const adaPulangOnline = !!(item.onlinePulang && item.onlinePulang !== '-');
+                const simbolOnline = !adaMasukOnline && adaPulangOnline ? 'Si' : (adaMasukOnline && !adaPulangOnline ? 'So' : 'H');
+                const simbolTampil = isAbsenOnline ? simbolOnline : item.symbol;
+                const style = getStatusStyle(simbolTampil);
+                const keterangan = isAbsenOnline
+                  ? (simbolOnline === 'H' ? 'HADIR - Absen Online' : KETERANGAN_MAP[simbolOnline])
+                  : (KETERANGAN_MAP[item.symbol] || '-');
                 
                 // Syaratnya pindah ke bolehAjukan() supaya panel detail di
                 // tampilan kalender memakai aturan yang sama persis.
@@ -10285,7 +10315,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                         </div>
                                     </div>
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black border-2 ${style.bg} ${style.border} ${style.text}`}>
-                                        {isAbsenOnline ? 'H' : item.symbol}
+                                        {simbolTampil}
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-2">
@@ -10305,8 +10335,16 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                             <span className="text-[10px] font-medium text-indigo-500">{item.onlineRecords.length} catatan</span>
                                         </div>
                                         <div className="mt-1.5 grid grid-cols-2 gap-3">
-                                            <p className="text-xs font-semibold text-indigo-900">Masuk <span className="font-mono">{formatTimeOnly(item.onlineMasuk)}</span></p>
-                                            <p className="text-xs font-semibold text-indigo-900">Pulang <span className="font-mono">{formatTimeOnly(item.onlinePulang)}</span></p>
+                                          {['Hadir', 'Pulang'].map((tipe) => {
+                                            const recordsTipe = item.onlineRecords.filter((record) => record.tipe === tipe);
+                                            const record = tipe === 'Hadir' ? recordsTipe[0] : recordsTipe[recordsTipe.length - 1];
+                                            return (
+                                              <div key={tipe}>
+                                                <p className="text-xs font-semibold text-indigo-900">{tipe === 'Hadir' ? 'Masuk' : 'Pulang'} <span className="font-mono">{formatTimeOnly(tipe === 'Hadir' ? item.onlineMasuk : item.onlinePulang)}</span></p>
+                                                {record && <TombolLokasiMaps lokasi={record.lokasi} alamat={record.alamat} label="Maps" className="mt-1" />}
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                     </div>
                                 )}
@@ -10522,6 +10560,7 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                               </p>
                             )}
                             {record.catatan && record.catatan !== '-' && <p className="mt-0.5 max-w-[200px] truncate text-[10px] text-indigo-600/70">{record.catatan}</p>}
+                            <TombolLokasiMaps lokasi={record.lokasi} alamat={record.alamat} className="mt-1.5" />
                           </div>
                           <span className="font-mono text-[15px] font-semibold tabular-nums text-indigo-950">{formatTimeOnly(record.waktu)}</span>
                         </div>

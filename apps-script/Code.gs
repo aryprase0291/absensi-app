@@ -1799,6 +1799,17 @@ function handleGetDbAbsen(data) {
     if (item.tanggalRaw) machineByDate[item.tanggalRaw] = item;
   });
 
+  // Status presensi online mengikuti aturan mesin: jika hanya ada scan
+  // Pulang berarti Tidak Absen Masuk (Si), dan sebaliknya jika hanya ada
+  // scan Masuk berarti Tidak Absen Pulang (So).
+  const simbolOnline = (online) => {
+    if (!online) return '';
+    if (online.masuk && online.pulang) return 'ONL';
+    if (!online.masuk && online.pulang) return 'Si';
+    if (online.masuk && !online.pulang) return 'So';
+    return '';
+  };
+
   const semuaTanggal = [...new Set([...Object.keys(machineByDate), ...Object.keys(onlineByDate)])];
   const mergedList = semuaTanggal.map((tanggalRaw) => {
     const mesin = machineByDate[tanggalRaw];
@@ -1808,11 +1819,11 @@ function handleGetDbAbsen(data) {
       // Bila ada masuk online di tanggal yang sama, catatan mesin yang masih
       // berstatus Alpa tidak lagi menjadi status utama. Tampilkan sebagai
       // presensi online agar daftar Data Mesin konsisten dengan dashboard.
-      const alpaTertutupOnline = online && online.masuk && ['A', 'AC'].includes(String(mesin.symbol));
+      const alpaTertutupOnline = online && simbolOnline(online) && ['A', 'AC'].includes(String(mesin.symbol));
       return {
         ...mesin,
         sumber: online ? 'mesin+online' : 'mesin',
-        symbol: alpaTertutupOnline ? 'ONL' : mesin.symbol,
+        symbol: alpaTertutupOnline ? simbolOnline(online) : mesin.symbol,
         onlineMasuk: online ? online.masuk : '',
         onlinePulang: online ? online.pulang : '',
         onlineRecords: online ? online.onlineRecords : []
@@ -1831,7 +1842,7 @@ function handleGetDbAbsen(data) {
       masuk: online.masuk || '-',
       pulang: online.pulang || '-',
       telat: '-',
-      symbol: 'ONL',
+      symbol: simbolOnline(online) || 'ONL',
       waktuScan: '-',
       week: '',
       _sortDate: online._sortDate || new Date(tanggalRaw).getTime(),
