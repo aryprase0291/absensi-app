@@ -274,6 +274,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, []);
   // Penyegaran di belakang layar sedang berjalan (setelah koreksi).
   const [menyegarkan, setMenyegarkan] = useState(false);
+  // Tab Koreksi: 'periode' = koreksi yang menyentuh periode terpilih,
+  // 'semua' = seluruh histori koreksi yang pernah disimpan.
+  const [lingkupKoreksi, setLingkupKoreksi] = useState('periode');
+  const [semuaKoreksi, setSemuaKoreksi] = useState(null); // null = belum dimuat
+  const [memuatSemuaKoreksi, setMemuatSemuaKoreksi] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
   // Modal Kartu Detail View
@@ -470,6 +475,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     return sama(r.payroll, k.payroll) || sama(r.noAkun, k.noAkun) || sama(r.nama, k.nama);
   };
   const terapkanKoreksiLokal = useCallback((k) => {
+    setSemuaKoreksi(prev => {
+      if (!prev) return prev;
+      const ada = prev.some(x => x.id === k.id);
+      return ada ? prev.map(x => (x.id === k.id ? { ...x, ...k } : x)) : [k, ...prev];
+    });
     setKoreksiList(prev => {
       const ada = prev.some(x => x.id === k.id);
       return ada ? prev.map(x => (x.id === k.id ? { ...x, ...k } : x)) : [k, ...prev];
@@ -485,6 +495,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, []);
   const hapusKoreksiLokal = useCallback((id) => {
     setKoreksiList(prev => prev.filter(x => x.id !== id));
+    setSemuaKoreksi(prev => (prev ? prev.filter(x => x.id !== id) : prev));
     simpananRekap.current.clear();
   }, []);
 
@@ -578,6 +589,25 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const labelRentangAktif = (filterTglMulai || filterTglSelesai)
     ? (tglPendek(filterTglMulai) || 'awal') + ' s/d ' + (tglPendek(filterTglSelesai) || 'akhir')
     : 'Semua data';
+
+  const muatSemuaKoreksi = useCallback(async () => {
+    setMemuatSemuaKoreksi(true);
+    try {
+      const data = await doApiCall('get_koreksi_list', {});
+      if (data && data.result === 'success') setSemuaKoreksi(data.list || []);
+      else tampilkanToast(data?.message || 'Gagal memuat histori koreksi.', 'galat');
+    } catch (e) {
+      tampilkanToast('Gagal memuat histori koreksi.', 'galat');
+    } finally {
+      setMemuatSemuaKoreksi(false);
+    }
+  }, [doApiCall, tampilkanToast]);
+
+  useEffect(() => {
+    if (activeTab === 'koreksi' && lingkupKoreksi === 'semua' && semuaKoreksi === null && !memuatSemuaKoreksi) {
+      muatSemuaKoreksi();
+    }
+  }, [activeTab, lingkupKoreksi, semuaKoreksi, memuatSemuaKoreksi, muatSemuaKoreksi]);
 
   // Unique Departments
   const deptList = useMemo(() => {
@@ -714,8 +744,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // Filtered Koreksi List with Multi-Token Comprehensive Search
   const filteredKoreksi = useMemo(() => {
     const queryTokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const sumber = (lingkupKoreksi === 'semua' && semuaKoreksi) ? semuaKoreksi : filteredKoreksiByDate;
+    // Terbaru di atas: urut waktu input, lalu tanggal mulai.
+    const urut = sumber.slice().sort((a, b) =>
+      String(b.createdAt || '').localeCompare(String(a.createdAt || '')) ||
+      String(b.tglMulai || '').localeCompare(String(a.tglMulai || '')));
 
-    return filteredKoreksiByDate.filter(k => {
+    return urut.filter(k => {
       if (queryTokens.length === 0) return true;
 
       const searchableText = [
@@ -730,7 +765,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
       return queryTokens.every(token => searchableText.includes(token));
     });
-  }, [filteredKoreksiByDate, searchQuery]);
+  }, [filteredKoreksiByDate, searchQuery, lingkupKoreksi, semuaKoreksi]);
 
   // Summary Metrics
   const metrics = useMemo(() => {
@@ -1169,8 +1204,9 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
     setSavingKoreksi(true);
     try {
+      // koreksiId, bukan id: server menimpa `id` dengan ID user yang login.
       const payload = {
-        id: editKoreksiItem ? editKoreksiItem.id : undefined,
+        koreksiId: editKoreksiItem ? editKoreksiItem.id : '',
         noAkun: formKoreksi.noAkun,
         payroll: formKoreksi.payroll,
         nama: formKoreksi.nama,
@@ -1188,7 +1224,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         // isian form sebagai gantinya.
         terapkanKoreksiLokal(data.koreksi || {
           ...payload,
-          id: payload.id || ('KOR-' + Date.now()),
+          id: payload.koreksiId || ('KOR-' + Date.now()),
           id2: String(payload.id2 || 'H').toUpperCase()
         });
         // Rentang yang sedang ditampilkan HARUS ikut, kalau tidak
@@ -1212,7 +1248,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     if (!window.confirm('Yakin ingin menghapus data koreksi ini?')) return;
     setDeletingId(id);
     try {
-      const data = await doApiCall('delete_koreksi', { id });
+      const data = await doApiCall('delete_koreksi', { koreksiId: id });
       if (data && data.result === 'success') {
         tampilkanToast('Koreksi berhasil dihapus.');
         hapusKoreksiLokal(id);
@@ -2223,6 +2259,20 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   <p className="text-xs text-slate-400 mt-0.5">
                     Data pada tabel ini secara otomatis menimpa (override) status absensi di DB_FIX & Dashboard.
                   </p>
+                  <div className="mt-2 inline-flex rounded-xl border border-slate-200 bg-white p-0.5 text-[11px] font-bold">
+                    <button
+                      onClick={() => setLingkupKoreksi('periode')}
+                      className={`px-3 py-1 rounded-lg transition ${lingkupKoreksi === 'periode' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                      Periode terpilih
+                    </button>
+                    <button
+                      onClick={() => { setLingkupKoreksi('semua'); if (semuaKoreksi !== null) muatSemuaKoreksi(); }}
+                      className={`px-3 py-1 rounded-lg transition ${lingkupKoreksi === 'semua' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+                    >
+                      Semua histori{semuaKoreksi ? ` (${semuaKoreksi.length})` : ''}
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -2254,20 +2304,21 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                       <th className="p-3">Tgl Selesai</th>
                       <th className="p-3 text-center">Status Koreksi (ID2)</th>
                       <th className="p-3">Keterangan</th>
+                      <th className="p-3">Diinput</th>
                       <th className="p-3 text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {loading ? (
+                    {(lingkupKoreksi === 'semua' ? (memuatSemuaKoreksi && !semuaKoreksi) : loading) ? (
                       <tr>
-                        <td colSpan="9" className="p-8 text-center text-slate-400">
+                        <td colSpan="10" className="p-8 text-center text-slate-400">
                           <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500 mb-2" />
                           <span>Memuat daftar koreksi...</span>
                         </td>
                       </tr>
                     ) : filteredKoreksi.length === 0 ? (
                       <tr>
-                        <td colSpan="9" className="p-8 text-center text-slate-400">
+                        <td colSpan="10" className="p-8 text-center text-slate-400">
                           Belum ada data koreksi absensi. Klik <strong>Tambah Koreksi</strong> untuk menambahkan.
                         </td>
                       </tr>
@@ -2288,6 +2339,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                               </span>
                             </td>
                             <td className="p-3 text-slate-600 max-w-xs truncate">{k.keterangan || '-'}</td>
+                            <td className="p-3 font-mono text-[11px] text-slate-500">{k.createdAt || '-'}</td>
                             <td className="p-3 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button

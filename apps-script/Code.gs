@@ -5096,7 +5096,14 @@ function handleSaveKoreksi(data) {
   // lalu cermin sheet yang hanya membaca kolom A. Barisnya dikembalikan
   // utuh supaya layar bisa langsung memperbarui tabel tanpa menunggu
   // rekap dihitung ulang.
-  const id = data.id ? String(data.id) : ('KOR-' + new Date().getTime());
+  // BUG DIPERBAIKI (24 Sep 2026): ID koreksi TIDAK BOLEH dibaca dari
+  // data.id. Gerbang auth (Auth.gs) menimpa data.id dengan ID user yang
+  // login — jadi dulu SETIAP koreksi baru tersimpan dengan ID admin
+  // (mis. USR-...) dan menimpa koreksi sebelumnya. Hasilnya daftar
+  // koreksi hanya pernah berisi SATU baris: yang terakhir disimpan.
+  // ID koreksi sekarang dikirim lewat field sendiri: koreksiId.
+  const idKiriman = String(data.koreksiId || '').trim();
+  const id = idKiriman || ('KOR-' + new Date().getTime() + '-' + Math.floor(Math.random() * 1000));
   const tglMulai = formatDateYMD_Strict(data.tglMulai) || String(data.tglMulai || '').trim().slice(0, 10);
   const tglSelesaiMentah = formatDateYMD_Strict(data.tglSelesai) || String(data.tglSelesai || '').trim().slice(0, 10);
   const koreksi = {
@@ -5126,14 +5133,15 @@ function handleSaveKoreksi(data) {
   rekapCacheBatalkan_();
   return responseJSON({
     result: 'success',
-    message: data.id ? 'Koreksi berhasil diperbarui.' : 'Koreksi berhasil ditambahkan.',
+    message: idKiriman ? 'Koreksi berhasil diperbarui.' : 'Koreksi berhasil ditambahkan.',
     koreksi: koreksi
   });
 }
 
 function handleDeleteKoreksi(data) {
-  const targetId = String(data.id || '');
-  if (!targetId) return responseJSON({ result: 'error', message: 'ID koreksi kosong.' });
+  // koreksiId, BUKAN data.id — lihat catatan di handleSaveKoreksi.
+  const targetId = String(data.koreksiId || '').trim();
+  if (!targetId) return responseJSON({ result: 'error', message: 'ID koreksi kosong. Muat ulang halaman (versi aplikasi lama).' });
   let terhapus = false;
   try {
     terhapus = hapusKoreksi_(targetId);
