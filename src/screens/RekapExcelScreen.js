@@ -263,6 +263,17 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const [namaSuggestOpen, setNamaSuggestOpen] = useState(false);
   const [namaSuggestIdx, setNamaSuggestIdx] = useState(-1);
   const [savingKoreksi, setSavingKoreksi] = useState(false);
+  // Pesan singkat pengganti alert() — alert menahan layar sampai diklik,
+  // dan membuat simpan koreksi terasa lebih lama dari sebenarnya.
+  const [toast, setToast] = useState(null); // { teks, jenis: 'ok' | 'galat' }
+  const toastTimer = useRef(null);
+  const tampilkanToast = useCallback((teks, jenis = 'ok') => {
+    setToast({ teks, jenis });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  }, []);
+  // Penyegaran di belakang layar sedang berjalan (setelah koreksi).
+  const [menyegarkan, setMenyegarkan] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
   // Modal Kartu Detail View
@@ -396,6 +407,9 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     const dari   = typeof dariMasuk   === 'string' ? dariMasuk   : '';
     const sampai = typeof sampaiMasuk === 'string' ? sampaiMasuk : '';
     const paksa  = !!(opsi && opsi.paksa);
+    // diam = tabel TIDAK diganti spinner; data lama tetap tampil sampai
+    // jawaban baru datang (dipakai setelah simpan/hapus koreksi).
+    const diam   = !!(opsi && opsi.diam);
     const semua  = (!dari && !sampai && rentangSudahDiisi.current) ? '1' : '';
 
     const nomor = ++permintaanKe.current;
@@ -412,7 +426,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       }
     }
 
-    setLoading(true);
+    if (diam) setMenyegarkan(true); else setLoading(true);
     try {
       const data = await ambilRekap({
         dari: dari || '',
@@ -437,10 +451,42 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       console.error('Fetch rekap error:', e);
       setServerError('Gagal terhubung ke Web App Google Apps Script. Pastikan URL Web App aktif dan backend terbaru sudah di-deploy.');
     } finally {
-      if (nomor === permintaanKe.current) setLoading(false);
+      if (nomor === permintaanKe.current) {
+        setLoading(false);
+        setMenyegarkan(false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ambilRekap, terapkanData]);
+
+  // KOREKSI LANGSUNG TERLIHAT (24 Sep 2026)
+  //
+  // Dulu simpan koreksi = simpan di server, alert, lalu SELURUH rekap
+  // dihitung ulang dengan spinner menutupi tabel. Sekarang baris yang
+  // kena koreksi diperbarui di layar saat itu juga, dan angka dashboard
+  // disusulkan oleh penyegaran diam di belakang layar.
+  const cocokPegawai = (r, k) => {
+    const sama = (a, b) => a && b && String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+    return sama(r.payroll, k.payroll) || sama(r.noAkun, k.noAkun) || sama(r.nama, k.nama);
+  };
+  const terapkanKoreksiLokal = useCallback((k) => {
+    setKoreksiList(prev => {
+      const ada = prev.some(x => x.id === k.id);
+      return ada ? prev.map(x => (x.id === k.id ? { ...x, ...k } : x)) : [k, ...prev];
+    });
+    const selesai = k.tglSelesai || k.tglMulai;
+    setRawRecords(prev => prev.map(r => {
+      const tgl = r.tanggalYMD || '';
+      if (!tgl || tgl < k.tglMulai || tgl > selesai || !cocokPegawai(r, k)) return r;
+      return { ...r, id2: k.id2, isKoreksi: true, koreksiKet: k.keterangan };
+    }));
+    simpananRekap.current.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const hapusKoreksiLokal = useCallback((id) => {
+    setKoreksiList(prev => prev.filter(x => x.id !== id));
+    simpananRekap.current.clear();
+  }, []);
 
   // AMBIL DI MUKA (24 Sep 2026). Setelah periode bawaan tampil, periode
   // aktif lain diambil diam-diam satu per satu di belakang layar, supaya
@@ -1136,19 +1182,26 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
       const data = await doApiCall('save_koreksi', payload);
       if (data && data.result === 'success') {
-        alert(data.message || 'Koreksi berhasil disimpan.');
         setShowKoreksiModal(false);
+        tampilkanToast(data.message || 'Koreksi berhasil disimpan.');
+        // Server baru mengembalikan barisnya; server lama tidak — pakai
+        // isian form sebagai gantinya.
+        terapkanKoreksiLokal(data.koreksi || {
+          ...payload,
+          id: payload.id || ('KOR-' + Date.now()),
+          id2: String(payload.id2 || 'H').toUpperCase()
+        });
         // Rentang yang sedang ditampilkan HARUS ikut, kalau tidak
         // penyegaran ini diam-diam menarik seluruh periode dan filter di
         // layar tidak lagi cocok dengan isi tabelnya.
         rentangTerakhir.current = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
-        fetchData(filterTglMulai, filterTglSelesai, { paksa: true });
+        fetchData(filterTglMulai, filterTglSelesai, { paksa: true, diam: true });
       } else {
-        alert(data?.message || 'Gagal menyimpan koreksi. Pastikan script Google Apps Script terbaru sudah di-deploy.');
+        tampilkanToast(data?.message || 'Gagal menyimpan koreksi. Pastikan script Google Apps Script terbaru sudah di-deploy.', 'galat');
       }
     } catch (err) {
       console.error(err);
-      alert('Gagal menghubungi server.');
+      tampilkanToast('Gagal menghubungi server.', 'galat');
     } finally {
       setSavingKoreksi(false);
     }
@@ -1161,15 +1214,16 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     try {
       const data = await doApiCall('delete_koreksi', { id });
       if (data && data.result === 'success') {
-        alert('Koreksi berhasil dihapus.');
+        tampilkanToast('Koreksi berhasil dihapus.');
+        hapusKoreksiLokal(id);
         rentangTerakhir.current = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
-        fetchData(filterTglMulai, filterTglSelesai, { paksa: true });
+        fetchData(filterTglMulai, filterTglSelesai, { paksa: true, diam: true });
       } else {
-        alert(data?.message || 'Gagal menghapus koreksi.');
+        tampilkanToast(data?.message || 'Gagal menghapus koreksi.', 'galat');
       }
     } catch (err) {
       console.error(err);
-      alert('Gagal menghubungi server.');
+      tampilkanToast('Gagal menghubungi server.', 'galat');
     } finally {
       setDeletingId(null);
     }
@@ -1306,6 +1360,19 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
   return (
     <div className="min-h-screen bg-slate-100 pb-20 font-sans w-full">
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] px-4 py-3 rounded-2xl shadow-xl text-sm font-bold flex items-center gap-2 ${
+          toast.jenis === 'galat' ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+        }`}>
+          {toast.jenis === 'galat' ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+          <span>{toast.teks}</span>
+        </div>
+      )}
+      {menyegarkan && (
+        <div className="fixed top-3 right-3 z-[80] px-3 py-1.5 rounded-full bg-white/95 border border-slate-200 shadow text-[11px] font-semibold text-slate-600 flex items-center gap-1.5">
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" /> Memperbarui angka rekap…
+        </div>
+      )}
       
       {/* TOP HEADER - FULL WIDTH */}
       <header className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white border-b border-slate-800 p-4 sm:p-5 shadow-xl sticky top-0 z-30 w-full">

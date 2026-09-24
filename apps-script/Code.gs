@@ -1471,9 +1471,13 @@ function _sbBarisMesin(nik) {
  *
  * @private
  */
-function _sbSemuaBarisMesin(dari, sampai) {
+// `awal` (opsional, 24 Sep 2026): { seharusnya, hal } — jumlah baris dan
+// halaman pertama yang SUDAH diambil paralel oleh handleGetRekapAdmin.
+// Kalau ada, dua permintaan pertama di bawah dilewati.
+function _sbSemuaBarisMesin(dari, sampai, awal) {
   const d1 = String(dari || '');
   const d2 = String(sampai || '');
+  const pakaiAwal = !!(awal && awal.hal && Array.isArray(awal.hal.baris));
 
   // Jumlah yang SEHARUSNYA didapat UNTUK RENTANG INI, diambil lebih
   // dulu. Tanpa patokan ini, penarikan yang kurang sempurna tidak
@@ -1485,7 +1489,9 @@ function _sbSemuaBarisMesin(dari, sampai) {
   // meminta satu rentang saja, angka itu tidak lagi bisa dibandingkan
   // dengan apa yang ditarik — karena itu `jumlah`, yang menghitung
   // rentang yang sama persis.
-  const seharusnya = Number((_sbDbAbsen('jumlah', { dari: d1, sampai: d2 }) || {}).total || 0);
+  const seharusnya = pakaiAwal
+    ? Number(awal.seharusnya || 0)
+    : Number((_sbDbAbsen('jumlah', { dari: d1, sampai: d2 }) || {}).total || 0);
 
   // ===================================================================
   // KURSOR KEYSET, BUKAN OFFSET (19 Sep 2026)
@@ -1524,7 +1530,7 @@ function _sbSemuaBarisMesin(dari, sampai) {
   let tanggal = null;
 
   for (let putaran = 0; ; putaran++) {
-    const hal = _sbDbAbsen('halaman', {
+    const hal = (putaran === 0 && pakaiAwal) ? awal.hal : _sbDbAbsen('halaman', {
       sesudah_kunci: kunci,
       sesudah_tanggal: tanggal,
       dari: d1,
@@ -5078,79 +5084,65 @@ function _pastikanSheetKoreksi() {
 }
 
 function handleGetKoreksiList(data) {
-  const sheet = _pastikanSheetKoreksi();
-  const rows = sheet.getDataRange().getValues();
-  const list = [];
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
-    if (!r[0] && !r[2] && !r[3]) continue;
-    list.push({
-      id: String(r[0] || ('KOR-' + i)),
-      noAkun: String(r[1] || ''),
-      payroll: String(r[2] || ''),
-      nama: String(r[3] || ''),
-      tglMulai: formatDateYMD_Strict(r[4]) || String(r[4] || ''),
-      tglSelesai: formatDateYMD_Strict(r[5]) || String(r[5] || ''),
-      id2: String(r[6] || '').trim(),
-      keterangan: String(r[7] || ''),
-      createdAt: String(r[8] || '')
-    });
-  }
-  return responseJSON({ result: 'success', list: list });
+  // Supabase kalau sakelarnya menyala, sheet KOREKSI kalau tidak / gagal.
+  // Lihat SupabaseKoreksi.gs.
+  return responseJSON({ result: 'success', list: bacaDaftarKoreksi_('', '') });
 }
 
 function handleSaveKoreksi(data) {
-  const sheet = _pastikanSheetKoreksi();
-  const rows = sheet.getDataRange().getValues();
+  // DIPERCEPAT (24 Sep 2026). Dulu seluruh sheet KOREKSI dibaca
+  // (getDataRange) hanya untuk mencari satu id. Sekarang penulisannya
+  // lewat simpanKoreksi_ (SupabaseKoreksi.gs): Postgres kalau menyala,
+  // lalu cermin sheet yang hanya membaca kolom A. Barisnya dikembalikan
+  // utuh supaya layar bisa langsung memperbarui tabel tanpa menunggu
+  // rekap dihitung ulang.
   const id = data.id ? String(data.id) : ('KOR-' + new Date().getTime());
-  const noAkun = String(data.noAkun || '').trim();
-  const payroll = String(data.payroll || '').trim();
-  const nama = String(data.nama || '').trim();
-  const tglMulai = String(data.tglMulai || '').trim();
-  const tglSelesai = String(data.tglSelesai || tglMulai).trim();
-  const id2 = String(data.id2 || 'H').trim().toUpperCase();
-  const keterangan = String(data.keterangan || '-').trim();
-  const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+  const tglMulai = formatDateYMD_Strict(data.tglMulai) || String(data.tglMulai || '').trim().slice(0, 10);
+  const tglSelesaiMentah = formatDateYMD_Strict(data.tglSelesai) || String(data.tglSelesai || '').trim().slice(0, 10);
+  const koreksi = {
+    id: id,
+    noAkun: String(data.noAkun || '').trim(),
+    payroll: String(data.payroll || '').trim(),
+    nama: String(data.nama || '').trim(),
+    tglMulai: tglMulai,
+    tglSelesai: (tglSelesaiMentah && tglSelesaiMentah >= tglMulai) ? tglSelesaiMentah : tglMulai,
+    id2: String(data.id2 || 'H').trim().toUpperCase(),
+    keterangan: String(data.keterangan || '-').trim(),
+    createdAt: Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss")
+  };
 
-  if (!payroll && !nama) {
+  if (!koreksi.payroll && !koreksi.nama) {
     return responseJSON({ result: 'error', message: 'Pegawai (Payroll/Nama) wajib diisi.' });
   }
-  if (!tglMulai) {
+  if (!koreksi.tglMulai) {
     return responseJSON({ result: 'error', message: 'Tanggal mulai wajib diisi.' });
   }
 
-  let foundRow = -1;
-  if (data.id) {
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]) === String(data.id)) {
-        foundRow = i + 1;
-        break;
-      }
-    }
+  try {
+    simpanKoreksi_(koreksi);
+  } catch (e) {
+    return responseJSON({ result: 'error', message: 'Gagal menyimpan koreksi: ' + e.message });
   }
-
   rekapCacheBatalkan_();
-  if (foundRow > 0) {
-    sheet.getRange(foundRow, 1, 1, 9).setValues([[id, noAkun, payroll, nama, tglMulai, tglSelesai, id2, keterangan, nowStr]]);
-    return responseJSON({ result: 'success', message: 'Koreksi berhasil diperbarui.' });
-  } else {
-    sheet.appendRow([id, noAkun, payroll, nama, tglMulai, tglSelesai, id2, keterangan, nowStr]);
-    return responseJSON({ result: 'success', message: 'Koreksi berhasil ditambahkan.' });
-  }
+  return responseJSON({
+    result: 'success',
+    message: data.id ? 'Koreksi berhasil diperbarui.' : 'Koreksi berhasil ditambahkan.',
+    koreksi: koreksi
+  });
 }
 
 function handleDeleteKoreksi(data) {
-  const sheet = _pastikanSheetKoreksi();
-  const rows = sheet.getDataRange().getValues();
   const targetId = String(data.id || '');
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][0]) === targetId) {
-      sheet.deleteRow(i + 1);
-      rekapCacheBatalkan_();
-      return responseJSON({ result: 'success', message: 'Data koreksi berhasil dihapus.' });
-    }
+  if (!targetId) return responseJSON({ result: 'error', message: 'ID koreksi kosong.' });
+  let terhapus = false;
+  try {
+    terhapus = hapusKoreksi_(targetId);
+  } catch (e) {
+    return responseJSON({ result: 'error', message: 'Gagal menghapus koreksi: ' + e.message });
   }
-  return responseJSON({ result: 'error', message: 'Data koreksi tidak ditemukan.' });
+  if (!terhapus) return responseJSON({ result: 'error', message: 'Data koreksi tidak ditemukan.' });
+  rekapCacheBatalkan_();
+  return responseJSON({ result: 'success', message: 'Data koreksi berhasil dihapus.', id: targetId });
 }
 
 function handleGetRekapAdmin(data) {
@@ -5224,11 +5216,38 @@ function handleGetRekapAdmin(data) {
     }
   }
 
+  // PENGAMBILAN PARALEL (24 Sep 2026). Kalau data mesin DAN koreksi
+  // sama-sama di Supabase, tiga panggilan pertama (jumlah baris mesin,
+  // halaman pertama, daftar koreksi) dikirim BERSAMAAN lewat fetchAll.
+  // Dulu berurutan: tiga kali jeda jaringan ke Singapura, sekarang satu.
+  const pakaiSbMesin = typeof sbDbAbsenAktif === 'function' && sbDbAbsenAktif();
+  const pakaiSbKoreksi = typeof sbKoreksiAktif === 'function' && sbKoreksiAktif();
+  let awalMesin = null;
+  let koreksiPg = null;
+  if (pakaiSbMesin && pakaiSbKoreksi) {
+    try {
+      const hasilParalel = _sbPanggilParalel_([
+        { fungsi: 'dbabsen', muatan: { aksi: 'jumlah', dari: dariYMD || '', sampai: sampaiYMD || '' } },
+        { fungsi: 'dbabsen', muatan: { aksi: 'halaman', sesudah_kunci: null, sesudah_tanggal: null,
+                                       dari: dariYMD || '', sampai: sampaiYMD || '', batas: 5000 } },
+        { fungsi: 'koreksi', muatan: { aksi: 'daftar', dari: dariYMD || '', sampai: sampaiYMD || '' } }
+      ]);
+      if (hasilParalel[0].ok && hasilParalel[1].ok) {
+        awalMesin = { seharusnya: Number((hasilParalel[0].data || {}).total || 0), hal: hasilParalel[1].data || {} };
+      }
+      if (hasilParalel[2].ok && hasilParalel[2].data && hasilParalel[2].data.result === 'success') {
+        koreksiPg = hasilParalel[2].data;
+      }
+    } catch (e) {
+      console.warn('Rekap: pengambilan paralel gagal, lanjut satu per satu: ' + e.message);
+    }
+  }
+
   const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
   let rowsDb = null;
-  if (typeof sbDbAbsenAktif === 'function' && sbDbAbsenAktif()) {
+  if (pakaiSbMesin) {
     try {
-      rowsDb = _sbSemuaBarisMesin(dariYMD, sampaiYMD);
+      rowsDb = _sbSemuaBarisMesin(dariYMD, sampaiYMD, awalMesin);
     } catch (e) {
       console.warn('Rekap: dbabsen Supabase gagal, kembali ke sheet: ' + e.message);
       rowsDb = null;
@@ -5256,24 +5275,12 @@ function handleGetRekapAdmin(data) {
     }
   }
   
-  // 2. Ambil data KOREKSI
-  const sheetKoreksi = _pastikanSheetKoreksi();
-  const rowsKoreksi = sheetKoreksi.getDataRange().getValues();
-  const koreksiList = [];
-  for (let k = 1; k < rowsKoreksi.length; k++) {
-    const kr = rowsKoreksi[k];
-    if (!kr[2] && !kr[3]) continue;
-    koreksiList.push({
-      id: String(kr[0] || ('KOR-' + k)),
-      noAkun: String(kr[1] || '').trim(),
-      payroll: String(kr[2] || '').trim(),
-      nama: String(kr[3] || '').trim(),
-      tglMulai: formatDateYMD_Strict(kr[4]) || String(kr[4] || ''),
-      tglSelesai: formatDateYMD_Strict(kr[5]) || String(kr[5] || ''),
-      id2: String(kr[6] || '').trim().toUpperCase(),
-      keterangan: String(kr[7] || '')
-    });
-  }
+  // 2. Ambil data KOREKSI — Supabase kalau menyala (sudah diambil
+  // paralel di atas bila memungkinkan), sheet KOREKSI kalau tidak.
+  // Hanya yang bersinggungan dengan rentang: koreksi di luar rentang
+  // tidak pernah mengubah angka apa pun di sini.
+  const koreksiList = bacaDaftarKoreksi_(dariYMD, sampaiYMD, koreksiPg)
+    .filter(function (k) { return k.payroll || k.nama; });
 
   // INDEKS KOREKSI.
   //
