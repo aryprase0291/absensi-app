@@ -156,3 +156,42 @@ test('mode diam memakai pembacaan terakhir, bukan menyalakan GPS presisi tinggi'
   expect(panggilan[0].enableHighAccuracy).toBe(false);
   expect(panggilan[0].maximumAge).toBeGreaterThan(0);
 });
+
+// PC/laptop dibebaskan dari gerbang menu (24 Sep 2026). HP dalam mode
+// "Situs desktop" TIDAK boleh ikut lolos.
+describe('adalahPcAtauLaptop', () => {
+  const { adalahPcAtauLaptop } = require('./gpsWajib');
+  const asli = { ua: navigator.userAgent, mm: window.matchMedia };
+  const pasang = (ua, { halus, kasar, touch = 0 }) => {
+    Object.defineProperty(navigator, 'userAgent', { value: ua, configurable: true });
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: touch, configurable: true });
+    window.matchMedia = (q) => ({
+      matches: q === '(any-pointer: fine)' ? halus : q === '(pointer: coarse)' ? kasar : false
+    });
+  };
+  afterEach(() => {
+    Object.defineProperty(navigator, 'userAgent', { value: asli.ua, configurable: true });
+    window.matchMedia = asli.mm;
+  });
+
+  test('Windows dengan mouse = PC', () => {
+    pasang('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128', { halus: true, kasar: false });
+    expect(adalahPcAtauLaptop()).toBe(true);
+  });
+  test('MacBook = laptop', () => {
+    pasang('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/128', { halus: true, kasar: false });
+    expect(adalahPcAtauLaptop()).toBe(true);
+  });
+  test('Android biasa bukan PC', () => {
+    pasang('Mozilla/5.0 (Linux; Android 14) Chrome/128 Mobile', { halus: false, kasar: true, touch: 5 });
+    expect(adalahPcAtauLaptop()).toBe(false);
+  });
+  test('Android mode "Situs desktop" tetap bukan PC', () => {
+    pasang('Mozilla/5.0 (X11; Linux x86_64) Chrome/128', { halus: false, kasar: true, touch: 5 });
+    expect(adalahPcAtauLaptop()).toBe(false);
+  });
+  test('iPad bukan PC', () => {
+    pasang('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605', { halus: false, kasar: true, touch: 5 });
+    expect(adalahPcAtauLaptop()).toBe(false);
+  });
+});

@@ -101,6 +101,41 @@ export function jenisPerangkat() {
 }
 
 /**
+ * PC / LAPTOP? (24 Sep 2026)
+ *
+ * Komputer tidak punya GPS — posisinya ditebak dari WiFi sekitar, dan PC
+ * berkabel atau jaringan yang memblokir layanan lokasi Google selalu
+ * berakhir di gerbang "GPS Perangkat Tidak Aktif". Gerbang itu karena
+ * itu DILEWATI di PC/laptop (lihat App.js). Yang dilewati hanya gerbang
+ * MENU; form Hadir/Pulang tetap wajib lokasi seperti biasa, dan server
+ * tetap memblokir absen tanpa koordinat — jadi ini bukan jalan pintas
+ * untuk absen tanpa GPS.
+ *
+ * Sengaja lebih ketat dari jenisPerangkat(): HP yang memakai mode
+ * "Situs desktop" mengirim user agent komputer, tapi layarnya tetap
+ * sentuh tanpa penunjuk halus (mouse/trackpad). Perangkat seperti itu
+ * TIDAK dianggap PC, supaya gerbang GPS di HP tidak bisa dilewati hanya
+ * dengan mengganti mode browser.
+ */
+export function adalahPcAtauLaptop() {
+  try {
+    if (typeof navigator === 'undefined') return false;
+    if (jenisPerangkat() !== 'desktop') return false;
+    const uaData = navigator.userAgentData;
+    if (uaData && uaData.mobile === true) return false;
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      const halus = window.matchMedia('(any-pointer: fine)').matches;
+      const kasarUtama = window.matchMedia('(pointer: coarse)').matches;
+      // Tanpa mouse/trackpad sama sekali dan penunjuk utamanya jari = HP/tablet.
+      if (kasarUtama && !halus) return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * Membaca izin lewat Permissions API bila tersedia. Safari iOS tidak
  * mendukungnya, jadi hasilnya hanya dipakai sebagai petunjuk tambahan —
  * keputusan tetap diambil dari percobaan membaca posisi yang sebenarnya.

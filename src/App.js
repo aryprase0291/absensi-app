@@ -21,7 +21,7 @@ import ImportNotifier from './components/ImportNotifier';
 import ProcessingModal from './components/ProcessingModal';
 import { getVerifiedGeolocation } from './utils/antiFakeGps';
 import { mulaiPelacakGps, kirimTitikGps } from './utils/gpsTracker';
-import { periksaGpsWajib, izinSudahDiberikan, tandaiIzinPernahOk, lupakanIzin, GPS_STATUS } from './utils/gpsWajib';
+import { periksaGpsWajib, izinSudahDiberikan, tandaiIzinPernahOk, lupakanIzin, GPS_STATUS, adalahPcAtauLaptop } from './utils/gpsWajib';
 import { startFaceLivenessTracker, periksaWajahPenuh, ambilDeskriptorWajah, deskriptorDariGambar } from './utils/faceLiveness';
 import { muatPengenalWajah } from './utils/faceApiLoader';
 import { bukaKameraDepan, hentikanStream } from './utils/kameraDepan';
@@ -855,7 +855,10 @@ useEffect(() => {
     // Karyawan yang dikecualikan admin (mis. staf kantor yang bekerja di
     // PC tanpa GPS) tidak pernah melihat gerbang sama sekali. Lihat
     // gpsBebasDaftar di apps-script/Code.gs untuk alasan lengkapnya.
-    const bebasGerbang = user.gpsGerbangBebas === true;
+    // PC/laptop juga dibebaskan dari gerbang (24 Sep 2026): komputer tidak
+    // punya GPS, jadi gerbangnya hampir pasti gagal di sana. Hanya gerbang
+    // menu — form Hadir/Pulang tetap wajib lokasi (lihat adalahPcAtauLaptop).
+    const bebasGerbang = user.gpsGerbangBebas === true || adalahPcAtauLaptop();
 
     const sudahIzin = bebasGerbang || (await izinSudahDiberikan());
     if (batal) return;
@@ -890,7 +893,7 @@ useEffect(() => {
     if (Date.now() - gpsOkTerakhirRef.current < 15 * 60 * 1000) return;
     // Diam: karyawan sedang memakai aplikasi, jangan disela layar
     // pemeriksaan kalau pada akhirnya posisinya memang terbaca.
-    periksaGerbangGps({ diam: true, bebas: user.gpsGerbangBebas === true });
+    periksaGerbangGps({ diam: true, bebas: user.gpsGerbangBebas === true || adalahPcAtauLaptop() });
   };
   document.addEventListener('visibilitychange', saatKembali);
   return () => document.removeEventListener('visibilitychange', saatKembali);
