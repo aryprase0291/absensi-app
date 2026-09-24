@@ -883,7 +883,20 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, [filteredKoreksiByDate, searchQuery, lingkupKoreksi, semuaKoreksi]);
 
   // Urut & cari per kolom untuk setiap tabel (di atas hasil pencarian umum).
-  const urutDashboard = useUrutCari(filteredDashboard, KOLOM_DASHBOARD);
+  // HANYA PEGAWAI YANG ADA PENGAJUAN/KEJADIAN (24 Sep 2026). Tabel
+  // dashboard menyembunyikan pegawai yang semua angkanya 0: cuti diambil,
+  // sakit, alpa, ijin, tidak absen masuk/pulang, telat, dan nominal.
+  // Sisa cuti tidak dihitung — itu saldo, bukan pengajuan. Kartu KPI
+  // (Total Pegawai dll.) tetap dihitung dari semua pegawai.
+  const [tampilSemuaPegawai, setTampilSemuaPegawai] = useState(false);
+  const dashboardAdaPengajuan = useMemo(() => {
+    if (tampilSemuaPegawai) return filteredDashboard;
+    return filteredDashboard.filter(d =>
+      ['cutiDiambil', 'sakit', 'alpa', 'ijin', 'tdkAbsenMasuk', 'tdkAbsenPulang', 'telat', 'nominalTerlambat']
+        .some(f => (Number(d[f]) || 0) > 0)
+    );
+  }, [filteredDashboard, tampilSemuaPegawai]);
+  const urutDashboard = useUrutCari(dashboardAdaPengajuan, KOLOM_DASHBOARD);
   const urutTabel = useUrutCari(filteredRecords, KOLOM_TABEL);
   const urutKoreksi = useUrutCari(filteredKoreksi, KOLOM_KOREKSI);
   const barisTabel = urutTabel.rows;
@@ -1441,7 +1454,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     // sheet persis seperti template BOARD_ABSENSI_2026 — DASHBOARD lebih
     // dulu, lalu BOARD.
     if (mode === 'dashboard' || mode === 'board' || mode === 'all') {
-      const dashRows = filteredDashboard.map((d, idx) => ({
+      // Download dari tab Dashboard = persis yang tampil (hanya yang ada
+      // pengajuan). Board & export penuh tetap memuat semua pegawai.
+      const sumberDash = mode === 'dashboard' ? urutDashboard.rows : filteredDashboard;
+      const dashRows = sumberDash.map((d, idx) => ({
         'NO': idx + 1,
         'DEPT': d.dept || '',
         'NAMA': d.nama || '',
@@ -1902,6 +1918,20 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   <p className="text-xs text-slate-400 mt-0.5">
                     Data agregasi terhitung otomatis setelah digabungkan dengan data koreksi. Klik <strong>View</strong> untuk membuka rincian & capture gambar.
                   </p>
+                  <label className="mt-2 inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={tampilSemuaPegawai}
+                      onChange={e => setTampilSemuaPegawai(e.target.checked)}
+                      className="w-3.5 h-3.5 accent-blue-600"
+                    />
+                    <span>
+                      Tampilkan juga pegawai tanpa pengajuan
+                      <span className="text-slate-400 font-medium">
+                        {' '}({dashboardAdaPengajuan.length} dari {filteredDashboard.length} pegawai ditampilkan)
+                      </span>
+                    </span>
+                  </label>
                 </div>
                 <button
                   onClick={() => exportToExcel('dashboard')}
@@ -1941,7 +1971,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                     ) : urutDashboard.rows.length === 0 ? (
                       <tr>
                         <td colSpan="15" className="p-8 text-center text-slate-400">
-                          {serverError ? 'Data belum dapat dimuat dari server.' : 'Tidak ada data rekap yang sesuai filter.'}
+                          {serverError ? 'Data belum dapat dimuat dari server.' : (tampilSemuaPegawai ? 'Tidak ada data rekap yang sesuai filter.' : 'Tidak ada pegawai dengan pengajuan pada filter ini.')}
                         </td>
                       </tr>
                     ) : (
