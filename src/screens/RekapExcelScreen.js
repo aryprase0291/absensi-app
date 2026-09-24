@@ -167,6 +167,29 @@ const LABEL_SUMBER = {
 const labelSumber = (sumber) => LABEL_SUMBER[sumber] || LABEL_SUMBER.mesin;
 const adaOnline = (r) => String(r.sumber || '').includes('online');
 
+// PERIODE AKTIF (24 Sep 2026)
+// Tanggal hari ini (zona perangkat) dalam YYYY-MM-DD.
+const hariIniYMD = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+// Rentang yang dipakai untuk sebuah periode: periode yang sedang berjalan
+// dipotong sampai hari ini, periode yang sudah lewat dipakai utuh.
+const rentangPeriode = (p, hariIni) => {
+  if (!p) return { dari: '', sampai: '' };
+  const hi = hariIni || hariIniYMD();
+  const sampai = (hi >= p.mulai && hi < p.selesai) ? hi : p.selesai;
+  return { dari: p.mulai, sampai };
+};
+const periodeBerjalan = (p, hariIni) => !!p && hariIni >= p.mulai && hariIni <= p.selesai;
+// '2026-09-21' -> '21 Sep 2026'
+const BULAN_PENDEK = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const tglPendek = (ymd) => {
+  const b = String(ymd || '').split('-');
+  if (b.length !== 3) return ymd || '';
+  return Number(b[2]) + ' ' + (BULAN_PENDEK[Number(b[1]) - 1] || b[1]) + ' ' + b[0];
+};
+
 const warnaSimbolBoard = (sym) => {
   const k = String(sym || '').trim().toUpperCase();
   return BOARD_WARNA_SIMBOL[k] || 'bg-slate-50 text-slate-600 border-slate-200';
@@ -187,6 +210,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const [filterSumber, setFilterSumber] = useState('ALL'); // 'ALL' | 'mesin' | 'online'
   const [filterTglMulai, setFilterTglMulai] = useState('');
   const [filterTglSelesai, setFilterTglSelesai] = useState('');
+  // Daftar periode aktif dari server (Panel Admin > Periode Absensi),
+  // terbaru dulu. Dikirim bersama jawaban get_rekap_admin.
+  const [periodeList, setPeriodeList] = useState([]);
+  const [hariIniServer, setHariIniServer] = useState('');
 
   const isDateInRange = (tglStr, startStr, endStr) => {
     if (!tglStr) return true;
@@ -316,6 +343,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         setRawRecords(data.rawRecords || []);
         setDashboardData(data.dashboardData || []);
         setKoreksiList(data.koreksiList || []);
+        if (Array.isArray(data.periodeAktif)) setPeriodeList(data.periodeAktif);
+        if (data.hariIni) setHariIniServer(data.hariIni);
 
         // Pemuatan pertama: server menjawab dengan periode aktif dan
         // memantulkan rentangnya. Kotak tanggal diisi supaya admin
@@ -372,6 +401,40 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     }, 400);
     return () => clearTimeout(jeda);
   }, [isAdmin, fetchData, filterTglMulai, filterTglSelesai]);
+
+  // Periode yang cocok dengan rentang tanggal saat ini (kalau ada). Rentang
+  // tanggal tetap satu-satunya sumber kebenaran; pilihan periode hanya
+  // cara cepat mengisinya, jadi semua tab & export otomatis ikut.
+  const hariIni = hariIniServer || hariIniYMD();
+  const periodeTerpilih = useMemo(() => {
+    return periodeList.find(p => {
+      if (filterTglMulai !== p.mulai) return false;
+      const r = rentangPeriode(p, hariIni);
+      return filterTglSelesai === r.sampai || filterTglSelesai === p.selesai;
+    }) || null;
+  }, [periodeList, filterTglMulai, filterTglSelesai, hariIni]);
+
+  // Periode bawaan: yang memuat hari ini, kalau tidak ada yang terbaru.
+  const periodeBawaan = useMemo(() => {
+    return periodeList.find(p => periodeBerjalan(p, hariIni)) || periodeList[0] || null;
+  }, [periodeList, hariIni]);
+
+  const pilihPeriode = useCallback((nilai) => {
+    if (nilai === '__SEMUA__') {
+      setFilterTglMulai('');
+      setFilterTglSelesai('');
+      return;
+    }
+    const p = periodeList.find(x => x.id === nilai);
+    if (!p) return;
+    const r = rentangPeriode(p, hariIni);
+    setFilterTglMulai(r.dari);
+    setFilterTglSelesai(r.sampai);
+  }, [periodeList, hariIni]);
+
+  const labelRentangAktif = (filterTglMulai || filterTglSelesai)
+    ? (tglPendek(filterTglMulai) || 'awal') + ' s/d ' + (tglPendek(filterTglSelesai) || 'akhir')
+    : 'Semua data';
 
   // Unique Departments
   const deptList = useMemo(() => {
@@ -1108,7 +1171,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       XLSX.utils.book_append_sheet(wb, wsKor, 'KOREKSI');
     }
 
-    const filename = mode === 'all'
+    const akhiranPeriode = (filterTglMulai || filterTglSelesai)
+      ? `_PERIODE_${filterTglMulai || 'awal'}_sd_${filterTglSelesai || 'akhir'}`
+      : '_SEMUA_PERIODE';
+    const filename = (mode === 'all'
       ? `DATABASE_ABSENSI_LENGKAP_${timestamp}.xlsx`
       : mode === 'board'
         ? `BOARD_ABSENSI_${timestamp}.xlsx`
@@ -1116,7 +1182,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         ? `REKAP_DASHBOARD_ABSENSI_${timestamp}.xlsx`
         : mode === 'koreksi'
           ? `DATA_KOREKSI_ABSENSI_${timestamp}.xlsx`
-          : `DATA_ABSENSI_DB_FIX_${timestamp}.xlsx`;
+          : `DATA_ABSENSI_DB_FIX_${timestamp}.xlsx`).replace(/\.xlsx$/, akhiranPeriode + '.xlsx');
 
     XLSX.writeFile(wb, filename);
   };
@@ -1329,7 +1395,6 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                     {OPSI_SIMBOL_KOREKSI.map(o => (
                       <option key={o.kode} value={o.kode}>{o.kode} - {o.label.split(' - ')[1]}</option>
                     ))}
-                    <option value="ONL">ONL - Absen Online</option>
                     <option value="Si">Si - Tidak Absen Masuk</option>
                     <option value="So">So - Tidak Absen Pulang</option>
                   </select>
@@ -1366,6 +1431,27 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
           <div className="flex flex-wrap items-end gap-2.5 pt-1 border-t border-slate-100">
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Periode Aktif
+              </label>
+              <div className="flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+                <CalendarDays className="w-3.5 h-3.5 text-blue-500" />
+                <select
+                  value={periodeTerpilih ? periodeTerpilih.id : ((filterTglMulai || filterTglSelesai) ? '__MANUAL__' : '__SEMUA__')}
+                  onChange={e => pilihPeriode(e.target.value)}
+                  className="bg-transparent text-xs font-bold text-blue-800 outline-none cursor-pointer min-w-[220px]"
+                >
+                  {periodeList.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {tglPendek(p.mulai)} – {tglPendek(p.selesai)}{periodeBerjalan(p, hariIni) ? ' (berjalan)' : ''}
+                    </option>
+                  ))}
+                  <option value="__MANUAL__" disabled>Rentang manual</option>
+                  <option value="__SEMUA__">Semua data (tanpa batas)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                 Periode Mulai
               </label>
               <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
@@ -1392,19 +1478,21 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 />
               </div>
             </div>
-            {(filterTglMulai || filterTglSelesai) && (
+            {periodeBawaan && periodeTerpilih?.id !== periodeBawaan.id && (
               <button
-                onClick={() => { setFilterTglMulai(''); setFilterTglSelesai(''); }}
+                onClick={() => pilihPeriode(periodeBawaan.id)}
+                title="Kembali ke periode yang sedang berjalan, sampai hari ini"
                 className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-[11px] font-bold flex items-center gap-1.5 transition"
               >
-                <X className="w-3.5 h-3.5" /> Reset Periode
+                <X className="w-3.5 h-3.5" /> Reset ke Periode Aktif
               </button>
             )}
-            {(filterTglMulai || filterTglSelesai) && (
-              <div className="ml-auto text-[11px] font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                Menampilkan data periode {filterTglMulai || 'awal'} s/d {filterTglSelesai || 'akhir'}
-              </div>
-            )}
+            <div className="ml-auto text-[11px] font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+              Menampilkan data: <span className="text-slate-800">{labelRentangAktif}</span>
+              {periodeTerpilih && (
+                <span className="text-blue-700"> · periode {tglPendek(periodeTerpilih.mulai)} – {tglPendek(periodeTerpilih.selesai)}</span>
+              )}
+            </div>
           </div>
         </div>
 

@@ -5193,6 +5193,11 @@ function handleGetRekapAdmin(data) {
       if (per && per.mulai) {
         dariYMD = per.mulai;
         sampaiYMD = per.selesai || '';
+        // Periode yang sedang berjalan dipotong sampai HARI INI (24 Sep
+        // 2026): hari yang belum terjadi tidak punya data, dan kalau ikut
+        // dihitung, koreksi rentang panjang akan tercacah untuk hari depan.
+        const hariIniYMD = _rekapHariIniYMD_();
+        if (sampaiYMD && hariIniYMD >= dariYMD && hariIniYMD < sampaiYMD) sampaiYMD = hariIniYMD;
       }
     } catch (e) {
       // Periode tidak terbaca bukan alasan menolak melayani — rekap
@@ -5590,8 +5595,28 @@ function handleGetRekapAdmin(data) {
     // memakainya untuk memastikan jawaban yang datang memang milik
     // rentang yang sedang ditampilkan — jawaban lama yang datang
     // terlambat sesudah filter diubah lagi harus dibuang, bukan dipasang.
-    rentang: { dari: dariYMD || '', sampai: sampaiYMD || '' }
+    rentang: { dari: dariYMD || '', sampai: sampaiYMD || '' },
+    // Daftar periode aktif untuk pilihan "Periode" di layar rekap —
+    // ikut dikirim di sini supaya tidak perlu permintaan kedua.
+    periodeAktif: _rekapDaftarPeriode_(),
+    hariIni: _rekapHariIniYMD_()
   });
+}
+
+function _rekapHariIniYMD_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+function _rekapDaftarPeriode_() {
+  try {
+    if (typeof getPeriodeAktifList_ !== 'function') return [];
+    return getPeriodeAktifList_().map(function (p) {
+      return { id: p.id, mulai: p.mulai, selesai: p.selesai, label: p.label };
+    });
+  } catch (e) {
+    console.warn('Daftar periode tidak terbaca: ' + e.message);
+    return [];
+  }
 }
 
 // ================================================================
@@ -5688,8 +5713,7 @@ function _rekapCariOnline_(online, payroll, nama, ymd) {
 /**
  * Simbol hasil gabungan mesin + online. Hanya simbol yang berarti
  * "tidak ada scan" yang diubah; H/T/I/S/C/O dst dibiarkan apa adanya.
- * Aturan online sama dengan handleGetDbAbsen: masuk+pulang = ONL,
- * hanya pulang = Si, hanya masuk = So.
+ * Online lengkap (masuk+pulang) = H, hanya pulang = Si, hanya masuk = So.
  */
 function _rekapSimbolOnline_(simbolMesin, onl) {
   const asli = String(simbolMesin || '').trim();
@@ -5697,7 +5721,10 @@ function _rekapSimbolOnline_(simbolMesin, onl) {
   const adaM = !!(onl && onl.masuk);
   const adaP = !!(onl && onl.pulang);
   if (!adaM && !adaP) return asli;
-  const murniOnline = adaM && adaP ? 'ONL' : (adaM ? 'So' : 'Si');
+  // Online lengkap (masuk + pulang) dicatat 'H' — sama dengan hadir mesin,
+  // supaya Board dan export memakai kode yang sudah dikenal HRD. Asalnya
+  // tetap terbaca dari kolom SUMBER (24 Sep 2026).
+  const murniOnline = adaM && adaP ? 'H' : (adaM ? 'So' : 'Si');
   if (s === '' || s === 'A' || s === 'AC' || s === 'ALPA' || s === 'SISO') return murniOnline;
   if (s === 'SI' && adaM) return 'H';    // mesin tak ada masuk, online ada
   if (s === 'SO' && adaP) return 'H';    // mesin tak ada pulang, online ada
