@@ -4,11 +4,12 @@ import {
   FileSpreadsheet, Download, Edit3, Trash2, Plus, Search,
   Building, RefreshCcw, Check, X, Loader2,
   ShieldAlert, Layers, PieChart, Sparkles, Tag, AlertTriangle,
-  Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays
+  Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
-import { useUrutCari, IsiKepala, TombolResetKolom } from '../components/KolomTabel';
+import { useUrutCari, IsiKepala, TombolResetKolom, tooltipSelTerpotong } from '../components/KolomTabel';
 import {
   susunBoard, boardKeSheet, labelTanggalPendek,
   BOARD_KOLOM_INFO, BOARD_KODE_HITUNG, BOARD_MAKS_HARI
@@ -249,62 +250,62 @@ const isKoreksiRangeOverlaps = (kStart, kEnd, fStart, fEnd) => {
 // `teks` = yang dicocokkan saat mencari (bawaan: String(nilai)).
 const angka = (v) => Number(v) || 0;
 const KOLOM_DASHBOARD = [
-  { key: 'no', label: 'No', aksi: false, align: 'center', kelas: 'w-12' },
-  { key: 'dept', label: 'Dept', nilai: d => d.dept || '' },
-  { key: 'nama', label: 'Nama Pegawai', nilai: d => d.nama || '' },
-  { key: 'jabatan', label: 'Jabatan', nilai: d => d.jabatan || '' },
-  { key: 'payroll', label: 'Payroll', nilai: d => d.payroll || '' },
-  { key: 'sisaCuti', label: 'Sisa Cuti', align: 'center', kelas: 'text-slate-800', nilai: d => angka(d.sisaCuti) },
-  { key: 'cutiDiambil', label: 'Cuti Diambil', align: 'center', kelas: 'text-teal-700', nilai: d => angka(d.cutiDiambil) },
-  { key: 'sakit', label: 'Sakit', align: 'center', kelas: 'text-fuchsia-700', nilai: d => angka(d.sakit) },
-  { key: 'alpa', label: 'Alpa', align: 'center', kelas: 'text-rose-700', nilai: d => angka(d.alpa) },
-  { key: 'ijin', label: 'Ijin', align: 'center', kelas: 'text-blue-700', nilai: d => angka(d.ijin) },
-  { key: 'tdkAbsenMasuk', label: 'Tdk Masuk', align: 'center', kelas: 'text-amber-700', nilai: d => angka(d.tdkAbsenMasuk) },
-  { key: 'tdkAbsenPulang', label: 'Tdk Pulang', align: 'center', kelas: 'text-amber-700', nilai: d => angka(d.tdkAbsenPulang) },
-  { key: 'telat', label: 'Telat', align: 'center', kelas: 'text-orange-700', nilai: d => angka(d.telat) },
-  { key: 'nominalTerlambat', label: 'Nominal Terlambat', align: 'right', kelas: 'text-amber-800',
+  { key: 'no', lebar: 48, label: 'No', aksi: false, align: 'center', kelas: 'w-12' },
+  { key: 'dept', lebar: 150, label: 'Dept', nilai: d => d.dept || '' },
+  { key: 'nama', lebar: 210, label: 'Nama Pegawai', nilai: d => d.nama || '' },
+  { key: 'jabatan', lebar: 130, label: 'Jabatan', nilai: d => d.jabatan || '' },
+  { key: 'payroll', lebar: 90, label: 'Payroll', nilai: d => d.payroll || '' },
+  { key: 'sisaCuti', lebar: 85, label: 'Sisa Cuti', align: 'center', kelas: 'text-slate-800', nilai: d => angka(d.sisaCuti) },
+  { key: 'cutiDiambil', lebar: 100, label: 'Cuti Diambil', align: 'center', kelas: 'text-teal-700', nilai: d => angka(d.cutiDiambil) },
+  { key: 'sakit', lebar: 70, label: 'Sakit', align: 'center', kelas: 'text-fuchsia-700', nilai: d => angka(d.sakit) },
+  { key: 'alpa', lebar: 70, label: 'Alpa', align: 'center', kelas: 'text-rose-700', nilai: d => angka(d.alpa) },
+  { key: 'ijin', lebar: 70, label: 'Ijin', align: 'center', kelas: 'text-blue-700', nilai: d => angka(d.ijin) },
+  { key: 'tdkAbsenMasuk', lebar: 90, label: 'Tdk Masuk', align: 'center', kelas: 'text-amber-700', nilai: d => angka(d.tdkAbsenMasuk) },
+  { key: 'tdkAbsenPulang', lebar: 95, label: 'Tdk Pulang', align: 'center', kelas: 'text-amber-700', nilai: d => angka(d.tdkAbsenPulang) },
+  { key: 'telat', lebar: 70, label: 'Telat', align: 'center', kelas: 'text-orange-700', nilai: d => angka(d.telat) },
+  { key: 'nominalTerlambat', lebar: 130, label: 'Nominal Terlambat', align: 'right', kelas: 'text-amber-800',
     nilai: d => angka(d.nominalTerlambat), teks: d => `${d.nominalTerlambat || 0} ${formatNominal(d.nominalTerlambat || 0)}` },
-  { key: 'aksi', label: 'Kartu Detail', aksi: false, align: 'center' }
+  { key: 'aksi', lebar: 90, label: 'Kartu Detail', aksi: false, align: 'center' }
 ];
 
 const KOLOM_TABEL = [
-  { key: 'noAkun', label: 'No Akun', align: 'center', nilai: r => r.noAkun || '' },
-  { key: 'payroll', label: 'Payroll', align: 'center', nilai: r => r.payroll || '' },
-  { key: 'nama', label: 'Nama', nilai: r => r.nama || '' },
-  { key: 'tanggal', label: 'Tanggal', align: 'center', nilai: r => r.tanggalYMD || '', teks: r => formatDateOnly(r.tanggal || r.tanggalYMD) },
-  { key: 'jamKerja', label: 'Jam Kerja', nilai: r => r.jamKerja || '' },
-  { key: 'mTugas', label: 'M. Tugas', align: 'center', nilai: r => formatTimeValue(r.mTugas) },
-  { key: 'aTugas', label: 'A: Tugas', align: 'center', nilai: r => formatTimeValue(r.aTugas) },
-  { key: 'masuk', label: 'Masuk', align: 'center', kelas: 'text-emerald-800', nilai: r => formatTimeValue(r.masuk) },
-  { key: 'pulang', label: 'Pulang', align: 'center', kelas: 'text-rose-800', nilai: r => formatTimeValue(r.pulang) },
-  { key: 'telat', label: 'Telat', align: 'center', kelas: 'text-amber-800', nilai: r => formatTimeValue(r.telat) },
-  { key: 'pAwal', label: 'P. Awal', align: 'center', nilai: r => formatTimeValue(r.pAwal) },
-  { key: 'bolos', label: 'Bolos', align: 'center', nilai: r => r.bolos || '' },
-  { key: 'tjk', label: 'TJK', align: 'center', kelas: 'font-black text-slate-800', nilai: r => formatTimeValue(r.tjk) },
-  { key: 'id2', label: 'ID2', align: 'center', kelas: 'font-black', nilai: r => r.id2 || '' },
-  { key: 'departemen', label: 'Departemen', nilai: r => r.departemen || '' },
-  { key: 'attTime', label: 'ATT_TIME', align: 'center', nilai: r => formatTimeValue(r.attTime) },
-  { key: 'waktuScan', label: 'Waktu Scan', nilai: r => r.waktuScan || '' },
-  { key: 'week', label: 'Week', align: 'center', nilai: r => r.week || '' },
-  { key: 'nominal', label: 'Nominal', align: 'right',
+  { key: 'noAkun', lebar: 75, label: 'No Akun', align: 'center', nilai: r => r.noAkun || '' },
+  { key: 'payroll', lebar: 80, label: 'Payroll', align: 'center', nilai: r => r.payroll || '' },
+  { key: 'nama', lebar: 180, label: 'Nama', nilai: r => r.nama || '' },
+  { key: 'tanggal', lebar: 95, label: 'Tanggal', align: 'center', nilai: r => r.tanggalYMD || '', teks: r => formatDateOnly(r.tanggal || r.tanggalYMD) },
+  { key: 'jamKerja', lebar: 140, label: 'Jam Kerja', nilai: r => r.jamKerja || '' },
+  { key: 'mTugas', lebar: 75, label: 'M. Tugas', align: 'center', nilai: r => formatTimeValue(r.mTugas) },
+  { key: 'aTugas', lebar: 75, label: 'A: Tugas', align: 'center', nilai: r => formatTimeValue(r.aTugas) },
+  { key: 'masuk', lebar: 70, label: 'Masuk', align: 'center', kelas: 'text-emerald-800', nilai: r => formatTimeValue(r.masuk) },
+  { key: 'pulang', lebar: 75, label: 'Pulang', align: 'center', kelas: 'text-rose-800', nilai: r => formatTimeValue(r.pulang) },
+  { key: 'telat', lebar: 70, label: 'Telat', align: 'center', kelas: 'text-amber-800', nilai: r => formatTimeValue(r.telat) },
+  { key: 'pAwal', lebar: 70, label: 'P. Awal', align: 'center', nilai: r => formatTimeValue(r.pAwal) },
+  { key: 'bolos', lebar: 65, label: 'Bolos', align: 'center', nilai: r => r.bolos || '' },
+  { key: 'tjk', lebar: 65, label: 'TJK', align: 'center', kelas: 'font-black text-slate-800', nilai: r => formatTimeValue(r.tjk) },
+  { key: 'id2', lebar: 60, label: 'ID2', align: 'center', kelas: 'font-black', nilai: r => r.id2 || '' },
+  { key: 'departemen', lebar: 130, label: 'Departemen', nilai: r => r.departemen || '' },
+  { key: 'attTime', lebar: 80, label: 'ATT_TIME', align: 'center', nilai: r => formatTimeValue(r.attTime) },
+  { key: 'waktuScan', lebar: 110, label: 'Waktu Scan', nilai: r => r.waktuScan || '' },
+  { key: 'week', lebar: 65, label: 'Week', align: 'center', nilai: r => r.week || '' },
+  { key: 'nominal', lebar: 85, label: 'Nominal', align: 'right',
     nilai: r => hitungDendaTelat(r.telat, r.nominal) || '',
     teks: r => { const n = hitungDendaTelat(r.telat, r.nominal); return n ? `${n} ${formatNominal(n)}` : ''; } },
-  { key: 'sumber', label: 'Sumber', align: 'center', kelas: 'text-indigo-800', nilai: r => labelSumber(r.sumber).teks },
-  { key: 'koreksi', label: 'Koreksi', align: 'center',
+  { key: 'sumber', lebar: 100, label: 'Sumber', align: 'center', kelas: 'text-indigo-800', nilai: r => labelSumber(r.sumber).teks },
+  { key: 'koreksi', lebar: 70, label: 'Koreksi', align: 'center',
     nilai: r => (r.isKoreksi ? 'Sudah' : ''), teks: r => (r.isKoreksi ? `sudah dikoreksi ${r.koreksiKet || ''}` : 'belum') }
 ];
 
 const KOLOM_KOREKSI = [
-  { key: 'no', label: 'No', aksi: false, align: 'center', kelas: 'w-12' },
-  { key: 'noAkun', label: 'No Akun', nilai: k => k.noAkun || '' },
-  { key: 'payroll', label: 'Payroll', nilai: k => k.payroll || '' },
-  { key: 'nama', label: 'Nama Pegawai', nilai: k => k.nama || '' },
-  { key: 'tglMulai', label: 'Tgl Mulai', nilai: k => k.tglMulai || '', teks: k => formatDateOnly(k.tglMulai) },
-  { key: 'tglSelesai', label: 'Tgl Selesai', nilai: k => k.tglSelesai || k.tglMulai || '', teks: k => formatDateOnly(k.tglSelesai || k.tglMulai) },
-  { key: 'id2', label: 'Status Koreksi (ID2)', align: 'center', nilai: k => k.id2 || '' },
-  { key: 'keterangan', label: 'Keterangan', nilai: k => k.keterangan || '' },
-  { key: 'createdAt', label: 'Diinput', nilai: k => k.createdAt || '' },
-  { key: 'aksi', label: 'Aksi', aksi: false, align: 'center' }
+  { key: 'no', lebar: 48, label: 'No', aksi: false, align: 'center', kelas: 'w-12' },
+  { key: 'noAkun', lebar: 85, label: 'No Akun', nilai: k => k.noAkun || '' },
+  { key: 'payroll', lebar: 90, label: 'Payroll', nilai: k => k.payroll || '' },
+  { key: 'nama', lebar: 200, label: 'Nama Pegawai', nilai: k => k.nama || '' },
+  { key: 'tglMulai', lebar: 100, label: 'Tgl Mulai', nilai: k => k.tglMulai || '', teks: k => formatDateOnly(k.tglMulai) },
+  { key: 'tglSelesai', lebar: 100, label: 'Tgl Selesai', nilai: k => k.tglSelesai || k.tglMulai || '', teks: k => formatDateOnly(k.tglSelesai || k.tglMulai) },
+  { key: 'id2', lebar: 130, label: 'Status Koreksi (ID2)', align: 'center', nilai: k => k.id2 || '' },
+  { key: 'keterangan', lebar: 280, label: 'Keterangan', nilai: k => k.keterangan || '' },
+  { key: 'createdAt', lebar: 150, label: 'Diinput', nilai: k => k.createdAt || '' },
+  { key: 'aksi', lebar: 90, label: 'Aksi', aksi: false, align: 'center' }
 ];
 
 // Kolom info board, urutannya sama dengan BOARD_KOLOM_INFO.
@@ -320,11 +321,17 @@ const KOLOM_BOARD_INFO = [
   { key: 'hariKerja', label: 'HARI KERJA', nilai: o => angka(o.hariKerja) }
 ];
 
+// Lebar minimum tabel = jumlah lebar kolom. Di layar lebar kolom ikut
+// melebar sampai penuh; di layar sempit tabel digulir ke samping.
+const lebarTotal = (kolom) => kolom.reduce((n, k) => n + (k.lebar || 80), 0);
+
 // Kepala tabel yang menempel di atas saat tabel digulir.
 const TH_STICKY = 'sticky top-0 z-10 align-top shadow-[inset_0_-1px_0_rgb(226,232,240)]';
 
 export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard' }) {
-  const [activeTab, setActiveTab] = useState(initialTab); // 'tabel' | 'koreksi' | 'dashboard' | 'board'
+  const [activeTab, setActiveTab] = useState(initialTab);
+  // Mode layar penuh: tabel aktif menutupi seluruh layar (Esc untuk keluar).
+  const [layarPenuh, setLayarPenuh] = useState(false); // 'tabel' | 'koreksi' | 'dashboard' | 'board'
   const [loading, setLoading] = useState(false);
   const [rawRecords, setRawRecords] = useState([]);
   const [dashboardData, setDashboardData] = useState([]);
@@ -881,6 +888,18 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const urutKoreksi = useUrutCari(filteredKoreksi, KOLOM_KOREKSI);
   const barisTabel = urutTabel.rows;
   useEffect(() => { setCurrentPage(1); }, [urutTabel.urut, urutTabel.cari]);
+  useEffect(() => { setLayarPenuh(false); }, [activeTab]);
+  useEffect(() => {
+    if (!layarPenuh) return undefined;
+    const tutup = (e) => { if (e.key === 'Escape') setLayarPenuh(false); };
+    window.addEventListener('keydown', tutup);
+    const semula = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', tutup);
+      document.body.style.overflow = semula;
+    };
+  }, [layarPenuh]);
 
   // Summary Metrics
   const metrics = useMemo(() => {
@@ -1582,9 +1601,26 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 </div>
               )}
 
+              <button
+                type="button"
+                onClick={() => setLayarPenuh(v => !v)}
+                title={layarPenuh ? 'Keluar layar penuh (Esc)' : 'Tampilkan tabel layar penuh'}
+                className={`p-2 rounded-xl border transition active:scale-95 ${layarPenuh ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}
+              >
+                {layarPenuh ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
             </div>
           </div>
   );
+
+  // Kartu tabel & area gulirnya — normal atau layar penuh.
+  // z-40: di atas header halaman (z-30), di bawah modal (z-50).
+  const kelasKartu = layarPenuh
+    ? 'fixed inset-0 z-40 bg-white flex flex-col overflow-hidden'
+    : 'bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col';
+  const kelasGulir = layarPenuh
+    ? 'overflow-auto w-full flex-1 min-h-0'
+    : 'overflow-auto w-full max-h-[calc(100vh-200px)] min-h-[420px]';
 
   return (
     <div className="min-h-screen bg-slate-100 pb-20 font-sans w-full">
@@ -1702,7 +1738,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       </header>
 
       {/* MAIN CONTAINER - FULL WIDTH DESKTOP */}
-      <main className="w-full px-3 sm:px-6 lg:px-8 pt-5 space-y-5">
+      <main className="w-full px-2 sm:px-3 lg:px-4 pt-4 space-y-4">
 
         {/* SERVER ERROR BANNER */}
         {serverError && (
@@ -1857,7 +1893,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             </div>
 
             {/* REKAP TABLE */}
-            <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full">
+            <div className={kelasKartu}>
               <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
@@ -1880,12 +1916,15 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 {barPencarian}
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutDashboard} /></div>
               </div>
-              <div className="overflow-auto w-full max-h-[72vh]">
-                <table className="w-full text-left text-xs border-collapse min-w-max">
+              <div className={kelasGulir}>
+                <table onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(KOLOM_DASHBOARD) }}>
+                  <colgroup>
+                    {KOLOM_DASHBOARD.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
+                  </colgroup>
                   <thead>
                     <tr className="text-slate-600 font-bold text-[10px] whitespace-nowrap">
                       {KOLOM_DASHBOARD.map(k => (
-                        <th key={k.key} className={`p-3 border-r border-slate-200/50 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
+                        <th key={k.key} className={`px-2 py-2.5 border-r border-slate-200/50 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutDashboard} align={k.align} />
                         </th>
                       ))}
@@ -1955,10 +1994,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                                   setDetailActiveCategory('TELAT');
                                   setShowDetailNominal(true);
                                 }}
-                                className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200/80 font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                                title="View — rincian & capture kartu"
+                                aria-label="View"
+                                className="p-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200/80 transition active:scale-95 shadow-sm"
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>View</span>
+                                <Eye className="w-4 h-4" />
                               </button>
                               {/* Baris dashboard adalah RINGKASAN satu orang, bukan satu
                                   hari — jadi tanggalnya diambil dari rentang yang sedang
@@ -1967,10 +2007,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                                 type="button"
                                 onClick={() => bukaKoreksiUntuk(d, filterTglMulai, filterTglSelesai)}
                                 title="Buat koreksi untuk pegawai ini"
-                                className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white border border-amber-200/80 font-bold text-[11px] flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+                                aria-label="Koreksi"
+                                className="p-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-600 hover:text-white border border-amber-200/80 transition active:scale-95 shadow-sm"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
-                                <span>Koreksi</span>
+                                <Edit3 className="w-4 h-4" />
                               </button>
                             </div>
                           </td>
@@ -1987,7 +2027,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         {/* TAB BOARD: MATRIKS ABSENSI HARIAN (mengikuti sheet BOARD template) */}
         {activeTab === 'board' && (
           <div className="space-y-4 w-full">
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm w-full overflow-hidden">
+            <div className={kelasKartu}>
 
               <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 <div className="min-w-0">
@@ -2045,8 +2085,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
               {/* MATRIKS. Header dua baris dan empat kolom kiri menempel saat
                   digulir — pengganti freeze pane, yang tidak bisa ditulis ke
                   berkas xlsx oleh pustaka edisi komunitas. */}
-              <div className="p-4 sm:p-5">
-                <div className="overflow-auto max-h-[70vh] border border-slate-200 rounded-xl">
+              <div className={layarPenuh ? 'p-3 flex-1 min-h-0 flex flex-col' : 'p-4 sm:p-5'}>
+                <div className={`overflow-auto border border-slate-200 rounded-xl ${layarPenuh ? 'flex-1 min-h-0' : 'max-h-[calc(100vh-200px)] min-h-[420px]'}`}>
                   <table className="text-left border-collapse min-w-max text-[11px]">
                     <thead>
                       <tr className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
@@ -2054,7 +2094,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                           <th
                             key={h}
                             rowSpan={2}
-                            style={i < 4 ? { left: BOARD_OFFSET_KIRI[i], minWidth: BOARD_LEBAR_INFO[i], maxWidth: BOARD_LEBAR_INFO[i] } : { minWidth: BOARD_LEBAR_INFO[i] }}
+                            style={i < 4 ? { left: BOARD_OFFSET_KIRI[i], minWidth: BOARD_LEBAR_INFO[i], maxWidth: BOARD_LEBAR_INFO[i] } : { minWidth: BOARD_LEBAR_INFO[i], maxWidth: BOARD_LEBAR_INFO[i] }}
                             className={`p-2 border-r border-b border-slate-200 bg-slate-100 sticky top-0 align-middle ${i < 4 ? 'z-30' : 'z-20'}`}
                           >
                             <IsiKepala kolom={KOLOM_BOARD_INFO[i] || { key: h, label: h, aksi: false }} state={urutBoard} />
@@ -2116,15 +2156,30 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                       ) : (
                         urutBoard.rows.map(o => (
                           <tr key={o.payroll + '|' + o.nama} className="hover:bg-blue-50/40 transition-colors">
-                            <td style={{ left: BOARD_OFFSET_KIRI[0] }} className="p-2 border-r border-slate-100 text-center font-mono text-slate-400 bg-white sticky z-10">{o.no}</td>
-                            <td style={{ left: BOARD_OFFSET_KIRI[1] }} className="p-2 border-r border-slate-100 font-mono text-slate-600 bg-white sticky z-10 whitespace-nowrap">{o.payroll || '-'}</td>
-                            <td style={{ left: BOARD_OFFSET_KIRI[2] }} className="p-2 border-r border-slate-100 text-slate-400 bg-white sticky z-10 text-center">{o.hrd || '-'}</td>
-                            <td style={{ left: BOARD_OFFSET_KIRI[3] }} className="p-2 border-r border-slate-100 font-bold text-slate-900 bg-white sticky z-10 whitespace-nowrap">{o.nama || '-'}</td>
-                            <td className="p-2 border-r border-slate-100 text-slate-600 whitespace-nowrap">{o.pt || '-'}</td>
-                            <td className="p-2 border-r border-slate-100 text-slate-400 text-center">{o.tglMasuk || '-'}</td>
-                            <td className="p-2 border-r border-slate-100 text-slate-500 whitespace-nowrap">{o.jabatan || '-'}</td>
-                            <td className="p-2 border-r border-slate-100 text-slate-400 whitespace-nowrap">{o.atasan || '-'}</td>
-                            <td className="p-2 border-r border-slate-100 text-center font-bold text-slate-800 bg-slate-50/60">{o.hariKerja}</td>
+                            {/* Kolom info: lebar dikunci & teks dipotong (…) supaya
+                                kolom yang menempel di kiri tidak bergeser. */}
+                            {[
+                              ['no', o.no, 'text-center font-mono text-slate-400'],
+                              ['payroll', o.payroll, 'font-mono text-slate-600'],
+                              ['hrd', o.hrd, 'text-slate-400 text-center'],
+                              ['nama', o.nama, 'font-bold text-slate-900'],
+                              ['pt', o.pt, 'text-slate-600'],
+                              ['tglMasuk', o.tglMasuk, 'text-slate-400 text-center'],
+                              ['jabatan', o.jabatan, 'text-slate-500'],
+                              ['atasan', o.atasan, 'text-slate-400'],
+                              ['hariKerja', o.hariKerja, 'text-center font-bold text-slate-800 bg-slate-50/60']
+                            ].map(([key, isi, kelas], i) => (
+                              <td
+                                key={key}
+                                title={isi === undefined || isi === null || isi === '' ? '' : String(isi)}
+                                style={i < 4
+                                  ? { left: BOARD_OFFSET_KIRI[i], minWidth: BOARD_LEBAR_INFO[i], maxWidth: BOARD_LEBAR_INFO[i] }
+                                  : { minWidth: BOARD_LEBAR_INFO[i], maxWidth: BOARD_LEBAR_INFO[i] }}
+                                className={`p-2 border-r border-slate-100 whitespace-nowrap overflow-hidden text-ellipsis ${kelas} ${i < 4 ? 'bg-white sticky z-10' : ''}`}
+                              >
+                                {isi === undefined || isi === null || isi === '' ? (key === 'hariKerja' ? isi : '-') : isi}
+                              </td>
+                            ))}
 
                             {boardData.tanggal.map((t, i) => {
                               const sel = o.sel[i];
@@ -2169,7 +2224,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         {/* TAB 2: TABEL DATA HARIAN (DB_FIX) - EXACT 19 COLUMNS FULL WIDTH */}
         {activeTab === 'tabel' && (
           <div className="space-y-4 w-full">
-            <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full">
+            <div className={kelasKartu}>
               <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
                 <div>
                   <div className="flex items-center gap-2">
@@ -2195,12 +2250,15 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 {barPencarian}
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutTabel} /></div>
               </div>
-              <div className="overflow-auto w-full max-h-[72vh]">
-                <table className="w-full text-left text-xs border-collapse min-w-max">
+              <div className={kelasGulir}>
+                <table onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(KOLOM_TABEL) }}>
+                  <colgroup>
+                    {KOLOM_TABEL.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
+                  </colgroup>
                   <thead>
                     <tr className="text-slate-700 font-bold text-[10.5px] whitespace-nowrap">
                       {KOLOM_TABEL.map(k => (
-                        <th key={k.key} className={`px-3 py-2.5 border-r border-emerald-200/50 bg-emerald-50 ${TH_STICKY} ${k.kelas || ''}`}>
+                        <th key={k.key} className={`px-2 py-2.5 border-r border-emerald-200/50 bg-emerald-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutTabel} align={k.align} />
                         </th>
                       ))}
@@ -2227,18 +2285,18 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                         const nominalDenda = hitungDendaTelat(r.telat, r.nominal);
                         return (
                           <tr key={idx} className={`hover:bg-blue-50/40 transition-colors whitespace-nowrap text-[12px] ${r.isKoreksi ? 'bg-amber-50/30' : ''}`}>
-                            <td className="px-3 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{r.noAkun || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800 border-r border-slate-100">{r.payroll || '-'}</td>
-                            <td className="px-3 py-2.5 font-bold text-slate-900 border-r border-slate-100">{r.nama || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-slate-700 border-r border-slate-100">{formatDateOnly(r.tanggal || r.tanggalYMD)}</td>
-                            <td className="px-3 py-2.5 text-slate-700 font-mono border-r border-slate-100">{r.jamKerja || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.mTugas) || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.aTugas) || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono font-bold text-emerald-600 border-r border-slate-100">{formatTimeValue(r.masuk) || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono font-bold text-rose-600 border-r border-slate-100">{formatTimeValue(r.pulang) || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{r.noAkun || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono font-bold text-slate-800 border-r border-slate-100">{r.payroll || '-'}</td>
+                            <td className="px-2 py-2.5 font-bold text-slate-900 border-r border-slate-100">{r.nama || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-slate-700 border-r border-slate-100">{formatDateOnly(r.tanggal || r.tanggalYMD)}</td>
+                            <td className="px-2 py-2.5 text-slate-700 font-mono border-r border-slate-100">{r.jamKerja || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.mTugas) || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.aTugas) || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono font-bold text-emerald-600 border-r border-slate-100">{formatTimeValue(r.masuk) || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono font-bold text-rose-600 border-r border-slate-100">{formatTimeValue(r.pulang) || '-'}</td>
                             
                             {/* TELAT CELL WITH HIGHLIGHT */}
-                            <td className="px-3 py-2.5 text-center font-mono border-r border-slate-100">
+                            <td className="px-2 py-2.5 text-center font-mono border-r border-slate-100">
                               {hasTelat ? (
                                 <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded border border-emerald-300">
                                   {formatTimeValue(r.telat)}
@@ -2248,24 +2306,24 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                               )}
                             </td>
 
-                            <td className="px-3 py-2.5 text-center font-mono text-slate-500 border-r border-slate-100">{formatTimeValue(r.pAwal) || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-slate-500 border-r border-slate-100">{r.bolos || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-800 border-r border-slate-100">{formatTimeValue(r.tjk) || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-slate-500 border-r border-slate-100">{formatTimeValue(r.pAwal) || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-slate-500 border-r border-slate-100">{r.bolos || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono font-bold text-slate-800 border-r border-slate-100">{formatTimeValue(r.tjk) || '-'}</td>
                             
                             {/* ID2 (STATUS SYMBOL) */}
-                            <td className="px-3 py-2.5 text-center border-r border-slate-100">
+                            <td className="px-2 py-2.5 text-center border-r border-slate-100">
                               <span className={`px-2.5 py-0.5 rounded text-[11px] font-black border ${opt ? opt.color : warnaSimbolBoard(r.id2)}`}>
                                 {r.id2 || '-'}
                               </span>
                             </td>
 
-                            <td className="px-3 py-2.5 text-slate-700 border-r border-slate-100">{r.departemen || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.attTime) || '-'}</td>
-                            <td className="px-3 py-2.5 font-mono text-slate-600 border-r border-slate-100">{r.waktuScan || '-'}</td>
-                            <td className="px-3 py-2.5 text-center font-semibold text-slate-600 border-r border-slate-100">{r.week || '-'}</td>
+                            <td className="px-2 py-2.5 text-slate-700 border-r border-slate-100">{r.departemen || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.attTime) || '-'}</td>
+                            <td className="px-2 py-2.5 font-mono text-slate-600 border-r border-slate-100">{r.waktuScan || '-'}</td>
+                            <td className="px-2 py-2.5 text-center font-semibold text-slate-600 border-r border-slate-100">{r.week || '-'}</td>
                             
                             {/* NOMINAL (DENDA TELAT) */}
-                            <td className="px-3 py-2.5 text-right font-mono font-bold text-amber-700 border-r border-slate-100">
+                            <td className="px-2 py-2.5 text-right font-mono font-bold text-amber-700 border-r border-slate-100">
                               {nominalDenda > 0 ? (
                                 <span>{formatNominal(nominalDenda)}</span>
                               ) : (
@@ -2274,7 +2332,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                             </td>
 
                             {/* SUMBER (MESIN / ONLINE) */}
-                            <td className="px-3 py-2.5 text-center border-r border-slate-100">
+                            <td className="px-2 py-2.5 text-center border-r border-slate-100">
                               <span
                                 className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${labelSumber(r.sumber).warna}`}
                                 title={adaOnline(r) ? `Absen online: masuk ${r.onlineMasuk || '-'} / pulang ${r.onlinePulang || '-'}` : 'Data mesin absensi'}
@@ -2288,23 +2346,23 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                               )}
                             </td>
 
-                            <td className="px-3 py-2.5 text-center">
+                            <td className="px-2 py-2.5 text-center">
                               <button
                                 type="button"
                                 onClick={() => bukaKoreksiUntuk(r, r.tanggalYMD, r.tanggalYMD)}
                                 title={r.isKoreksi
                                   ? ('Sudah dikoreksi' + (r.koreksiKet ? ': ' + r.koreksiKet : '') + ' \u2014 klik untuk mengubah')
                                   : 'Koreksi baris ini'}
-                                className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md border transition active:scale-95 ${
+                                aria-label="Koreksi"
+                                className={`inline-flex items-center justify-center p-1.5 rounded-lg border transition active:scale-95 ${
                                   r.isKoreksi
                                     ? 'text-amber-700 bg-amber-100/80 border-amber-300 hover:bg-amber-200'
                                     : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-blue-600 hover:text-white hover:border-blue-600'
                                 }`}
                               >
                                 {r.isKoreksi
-                                  ? <Sparkles className="w-3 h-3" />
-                                  : <Edit3 className="w-3 h-3" />}
-                                <span>Koreksi</span>
+                                  ? <Sparkles className="w-4 h-4" />
+                                  : <Edit3 className="w-4 h-4" />}
                               </button>
                             </td>
                           </tr>
@@ -2349,7 +2407,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         {/* TAB 3: KOREKSI DATA ABSENSI */}
         {activeTab === 'koreksi' && (
           <div className="space-y-4 w-full">
-            <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full">
+            <div className={kelasKartu}>
               <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
@@ -2395,12 +2453,15 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 {barPencarian}
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutKoreksi} /></div>
               </div>
-              <div className="overflow-auto w-full max-h-[72vh]">
-                <table className="w-full text-left text-xs border-collapse min-w-max">
+              <div className={kelasGulir}>
+                <table onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(KOLOM_KOREKSI) }}>
+                  <colgroup>
+                    {KOLOM_KOREKSI.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
+                  </colgroup>
                   <thead>
                     <tr className="text-slate-600 font-bold text-[10px] whitespace-nowrap">
                       {KOLOM_KOREKSI.map(k => (
-                        <th key={k.key} className={`p-3 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
+                        <th key={k.key} className={`px-2 py-2.5 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutKoreksi} align={k.align} />
                         </th>
                       ))}

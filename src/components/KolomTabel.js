@@ -93,7 +93,7 @@ export function IsiKepala({ kolom, state, align = 'left' }) {
   const rata = align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start';
 
   if (kolom.aksi === false) {
-    return <div className={`flex items-center ${rata} h-full`}>{kolom.label}</div>;
+    return <div className={`flex items-center ${rata} h-full min-w-0`} title={kolom.label}><span className="truncate">{kolom.label}</span></div>;
   }
 
   const aktif = urut.key === kolom.key;
@@ -101,14 +101,14 @@ export function IsiKepala({ kolom, state, align = 'left' }) {
   const nilaiCari = cari[kolom.key] || '';
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5 min-w-0">
       <button
         type="button"
         onClick={() => toggleUrut(kolom.key)}
         title={!aktif ? 'Urutkan A-Z' : urut.arah === 'asc' ? 'Urutkan Z-A' : 'Kembali ke urutan asli'}
-        className={`flex items-center gap-1 ${rata} uppercase tracking-wider hover:text-blue-700 transition ${aktif ? 'text-blue-700' : ''}`}
+        className={`flex items-center gap-1 min-w-0 ${rata} uppercase tracking-wider hover:text-blue-700 transition ${aktif ? 'text-blue-700' : ''}`}
       >
-        <span>{kolom.label}</span>
+        <span className="truncate" title={kolom.label}>{kolom.label}</span>
         <Ikon className={`w-3 h-3 shrink-0 ${aktif ? 'opacity-100' : 'opacity-40'}`} />
       </button>
       <div className="relative">
@@ -117,7 +117,7 @@ export function IsiKepala({ kolom, state, align = 'left' }) {
           value={nilaiCari}
           onChange={e => setCariKolom(kolom.key, e.target.value)}
           placeholder="Cari…"
-          className={`w-full min-w-[56px] pl-1.5 ${nilaiCari ? 'pr-5' : 'pr-1.5'} py-1 text-[10px] font-medium normal-case tracking-normal text-slate-700 rounded-md border outline-none transition ${
+          className={`w-full min-w-0 pl-1.5 ${nilaiCari ? 'pr-5' : 'pr-1.5'} py-1 text-[10px] font-medium normal-case tracking-normal text-slate-700 rounded-md border outline-none transition ${
             nilaiCari ? 'border-blue-400 bg-blue-50/60' : 'border-slate-200 bg-white/80 focus:border-blue-400'
           }`}
         />
@@ -149,4 +149,12 @@ export function TombolResetKolom({ state }) {
       <X className="w-3.5 h-3.5" /> Reset urut/cari kolom
     </button>
   );
+}
+
+// Tooltip otomatis: sel yang teksnya terpotong (…) menampilkan isi
+// lengkapnya saat kursor diarahkan. Pasang di <table onMouseOver>.
+export function tooltipSelTerpotong(e) {
+  const td = e.target && e.target.closest ? e.target.closest('td') : null;
+  if (!td || td.title) return;
+  if (td.scrollWidth > td.clientWidth) td.title = (td.innerText || '').trim();
 }

@@ -52,3 +52,18 @@ html, body {
 .animate-soft-float {
   animation: softFloat 3s ease-in-out infinite;
 }
+
+/* Tabel di layar Rekapitulasi (RekapExcelScreen): lebar kolom dikunci
+   lewat <colgroup>, teks yang kepanjangan dipotong dengan "…" supaya
+   tidak mendorong kolom lain. Isi lengkap tetap bisa dilihat lewat
+   tooltip (title) atau kartu detail. */
+.tabel-rekap {
+  table-layout: fixed;
+  width: 100%;
+}
+.tabel-rekap th,
+.tabel-rekap td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
