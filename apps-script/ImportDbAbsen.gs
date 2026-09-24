@@ -150,6 +150,8 @@ function _importNamaSheetValid(nama) {
 // =======================================================
 
 function handleImportDbAbsen(data) {
+  // Isi dbabsen akan berubah -> simpanan rekap lama tidak berlaku lagi.
+  if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_();
   const sessionId = String(data.sessionId || '').trim();
   const chunkIndex = Number(data.chunkIndex);
   const totalChunks = Number(data.totalChunks);

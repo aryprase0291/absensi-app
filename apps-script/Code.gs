@@ -4871,6 +4871,12 @@ function onEdit(e) {
   
   const sheet = e.source.getActiveSheet();
   const sheetName = sheet.getName();
+
+  // Edit tangan di dbabsen / KOREKSI / Users mengubah isi rekap -> simpanan
+  // rekap admin dibatalkan supaya perubahan langsung terlihat.
+  if (sheetName === 'dbabsen' || sheetName === SHEET_KOREKSI || sheetName === SHEET_USERS) {
+    try { rekapCacheBatalkan_(); } catch (err) { /* abaikan */ }
+  }
   
   // Hanya jalankan jika sheet yang diedit adalah 'dbabsen'
   if (sheetName === "dbabsen") {
@@ -5123,6 +5129,7 @@ function handleSaveKoreksi(data) {
     }
   }
 
+  rekapCacheBatalkan_();
   if (foundRow > 0) {
     sheet.getRange(foundRow, 1, 1, 9).setValues([[id, noAkun, payroll, nama, tglMulai, tglSelesai, id2, keterangan, nowStr]]);
     return responseJSON({ result: 'success', message: 'Koreksi berhasil diperbarui.' });
@@ -5139,6 +5146,7 @@ function handleDeleteKoreksi(data) {
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === targetId) {
       sheet.deleteRow(i + 1);
+      rekapCacheBatalkan_();
       return responseJSON({ result: 'success', message: 'Data koreksi berhasil dihapus.' });
     }
   }
@@ -5206,6 +5214,16 @@ function handleGetRekapAdmin(data) {
     }
   }
 
+  // SIMPANAN HASIL REKAP (24 Sep 2026). Lihat _rekapCacheKunci_.
+  // Tombol "Refresh Data" mengirim segarkan=1 -> selalu hitung ulang.
+  const kunciCache = _rekapCacheKunci_(dariYMD, sampaiYMD);
+  if (kunciCache && String((data && data.segarkan) || '') !== '1') {
+    const tersimpan = _rekapCacheAmbil_(kunciCache);
+    if (tersimpan) {
+      return ContentService.createTextOutput(tersimpan).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   const sheetDb = SS.getSheetByName(SHEET_DB_ABSEN);
   let rowsDb = null;
   if (typeof sbDbAbsenAktif === 'function' && sbDbAbsenAktif()) {
@@ -5221,7 +5239,9 @@ function handleGetRekapAdmin(data) {
     // menarik semuanya apa pun yang terjadi. Penyaringannya karena itu
     // dilakukan sesudahnya: bukan untuk menghemat pembacaan, tapi supaya
     // angka yang keluar dari kedua jalur SAMA PERSIS.
-    const semuaSheet = sheetDb ? sheetDb.getDataRange().getValues() : [];
+    // 20 kolom (A..T) — hanya itu yang dipakai loop di bawah. Dulu
+    // getDataRange menarik 49 kolom x seluruh baris.
+    const semuaSheet = sheetDb ? bacaSheet(sheetDb, 20) : [];
     if (!dariYMD && !sampaiYMD) {
       rowsDb = semuaSheet;
     } else {
@@ -5288,7 +5308,11 @@ function handleGetRekapAdmin(data) {
 
   // 3. Ambil data Users / Master Pegawai untuk Dept, Jabatan, Sisa Cuti
   const sheetUsers = SS.getSheetByName(SHEET_USERS);
-  const rowsUsers = sheetUsers ? sheetUsers.getDataRange().getValues() : [];
+  // 14 kolom (A..N), bukan getDataRange: kolom O & P berisi VLOOKUP ke
+  // Sheet7 dan membacanya memicu recalc formula seluruh baris — alasan
+  // yang sama dengan handleLogin/hitungStats. Kolom terjauh yang dipakai
+  // di sini index 10.
+  const rowsUsers = sheetUsers ? bacaSheet(sheetUsers, 14) : [];
   const petaCuti = typeof getPetaCutiCached === 'function' ? getPetaCutiCached() : {};
   const userMap = {};
   for (let u = 1; u < rowsUsers.length; u++) {
@@ -5586,7 +5610,7 @@ function handleGetRekapAdmin(data) {
   });
   dashboardList.sort((a, b) => (a.dept || '').localeCompare(b.dept || '') || (a.nama || '').localeCompare(b.nama || ''));
 
-  return responseJSON({
+  const teksJawaban = JSON.stringify({
     result: 'success',
     rawRecords: dbRecords,
     dashboardData: dashboardList,
@@ -5601,6 +5625,90 @@ function handleGetRekapAdmin(data) {
     periodeAktif: _rekapDaftarPeriode_(),
     hariIni: _rekapHariIniYMD_()
   });
+  if (kunciCache) _rekapCacheSimpan_(kunciCache, teksJawaban, sampaiYMD);
+  return ContentService.createTextOutput(teksJawaban).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ================================================================
+// SIMPANAN HASIL REKAP (24 Sep 2026)
+//
+// Rekap satu periode penuh (±1.700 baris mesin + absen online +
+// koreksi) butuh beberapa detik: 2 panggilan HTTPS ke Supabase, baca
+// sheet Absensi/Users/KOREKSI, lalu pemetaan. Admin sering berpindah
+// periode bolak-balik atau tab, dan setiap kali semuanya dihitung ulang.
+//
+// Hasil JSON-nya disimpan di CacheService (gzip + base64, dipotong
+// 90 KB per kunci karena batas 100 KB per nilai). Kuncinya memuat:
+//   - rentang tanggal,
+//   - REKAP_VERSI — dinaikkan setiap koreksi disimpan/dihapus dan
+//     setiap import dbabsen, jadi perubahan itu langsung terlihat,
+//   - jumlah baris sheet Absensi — absen online baru otomatis membuat
+//     kunci baru.
+// Masa berlaku: 2 menit untuk rentang yang memuat hari ini, 30 menit
+// untuk periode yang sudah lewat. Tombol Refresh selalu melewatinya.
+// Kalau CacheService gagal apa pun sebabnya, rekap dihitung biasa.
+// ================================================================
+const REKAP_CACHE_POTONGAN = 90000;
+
+function _rekapCacheKunci_(dari, sampai) {
+  try {
+    const versi = PropertiesService.getScriptProperties().getProperty('REKAP_VERSI') || '0';
+    const sh = SS.getSheetByName(SHEET_ABSENSI);
+    const barisAbsensi = sh ? sh.getLastRow() : 0;
+    return 'rekap1_' + versi + '_' + barisAbsensi + '_' + (dari || 'x') + '_' + (sampai || 'x');
+  } catch (e) {
+    return '';
+  }
+}
+
+/** Panggil setiap kali data yang membentuk rekap berubah di luar sheet Absensi. */
+function rekapCacheBatalkan_() {
+  try {
+    PropertiesService.getScriptProperties().setProperty('REKAP_VERSI', String(new Date().getTime()));
+  } catch (e) {
+    console.warn('REKAP_VERSI gagal dinaikkan: ' + e.message);
+  }
+}
+
+function _rekapCacheAmbil_(kunci) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const n = Number(cache.get(kunci + '_n') || 0);
+    if (!n) return null;
+    const nama = [];
+    for (let i = 0; i < n; i++) nama.push(kunci + '_' + i);
+    const isi = cache.getAll(nama);
+    let b64 = '';
+    for (let i = 0; i < n; i++) {
+      const bagian = isi[kunci + '_' + i];
+      if (bagian === undefined || bagian === null) return null;
+      b64 += bagian;
+    }
+    return Utilities.ungzip(
+      Utilities.newBlob(Utilities.base64Decode(b64), 'application/x-gzip')
+    ).getDataAsString();
+  } catch (e) {
+    return null;
+  }
+}
+
+function _rekapCacheSimpan_(kunci, teks, sampaiYMD) {
+  try {
+    const b64 = Utilities.base64Encode(
+      Utilities.gzip(Utilities.newBlob(teks, 'application/json')).getBytes()
+    );
+    const potongan = Math.ceil(b64.length / REKAP_CACHE_POTONGAN);
+    if (potongan > 60) return; // terlalu besar (rentang "semua data") -> tidak disimpan
+    const tulis = {};
+    for (let i = 0; i < potongan; i++) {
+      tulis[kunci + '_' + i] = b64.substring(i * REKAP_CACHE_POTONGAN, (i + 1) * REKAP_CACHE_POTONGAN);
+    }
+    tulis[kunci + '_n'] = String(potongan);
+    const berjalan = !sampaiYMD || sampaiYMD >= _rekapHariIniYMD_();
+    CacheService.getScriptCache().putAll(tulis, berjalan ? 120 : 1800);
+  } catch (e) {
+    console.warn('Simpanan rekap gagal ditulis: ' + e.message);
+  }
 }
 
 function _rekapHariIniYMD_() {

@@ -195,6 +195,38 @@ const warnaSimbolBoard = (sym) => {
   return BOARD_WARNA_SIMBOL[k] || 'bg-slate-50 text-slate-600 border-slate-200';
 };
 
+// Fungsi murni di luar komponen: kalau didefinisikan di dalam, keduanya
+// dibuat ulang setiap render dan membuat useMemo penyaring tanggal (lalu
+// seluruh turunannya, termasuk Board) dihitung ulang di setiap ketikan.
+const isDateInRange = (tglStr, startStr, endStr) => {
+  if (!tglStr) return true;
+  if (!startStr && !endStr) return true;
+  const d = new Date(String(tglStr).slice(0, 10));
+  if (isNaN(d.getTime())) return true;
+  if (startStr) {
+    const s = new Date(startStr);
+    if (!isNaN(s.getTime()) && d < s) return false;
+  }
+  if (endStr) {
+    const e = new Date(endStr);
+    if (!isNaN(e.getTime()) && d > e) return false;
+  }
+  return true;
+};
+
+const isKoreksiRangeOverlaps = (kStart, kEnd, fStart, fEnd) => {
+  if (!fStart && !fEnd) return true;
+  const ks = kStart ? new Date(String(kStart).slice(0, 10)) : null;
+  const ke = kEnd ? new Date(String(kEnd).slice(0, 10)) : (ks ? new Date(ks) : null);
+  const fs = fStart ? new Date(fStart) : null;
+  const fe = fEnd ? new Date(fEnd) : null;
+  if (!ks || isNaN(ks.getTime())) return true;
+  const effKe = (ke && !isNaN(ke.getTime())) ? ke : ks;
+  const effFs = (fs && !isNaN(fs.getTime())) ? fs : new Date(-8640000000000000);
+  const effFe = (fe && !isNaN(fe.getTime())) ? fe : new Date(8640000000000000);
+  return ks <= effFe && effKe >= effFs;
+};
+
 export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard' }) {
   const [activeTab, setActiveTab] = useState(initialTab); // 'tabel' | 'koreksi' | 'dashboard' | 'board'
   const [loading, setLoading] = useState(false);
@@ -215,34 +247,6 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const [periodeList, setPeriodeList] = useState([]);
   const [hariIniServer, setHariIniServer] = useState('');
 
-  const isDateInRange = (tglStr, startStr, endStr) => {
-    if (!tglStr) return true;
-    if (!startStr && !endStr) return true;
-    const d = new Date(String(tglStr).slice(0, 10));
-    if (isNaN(d.getTime())) return true;
-    if (startStr) {
-      const s = new Date(startStr);
-      if (!isNaN(s.getTime()) && d < s) return false;
-    }
-    if (endStr) {
-      const e = new Date(endStr);
-      if (!isNaN(e.getTime()) && d > e) return false;
-    }
-    return true;
-  };
-
-  const isKoreksiRangeOverlaps = (kStart, kEnd, fStart, fEnd) => {
-    if (!fStart && !fEnd) return true;
-    const ks = kStart ? new Date(String(kStart).slice(0, 10)) : null;
-    const ke = kEnd ? new Date(String(kEnd).slice(0, 10)) : (ks ? new Date(ks) : null);
-    const fs = fStart ? new Date(fStart) : null;
-    const fe = fEnd ? new Date(fEnd) : null;
-    if (!ks || isNaN(ks.getTime())) return true;
-    const effKe = (ke && !isNaN(ke.getTime())) ? ke : ks;
-    const effFs = (fs && !isNaN(fs.getTime())) ? fs : new Date(-8640000000000000);
-    const effFe = (fe && !isNaN(fe.getTime())) ? fe : new Date(8640000000000000);
-    return ks <= effFe && effKe >= effFs;
-  };
 
   // Form Koreksi State
   const [showKoreksiModal, setShowKoreksiModal] = useState(false);
@@ -321,44 +325,109 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // untuk rentang yang datanya baru saja diterima.
   const rentangTerakhir = useRef(null);
 
+  // SIMPANAN DI BROWSER (24 Sep 2026)
+  //
+  // Jawaban per rentang disimpan sebentar di memori layar ini, jadi
+  // berpindah periode bolak-balik tidak menunggu server lagi. Periode
+  // yang sudah lewat disimpan 15 menit, rentang yang memuat hari ini
+  // 2 menit. Tombol Refresh, simpan/hapus koreksi selalu melewatinya.
+  // Server punya simpanan sendiri (lihat _rekapCacheKunci_ di Code.gs).
+  const simpananRekap = useRef(new Map());
+  const kunciSimpanan = (dari, sampai, semua) => (dari || '') + '|' + (sampai || '') + '|' + (semua || '');
+  const simpananMasihBaru = (entri) => {
+    if (!entri) return false;
+    const berjalan = !entri.sampai || entri.sampai >= hariIniYMD();
+    const umur = Date.now() - entri.t;
+    return umur < (berjalan ? 2 : 15) * 60 * 1000;
+  };
+  const simpanKeSimpanan = (dari, sampai, semua, data) => {
+    const entri = { data, t: Date.now(), sampai: sampai || '' };
+    simpananRekap.current.set(kunciSimpanan(dari, sampai, semua), entri);
+    // Jawaban untuk "periode bawaan" (dari & sampai kosong) juga
+    // disimpan di bawah rentang yang dipantulkan server.
+    const r = (data && data.rentang) || {};
+    if ((r.dari || r.sampai) && !semua) {
+      simpananRekap.current.set(kunciSimpanan(r.dari, r.sampai, ''), { ...entri, sampai: r.sampai || '' });
+    }
+  };
+
+  // Panggil server, dengan SATU percobaan ulang kalau jaringannya yang
+  // gagal (bukan kalau server menjawab error). Koneksi Apps Script
+  // sesekali putus di tengah jalan; mengulang sekali setelah jeda
+  // pendek hampir selalu berhasil dan jauh lebih baik daripada layar
+  // kosong dengan pesan gagal.
+  const ambilRekap = useCallback(async (payload) => {
+    try {
+      return await doApiCall('get_rekap_admin', payload);
+    } catch (e) {
+      await new Promise(r => setTimeout(r, 1500));
+      return await doApiCall('get_rekap_admin', payload);
+    }
+  }, [doApiCall]);
+
+  const terapkanData = useCallback((data) => {
+    setRawRecords(data.rawRecords || []);
+    setDashboardData(data.dashboardData || []);
+    setKoreksiList(data.koreksiList || []);
+    if (Array.isArray(data.periodeAktif)) setPeriodeList(data.periodeAktif);
+    if (data.hariIni) setHariIniServer(data.hariIni);
+
+    // Pemuatan pertama: server menjawab dengan periode aktif dan
+    // memantulkan rentangnya. Kotak tanggal diisi supaya admin
+    // melihat periode mana yang sedang ditampilkan — kalau dibiarkan
+    // kosong, layar seolah menampilkan semuanya padahal tidak.
+    if (!rentangSudahDiisi.current) {
+      rentangSudahDiisi.current = true;
+      const r = data.rentang || {};
+      if (r.dari || r.sampai) {
+        rentangTerakhir.current = (r.dari || '') + '|' + (r.sampai || '');
+        setFilterTglMulai(r.dari || '');
+        setFilterTglSelesai(r.sampai || '');
+      }
+    }
+  }, []);
+
   // Fetch Data from Apps Script
-  const fetchData = useCallback(async (dariMasuk, sampaiMasuk) => {
+  // opsi.paksa = lewati simpanan browser DAN server (Refresh, koreksi).
+  const fetchData = useCallback(async (dariMasuk, sampaiMasuk, opsi) => {
     // Hanya string yang boleh lewat. Kalau suatu saat ada pemanggil yang
     // menyerahkan objek event lagi, yang terjadi adalah rentang kosong —
     // bukan seluruh permintaan gagal dengan pesan yang menuduh server.
     const dari   = typeof dariMasuk   === 'string' ? dariMasuk   : '';
     const sampai = typeof sampaiMasuk === 'string' ? sampaiMasuk : '';
+    const paksa  = !!(opsi && opsi.paksa);
+    const semua  = (!dari && !sampai && rentangSudahDiisi.current) ? '1' : '';
 
     const nomor = ++permintaanKe.current;
-    setLoading(true);
     setServerError(null);
+
+    if (paksa) {
+      simpananRekap.current.clear();
+    } else {
+      const entri = simpananRekap.current.get(kunciSimpanan(dari, sampai, semua));
+      if (simpananMasihBaru(entri)) {
+        terapkanData(entri.data);
+        setLoading(false);
+        return;
+      }
+    }
+
+    setLoading(true);
     try {
-      const data = await doApiCall('get_rekap_admin', {
+      const data = await ambilRekap({
         dari: dari || '',
         sampai: sampai || '',
-        semua: (!dari && !sampai && rentangSudahDiisi.current) ? '1' : ''
+        semua,
+        segarkan: paksa ? '1' : ''
       });
-      if (nomor !== permintaanKe.current) return;   // sudah ada yang lebih baru
+      if (nomor !== permintaanKe.current) {
+        // Jawaban terlambat tetap berguna untuk simpanan.
+        if (data && data.result === 'success') simpanKeSimpanan(dari, sampai, semua, data);
+        return;
+      }
       if (data && data.result === 'success') {
-        setRawRecords(data.rawRecords || []);
-        setDashboardData(data.dashboardData || []);
-        setKoreksiList(data.koreksiList || []);
-        if (Array.isArray(data.periodeAktif)) setPeriodeList(data.periodeAktif);
-        if (data.hariIni) setHariIniServer(data.hariIni);
-
-        // Pemuatan pertama: server menjawab dengan periode aktif dan
-        // memantulkan rentangnya. Kotak tanggal diisi supaya admin
-        // melihat periode mana yang sedang ditampilkan — kalau dibiarkan
-        // kosong, layar seolah menampilkan semuanya padahal tidak.
-        if (!rentangSudahDiisi.current) {
-          rentangSudahDiisi.current = true;
-          const r = data.rentang || {};
-          if (r.dari || r.sampai) {
-            rentangTerakhir.current = (r.dari || '') + '|' + (r.sampai || '');
-            setFilterTglMulai(r.dari || '');
-            setFilterTglSelesai(r.sampai || '');
-          }
-        }
+        simpanKeSimpanan(dari, sampai, semua, data);
+        terapkanData(data);
       } else {
         const errMsg = data?.message || 'Server belum mengenali action get_rekap_admin.';
         setServerError(errMsg);
@@ -370,7 +439,35 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     } finally {
       if (nomor === permintaanKe.current) setLoading(false);
     }
-  }, [doApiCall]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ambilRekap, terapkanData]);
+
+  // AMBIL DI MUKA (24 Sep 2026). Setelah periode bawaan tampil, periode
+  // aktif lain diambil diam-diam satu per satu di belakang layar, supaya
+  // saat admin memilihnya datanya sudah siap. Tidak menyentuh tampilan
+  // sama sekali — hanya mengisi simpanan (browser & server).
+  const sudahAmbilDiMuka = useRef(false);
+  useEffect(() => {
+    if (!isAdmin || sudahAmbilDiMuka.current || loading || !periodeList.length) return undefined;
+    sudahAmbilDiMuka.current = true;
+    let batal = false;
+    const hi = hariIniServer || hariIniYMD();
+    const target = periodeList.slice(0, 3)
+      .map(p => rentangPeriode(p, hi))
+      .filter(r => !simpananMasihBaru(simpananRekap.current.get(kunciSimpanan(r.dari, r.sampai, ''))));
+    (async () => {
+      await new Promise(r => setTimeout(r, 1500));
+      for (const r of target) {
+        if (batal) return;
+        try {
+          const data = await doApiCall('get_rekap_admin', { dari: r.dari, sampai: r.sampai, semua: '', segarkan: '' });
+          if (data && data.result === 'success') simpanKeSimpanan(r.dari, r.sampai, '', data);
+        } catch (e) { /* ambil di muka boleh gagal diam-diam */ }
+      }
+    })();
+    return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, loading, periodeList, hariIniServer, doApiCall]);
 
   // Muat ulang atas permintaan (tombol Refresh, tombol coba lagi).
   //
@@ -382,7 +479,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // terlihat pengguna: "Gagal terhubung ke Web App", padahal server
   // tidak pernah dihubungi sama sekali.
   const muatUlang = useCallback(() => {
-    fetchData(filterTglMulai, filterTglSelesai);
+    fetchData(filterTglMulai, filterTglSelesai, { paksa: true });
   }, [fetchData, filterTglMulai, filterTglSelesai]);
 
   // Rentang tanggal sekarang ikut turun ke server, jadi mengubahnya
@@ -469,7 +566,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
   const filteredRawRecordsByDate = useMemo(() => {
     return rawRecords.filter(r => isDateInRange(r.tanggalYMD || r.tanggal, filterTglMulai, filterTglSelesai));
-  }, [rawRecords, filterTglMulai, filterTglSelesai, isDateInRange]);
+  }, [rawRecords, filterTglMulai, filterTglSelesai]);
 
   // Map employee payroll/akun/nama to their daily records for fast calculation & detail lookup
   const recordsByPayroll = useMemo(() => {
@@ -491,7 +588,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
   const filteredKoreksiByDate = useMemo(() => {
     return koreksiList.filter(k => isKoreksiRangeOverlaps(k.tglMulai, k.tglSelesai || k.tglMulai, filterTglMulai, filterTglSelesai));
-  }, [koreksiList, filterTglMulai, filterTglSelesai, isKoreksiRangeOverlaps]);
+  }, [koreksiList, filterTglMulai, filterTglSelesai]);
 
   // Enriched Dashboard Data with calculated nominal & correct counts
   // ANGKA DASHBOARD — DARI SERVER, TIDAK DIHITUNG ULANG (19 Sep 2026)
@@ -1045,7 +1142,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         // penyegaran ini diam-diam menarik seluruh periode dan filter di
         // layar tidak lagi cocok dengan isi tabelnya.
         rentangTerakhir.current = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
-        fetchData(filterTglMulai, filterTglSelesai);
+        fetchData(filterTglMulai, filterTglSelesai, { paksa: true });
       } else {
         alert(data?.message || 'Gagal menyimpan koreksi. Pastikan script Google Apps Script terbaru sudah di-deploy.');
       }
@@ -1066,7 +1163,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       if (data && data.result === 'success') {
         alert('Koreksi berhasil dihapus.');
         rentangTerakhir.current = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
-        fetchData(filterTglMulai, filterTglSelesai);
+        fetchData(filterTglMulai, filterTglSelesai, { paksa: true });
       } else {
         alert(data?.message || 'Gagal menghapus koreksi.');
       }
