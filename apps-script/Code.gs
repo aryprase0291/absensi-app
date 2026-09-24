@@ -5302,6 +5302,53 @@ function handleGetRekapAdmin(data) {
     }
   }
 
+  // 3b. ABSEN ONLINE (24 Sep 2026)
+  //
+  // Sampai hari ini rekap HANYA membaca dbabsen (mesin). Karyawan yang
+  // presensinya lewat aplikasi (sheet Absensi, tipe Hadir/Pulang) tetap
+  // tercatat "A" di mesin, sehingga dashboard menghitungnya Alpa padahal
+  // ia hadir. Data Absen karyawan (handleGetDbAbsen) sudah lama
+  // menggabungkan keduanya — di sini aturan yang SAMA dipakai:
+  //   - hari yang punya baris mesin: simbol A/AC/kosong/Si/So ditimpa
+  //     hasil absen online (lihat _rekapSimbolOnline_);
+  //   - hari tanpa baris mesin sama sekali: dibuat baris virtual
+  //     bersumber online, supaya ikut tampil di DB_FIX, Board, dan
+  //     dicacah di Dashboard.
+  // Koreksi admin tetap menang atas keduanya.
+  const online = _rekapKumpulkanOnline_(rowsUsers, dariYMD, sampaiYMD);
+  if (online.daftar.length) {
+    const deptOrang = {};
+    for (let i = 1; i < rowsDb.length; i++) {
+      const r0 = rowsDb[i];
+      const ymd0 = formatDateYMD_Strict(r0[4]) || '';
+      const e0 = _rekapCariOnline_(online, r0[2], r0[3], ymd0);
+      if (e0) e0.terpakai = true;
+      const dp = String(r0[15] || '').trim();
+      if (dp) {
+        const kp = String(r0[2] || '').trim().toLowerCase();
+        const kn = String(r0[3] || '').trim().toLowerCase();
+        if (kp) deptOrang[kp] = dp;
+        if (kn) deptOrang[kn] = dp;
+      }
+    }
+    if (!rowsDb.length) rowsDb.push(new Array(19).fill(''));
+    online.daftar.forEach(function (e) {
+      if (e.terpakai) return;
+      const bag = e.ymd.split('-');
+      const b = new Array(22).fill('');
+      b[2]  = e.payroll;
+      b[3]  = e.nama;
+      b[4]  = new Date(Number(bag[0]), Number(bag[1]) - 1, Number(bag[2]));
+      b[8]  = e.masuk;
+      b[9]  = e.pulang;
+      b[14] = _rekapSimbolOnline_('', e);
+      b[15] = deptOrang[String(e.payroll).toLowerCase()] || deptOrang[String(e.nama).toLowerCase()] || '';
+      b[20] = 'ONLINE';
+      b[21] = e;
+      rowsDb.push(b);
+    });
+  }
+
   // 4. Map DB_ABSEN rows ke object & terapkan Koreksi
   const dbRecords = [];
   const empSummary = {};
@@ -5317,8 +5364,8 @@ function handleGetRekapAdmin(data) {
     const jamKerja = String(r[5] || '').trim();
     const mTugas = _formatTimeVal(r[6]);
     const aTugas = _formatTimeVal(r[7]);
-    const masuk = _formatTimeVal(r[8]);
-    const pulang = _formatTimeVal(r[9]);
+    let masuk = _formatTimeVal(r[8]);
+    let pulang = _formatTimeVal(r[9]);
     const telat = _formatTimeVal(r[10]);
     const pAwal = _formatTimeVal(r[11]);
     const bolos = String(r[12] || '').trim();
@@ -5351,6 +5398,32 @@ function handleGetRekapAdmin(data) {
       }
     }
 
+    // Gabung absen online (lihat 3b). Baris virtual membawa entrinya
+    // sendiri di indeks 21; baris mesin dicari lewat payroll/nama+tanggal.
+    let sumber = 'mesin';
+    let onlineMasuk = '';
+    let onlinePulang = '';
+    const barisOnline = r[20] === 'ONLINE';
+    const onl = barisOnline ? r[21] : _rekapCariOnline_(online, payroll, nama, tglYMD);
+    if (onl) {
+      onlineMasuk = onl.masuk || '';
+      onlinePulang = onl.pulang || '';
+      if (barisOnline) {
+        sumber = 'online';
+      } else {
+        sumber = 'mesin+online';
+        if (!isKoreksi) {
+          const simbolBaru = _rekapSimbolOnline_(id2, onl);
+          if (simbolBaru !== id2) {
+            id2 = simbolBaru;
+            sumber = 'online';
+          }
+        }
+      }
+      if (!masuk && onl.masuk) masuk = onl.masuk;
+      if (!pulang && onl.pulang) pulang = onl.pulang;
+    }
+
     const recordObj = {
       noAkun, payroll, nama,
       tanggal: tglIndo,
@@ -5361,7 +5434,8 @@ function handleGetRekapAdmin(data) {
       departemen: dept,
       attTime, waktuScan, week,
       nominal: nominal ? Number(nominal) : '',
-      isKoreksi, koreksiKet
+      isKoreksi, koreksiKet,
+      sumber, onlineMasuk, onlinePulang
     };
 
     dbRecords.push(recordObj);
@@ -5518,6 +5592,118 @@ function handleGetRekapAdmin(data) {
     // terlambat sesudah filter diubah lagi harus dibuang, bukan dipasang.
     rentang: { dari: dariYMD || '', sampai: sampaiYMD || '' }
   });
+}
+
+// ================================================================
+// ABSEN ONLINE UNTUK REKAP ADMIN (24 Sep 2026)
+// ================================================================
+
+/**
+ * Kumpulkan presensi online (sheet Absensi, tipe Hadir/Pulang, bukan
+ * Rejected) di dalam rentang, diringkas per orang per tanggal:
+ * masuk = tap Hadir paling awal, pulang = tap Pulang paling akhir.
+ * Kunci peta: '<payroll|nama lowercase>|YYYY-MM-DD'.
+ */
+function _rekapKumpulkanOnline_(rowsUsers, dariYMD, sampaiYMD) {
+  const hasil = { daftar: [], peta: {} };
+  const sheet = SS.getSheetByName(SHEET_ABSENSI);
+  if (!sheet) return hasil;
+  const tz = Session.getScriptTimeZone();
+
+  // Users: index 0 = User ID, 3 = Nama, 4 = Divisi, 7 = No Payroll.
+  const petaUser = {};
+  for (let u = 1; u < (rowsUsers || []).length; u++) {
+    const ur = rowsUsers[u];
+    const id = String(ur[0] || '').trim();
+    if (!id) continue;
+    petaUser[id] = {
+      payroll: String(ur[7] || '').trim(),
+      nama: String(ur[3] || '').trim()
+    };
+  }
+
+  // Sheet Absensi append-only: kalau ada batas bawah, cukup baca ekornya
+  // (JendelaAbsensi.gs). Mundur 2 hari sebagai pengaman zona waktu.
+  let baris;
+  if (dariYMD && typeof bacaAbsensiSejak_ === 'function') {
+    const bag = String(dariYMD).split('-');
+    const batas = new Date(Number(bag[0]), Number(bag[1]) - 1, Number(bag[2]) - 2);
+    baris = bacaAbsensiSejak_(sheet, Utilities.formatDate(batas, tz, 'yyyy-MM-dd'), 13).baris;
+  } else {
+    baris = bacaSheet(sheet, 13).slice(1);
+  }
+
+  for (let i = 0; i < baris.length; i++) {
+    const row = baris[i];
+    const tipe = String(row[4] || '').trim();
+    if (tipe !== 'Hadir' && tipe !== 'Pulang') continue;
+    if (String(row[12] || '').trim() === 'Rejected') continue;
+
+    const waktu = row[1];
+    const dt = Object.prototype.toString.call(waktu) === '[object Date]' ? waktu : new Date(waktu);
+    if (isNaN(dt.getTime())) continue;
+    const ymd = Utilities.formatDate(dt, tz, 'yyyy-MM-dd');
+    if (dariYMD && ymd < dariYMD) continue;
+    if (sampaiYMD && ymd > sampaiYMD) continue;
+
+    const userId = String(row[2] || '').trim();
+    const u = petaUser[userId] || {};
+    const payroll = u.payroll || '';
+    const nama = u.nama || String(row[3] || '').trim();
+    const kunciUtama = (payroll || nama).toLowerCase();
+    if (!kunciUtama) continue;
+
+    const kunci = kunciUtama + '|' + ymd;
+    let e = hasil.peta[kunci];
+    if (!e) {
+      e = { userId: userId, payroll: payroll, nama: nama, ymd: ymd,
+            masuk: '', pulang: '', _mTs: 0, _pTs: 0, terpakai: false };
+      hasil.peta[kunci] = e;
+      // Cadangan lewat nama, untuk baris mesin yang payroll-nya kosong.
+      const kunciNama = nama.toLowerCase() + '|' + ymd;
+      if (payroll && nama && !hasil.peta[kunciNama]) hasil.peta[kunciNama] = e;
+      hasil.daftar.push(e);
+    }
+
+    const ts = dt.getTime();
+    const jam = Utilities.formatDate(dt, tz, 'HH:mm');
+    if (tipe === 'Hadir' && (!e._mTs || ts < e._mTs)) { e.masuk = jam; e._mTs = ts; }
+    if (tipe === 'Pulang' && (!e._pTs || ts > e._pTs)) { e.pulang = jam; e._pTs = ts; }
+  }
+  return hasil;
+}
+
+function _rekapCariOnline_(online, payroll, nama, ymd) {
+  if (!online || !ymd) return null;
+  const kunci = [payroll, nama];
+  for (let i = 0; i < kunci.length; i++) {
+    const k = String(kunci[i] || '').trim().toLowerCase();
+    if (!k) continue;
+    const e = online.peta[k + '|' + ymd];
+    if (e) return e;
+  }
+  return null;
+}
+
+/**
+ * Simbol hasil gabungan mesin + online. Hanya simbol yang berarti
+ * "tidak ada scan" yang diubah; H/T/I/S/C/O dst dibiarkan apa adanya.
+ * Aturan online sama dengan handleGetDbAbsen: masuk+pulang = ONL,
+ * hanya pulang = Si, hanya masuk = So.
+ */
+function _rekapSimbolOnline_(simbolMesin, onl) {
+  const asli = String(simbolMesin || '').trim();
+  const s = asli.toUpperCase();
+  const adaM = !!(onl && onl.masuk);
+  const adaP = !!(onl && onl.pulang);
+  if (!adaM && !adaP) return asli;
+  const murniOnline = adaM && adaP ? 'ONL' : (adaM ? 'So' : 'Si');
+  if (s === '' || s === 'A' || s === 'AC' || s === 'ALPA' || s === 'SISO') return murniOnline;
+  if (s === 'SI' && adaM) return 'H';    // mesin tak ada masuk, online ada
+  if (s === 'SO' && adaP) return 'H';    // mesin tak ada pulang, online ada
+  if (s === 'TSI' && adaM) return 'T';
+  if (s === 'TSO' && adaP) return 'T';
+  return asli;
 }
 
 function _formatTimeVal(val) {

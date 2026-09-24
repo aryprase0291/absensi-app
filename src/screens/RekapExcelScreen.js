@@ -156,6 +156,17 @@ const BOARD_WARNA_SIMBOL = {
   TPC: 'bg-indigo-100 text-indigo-800 border-indigo-300'
 };
 
+// Sumber baris DB_FIX (24 Sep 2026): 'mesin' | 'online' | 'mesin+online'.
+// 'online' = status hari itu ditentukan absen online (baris virtual, atau
+// baris mesin berstatus A/Si/So yang tertutup absen online).
+const LABEL_SUMBER = {
+  mesin: { teks: 'Mesin', warna: 'bg-slate-50 text-slate-600 border-slate-200' },
+  online: { teks: 'Online', warna: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  'mesin+online': { teks: 'Mesin + Online', warna: 'bg-sky-50 text-sky-700 border-sky-200' }
+};
+const labelSumber = (sumber) => LABEL_SUMBER[sumber] || LABEL_SUMBER.mesin;
+const adaOnline = (r) => String(r.sumber || '').includes('online');
+
 const warnaSimbolBoard = (sym) => {
   const k = String(sym || '').trim().toUpperCase();
   return BOARD_WARNA_SIMBOL[k] || 'bg-slate-50 text-slate-600 border-slate-200';
@@ -173,6 +184,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDept, setFilterDept] = useState('ALL');
   const [filterSimbol, setFilterSimbol] = useState('ALL');
+  const [filterSumber, setFilterSumber] = useState('ALL'); // 'ALL' | 'mesin' | 'online'
   const [filterTglMulai, setFilterTglMulai] = useState('');
   const [filterTglSelesai, setFilterTglSelesai] = useState('');
 
@@ -237,7 +249,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // Reset pagination on filter / search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterDept, filterSimbol, filterTglMulai, filterTglSelesai]);
+  }, [searchQuery, filterDept, filterSimbol, filterSumber, filterTglMulai, filterTglSelesai]);
 
   // Internal safe api caller
   const doApiCall = useCallback(async (actionName, payload = {}) => {
@@ -444,8 +456,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     return filteredRawRecordsByDate.filter(r => {
       const matchDept = filterDept === 'ALL' || r.departemen === filterDept;
       const matchSimbol = filterSimbol === 'ALL' || String(r.id2).toUpperCase() === filterSimbol.toUpperCase();
+      const matchSumber = filterSumber === 'ALL' ||
+        (filterSumber === 'online' ? adaOnline(r) : !adaOnline(r));
 
-      if (!matchDept || !matchSimbol) return false;
+      if (!matchDept || !matchSimbol || !matchSumber) return false;
       if (queryTokens.length === 0) return true;
 
       const searchableText = [
@@ -463,12 +477,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         r.id2 || '',
         r.week || '',
         r.koreksiKet || '',
-        r.waktuScan || ''
+        r.waktuScan || '',
+        adaOnline(r) ? 'online' : 'mesin'
       ].join(' ').toLowerCase();
 
       return queryTokens.every(token => searchableText.includes(token));
     });
-  }, [filteredRawRecordsByDate, filterDept, filterSimbol, searchQuery]);
+  }, [filteredRawRecordsByDate, filterDept, filterSimbol, filterSumber, searchQuery]);
 
   // Filtered Dashboard Data with Multi-Token Comprehensive Search
   const filteredDashboard = useMemo(() => {
@@ -1027,7 +1042,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
           'ATT_TIME': formatTimeValue(r.attTime),
           'WAKTU SCAN': r.waktuScan || '',
           'WEEK': r.week || '',
-          'NOMINAL': dendaNum > 0 ? dendaNum : ''
+          'NOMINAL': dendaNum > 0 ? dendaNum : '',
+          'SUMBER': labelSumber(r.sumber).teks,
+          'ONLINE MASUK': r.onlineMasuk || '',
+          'ONLINE PULANG': r.onlinePulang || ''
         };
       });
       const wsRec = XLSX.utils.json_to_sheet(recRows);
@@ -1311,6 +1329,24 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                     {OPSI_SIMBOL_KOREKSI.map(o => (
                       <option key={o.kode} value={o.kode}>{o.kode} - {o.label.split(' - ')[1]}</option>
                     ))}
+                    <option value="ONL">ONL - Absen Online</option>
+                    <option value="Si">Si - Tidak Absen Masuk</option>
+                    <option value="So">So - Tidak Absen Pulang</option>
+                  </select>
+                </div>
+              )}
+
+              {activeTab === 'tabel' && (
+                <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                  <Layers className="w-4 h-4 text-slate-400" />
+                  <select
+                    value={filterSumber}
+                    onChange={e => setFilterSumber(e.target.value)}
+                    className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer"
+                  >
+                    <option value="ALL">Semua Sumber</option>
+                    <option value="mesin">Mesin saja</option>
+                    <option value="online">Ada Absen Online</option>
                   </select>
                 </div>
               )}
@@ -1744,7 +1780,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                     </h2>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Struktur 19 kolom sesuai Google Spreadsheet <span className="font-mono font-semibold text-slate-700">DB_FIX</span>. Menampilkan {filteredRecords.length} baris.
+                    Struktur 19 kolom sesuai Google Spreadsheet <span className="font-mono font-semibold text-slate-700">DB_FIX</span>, digabung dengan absen online (kolom SUMBER). Menampilkan {filteredRecords.length} baris.
                   </p>
                 </div>
                 <button
@@ -1779,20 +1815,21 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                       <th className="px-3 py-2.5 border-r border-emerald-200/50">WAKTU SCAN</th>
                       <th className="px-3 py-2.5 text-center border-r border-emerald-200/50">WEEK</th>
                       <th className="px-3 py-2.5 text-right border-r border-emerald-200/50">NOMINAL</th>
+                      <th className="px-3 py-2.5 text-center border-r border-emerald-200/50 text-indigo-800">SUMBER</th>
                       <th className="px-3 py-2.5 text-center">KOREKSI</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-sans">
                     {loading ? (
                       <tr>
-                        <td colSpan="20" className="p-10 text-center text-slate-400">
+                        <td colSpan="21" className="p-10 text-center text-slate-400">
                           <Loader2 className="w-7 h-7 animate-spin mx-auto text-blue-500 mb-2" />
                           <span>Memuat tabel data absensi DB_FIX...</span>
                         </td>
                       </tr>
                     ) : filteredRecords.length === 0 ? (
                       <tr>
-                        <td colSpan="20" className="p-10 text-center text-slate-400">
+                        <td colSpan="21" className="p-10 text-center text-slate-400">
                           {serverError ? 'Data belum dapat dimuat dari server.' : 'Tidak ada data absensi yang cocok dengan pencarian / filter.'}
                         </td>
                       </tr>
@@ -1830,7 +1867,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                             
                             {/* ID2 (STATUS SYMBOL) */}
                             <td className="px-3 py-2.5 text-center border-r border-slate-100">
-                              <span className={`px-2.5 py-0.5 rounded text-[11px] font-black border ${opt ? opt.color : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                              <span className={`px-2.5 py-0.5 rounded text-[11px] font-black border ${opt ? opt.color : warnaSimbolBoard(r.id2)}`}>
                                 {r.id2 || '-'}
                               </span>
                             </td>
@@ -1848,7 +1885,22 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                                 <span className="text-slate-300">-</span>
                               )}
                             </td>
-                            
+
+                            {/* SUMBER (MESIN / ONLINE) */}
+                            <td className="px-3 py-2.5 text-center border-r border-slate-100">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${labelSumber(r.sumber).warna}`}
+                                title={adaOnline(r) ? `Absen online: masuk ${r.onlineMasuk || '-'} / pulang ${r.onlinePulang || '-'}` : 'Data mesin absensi'}
+                              >
+                                {labelSumber(r.sumber).teks}
+                              </span>
+                              {adaOnline(r) && (
+                                <div className="text-[10px] font-mono text-indigo-500 mt-0.5">
+                                  {r.onlineMasuk || '-'} / {r.onlinePulang || '-'}
+                                </div>
+                              )}
+                            </td>
+
                             <td className="px-3 py-2.5 text-center">
                               <button
                                 type="button"
