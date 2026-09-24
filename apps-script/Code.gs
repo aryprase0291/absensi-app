@@ -5417,7 +5417,7 @@ function handleGetRekapAdmin(data) {
     const aTugas = _formatTimeVal(r[7]);
     let masuk = _formatTimeVal(r[8]);
     let pulang = _formatTimeVal(r[9]);
-    const telat = _formatTimeVal(r[10]);
+    let telat = _formatTimeVal(r[10]);
     const pAwal = _formatTimeVal(r[11]);
     const bolos = String(r[12] || '').trim();
     const tjk = _formatTimeVal(r[13]);
@@ -5426,7 +5426,7 @@ function handleGetRekapAdmin(data) {
     const attTime = _formatTimeVal(r[16]);
     const waktuScan = String(r[17] || '').trim();
     const week = String(r[18] || '').trim();
-    const nominal = _hitungNominalDenda(r[10] || telat, r[19]);
+    let nominal = _hitungNominalDenda(r[10] || telat, r[19]);
 
     // Periksa apakah ada koreksi yang cocok — lewat indeks, bukan
     // pemindaian seluruh daftar. Urutan kunci (payroll, lalu no.akun,
@@ -5447,6 +5447,16 @@ function handleGetRekapAdmin(data) {
           break;
         }
       }
+    }
+
+    // KOREKSI MENGHAPUS TELAT (24 Sep 2026). Baris yang dikoreksi ke
+    // simbol selain keluarga T (mis. H, I, S, DL) tidak lagi terlambat:
+    // kolom TELAT dikosongkan dan NOMINAL denda jadi 0, sehingga ikut
+    // hilang dari tabel, board, detail, export, dan total nominal
+    // dashboard. Koreksi ke T/TPC/TSI/TSO tetap mempertahankan telatnya.
+    if (isKoreksi && !_SIMBOL_TELAT_KOREKSI.includes(String(id2 || '').toUpperCase())) {
+      telat = '';
+      nominal = 0;
     }
 
     // Gabung absen online (lihat 3b). Baris virtual membawa entrinya
@@ -5888,6 +5898,9 @@ function _formatTimeVal(val) {
   }
   return String(val);
 }
+
+// Simbol koreksi yang tetap dianggap terlambat (lihat handleGetRekapAdmin).
+const _SIMBOL_TELAT_KOREKSI = ['T', 'TPC', 'TSI', 'TSO'];
 
 function _hitungNominalDenda(telatVal, existingNominal) {
   if (existingNominal !== undefined && existingNominal !== null && existingNominal !== "" && Number(existingNominal) > 0) {

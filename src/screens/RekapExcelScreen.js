@@ -39,6 +39,10 @@ const simbolKoreksiAwal = (sym) => {
   return KODE_KOREKSI_SAH.includes(k) ? k : 'H';
 };
 
+// Simbol koreksi yang tetap dianggap terlambat. Koreksi ke simbol lain
+// (H, I, S, DL, ...) menghapus TELAT dan NOMINAL baris itu.
+const SIMBOL_TELAT = ['T', 'TPC', 'TSI', 'TSO'];
+
 // Helper Format Waktu (HH:mm)
 const formatTimeValue = (val) => {
   if (val === null || val === undefined || val === '' || val === '-') return '';
@@ -500,7 +504,19 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     setRawRecords(prev => prev.map(r => {
       const tgl = r.tanggalYMD || '';
       if (!tgl || tgl < k.tglMulai || tgl > selesai || !cocokPegawai(r, k)) return r;
-      return { ...r, id2: k.id2, isKoreksi: true, koreksiKet: k.keterangan };
+      // Koreksi ke simbol selain keluarga T menghapus telat & nominal
+      // (aturan yang sama dengan handleGetRekapAdmin di Code.gs). Nilai
+      // aslinya disimpan supaya kalau koreksi diubah lagi ke T, telatnya
+      // kembali tanpa menunggu penyegaran dari server.
+      const telatAsli = r._telatAsli !== undefined ? r._telatAsli : r.telat;
+      const nominalAsli = r._nominalAsli !== undefined ? r._nominalAsli : r.nominal;
+      const tetapTelat = SIMBOL_TELAT.includes(String(k.id2 || '').toUpperCase());
+      return {
+        ...r, id2: k.id2, isKoreksi: true, koreksiKet: k.keterangan,
+        _telatAsli: telatAsli, _nominalAsli: nominalAsli,
+        telat: tetapTelat ? telatAsli : '',
+        nominal: tetapTelat ? nominalAsli : ''
+      };
     }));
     simpananRekap.current.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
