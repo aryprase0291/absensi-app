@@ -5124,6 +5124,13 @@ function handleSaveKoreksi(data) {
   if (!koreksi.tglMulai) {
     return responseJSON({ result: 'error', message: 'Tanggal mulai wajib diisi.' });
   }
+  // Hanya simbol yang ada di pilihan form koreksi yang boleh disimpan.
+  // Simbol mesin seperti SI/SO/TSI tidak pernah sah sebagai koreksi —
+  // dulu lolos karena form mengirim simbol baris apa adanya.
+  const SIMBOL_KOREKSI_SAH = ['H', 'I', 'S', 'C', 'CB', 'EO', 'DL', 'O', 'A', 'T'];
+  if (SIMBOL_KOREKSI_SAH.indexOf(koreksi.id2) === -1) {
+    return responseJSON({ result: 'error', message: 'Simbol koreksi "' + koreksi.id2 + '" tidak sah. Pilih salah satu: ' + SIMBOL_KOREKSI_SAH.join(', ') + '.' });
+  }
 
   try {
     simpanKoreksi_(koreksi);

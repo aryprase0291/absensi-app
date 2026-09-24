@@ -27,6 +27,18 @@ const OPSI_SIMBOL_KOREKSI = [
   { kode: 'T', label: 'T - Terlambat', color: 'bg-amber-50 text-amber-700 border-amber-200' }
 ];
 
+// Simbol awal form koreksi HARUS salah satu pilihan di dropdown (24 Sep 2026).
+// Dulu form diisi simbol baris apa adanya — mis. 'Si' dari mesin. 'Si'
+// tidak ada di dropdown, jadi browser MENAMPILKAN pilihan pertama
+// ("H - Hadir Normal") padahal nilai yang tersimpan tetap 'Si'. Admin
+// mengira sudah memilih H, menekan Simpan, dan yang tersimpan justru
+// koreksi 'SI' — baris tetap tidak hadir.
+const KODE_KOREKSI_SAH = OPSI_SIMBOL_KOREKSI.map(o => o.kode);
+const simbolKoreksiAwal = (sym) => {
+  const k = String(sym || '').trim().toUpperCase();
+  return KODE_KOREKSI_SAH.includes(k) ? k : 'H';
+};
+
 // Helper Format Waktu (HH:mm)
 const formatTimeValue = (val) => {
   if (val === null || val === undefined || val === '' || val === '-') return '';
@@ -1118,7 +1130,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         nama: item.nama || '',
         tglMulai: item.tglMulai || '',
         tglSelesai: item.tglSelesai || item.tglMulai || '',
-        id2: item.id2 || 'H',
+        id2: simbolKoreksiAwal(item.id2),
         keterangan: item.keterangan || ''
       });
     } else {
@@ -1172,7 +1184,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         nama: adaKoreksi.nama || '',
         tglMulai: adaKoreksi.tglMulai || t1,
         tglSelesai: adaKoreksi.tglSelesai || adaKoreksi.tglMulai || t1,
-        id2: adaKoreksi.id2 || 'H',
+        id2: simbolKoreksiAwal(adaKoreksi.id2),
         keterangan: adaKoreksi.keterangan || ''
       });
     } else {
@@ -1183,7 +1195,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         nama: sumber.nama || '',
         tglMulai: t1,
         tglSelesai: tglSelesai || t1,
-        id2: sumber.id2 || 'H',
+        id2: simbolKoreksiAwal(sumber.id2),
         keterangan: ''
       });
     }
@@ -1212,7 +1224,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         nama: formKoreksi.nama,
         tglMulai: formKoreksi.tglMulai,
         tglSelesai: formKoreksi.tglSelesai || formKoreksi.tglMulai,
-        id2: formKoreksi.id2,
+        id2: simbolKoreksiAwal(formKoreksi.id2),
         keterangan: formKoreksi.keterangan
       };
 
