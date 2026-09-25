@@ -423,7 +423,8 @@ export default function ImportDbAbsen({ user, masterData }) {
       + '\n\nImport berjalan di latar — Anda boleh menutup layar ini dan memakai menu lain. '
       + 'Tapi JANGAN menutup atau me-reload tab browser sampai notifikasi selesai muncul.'
       + '\n\nLanjutkan?';
-    if (!window.confirm(kalimat)) return;
+    // Mode tambah/perbarui tidak membuang data lama → langsung jalan tanpa konfirmasi.
+    if (mode !== 'upsert' && !window.confirm(kalimat)) return;
 
     setPesan(null);
 
