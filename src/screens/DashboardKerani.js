@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
+import RincianKerani from './RincianKerani';
 import { useHariLibur } from '../utils/hariLibur';
 import {
   susunRekapKerani, saringKerani, daftarDivisi, STATUS
@@ -112,6 +113,10 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
   const [memuat, setMemuat] = useState(false);
   const [galat, setGalat] = useState('');
   const [hover, setHover] = useState(null);
+  // Jendela rincian: { id, kolom } — kolom 'semua' saat nama diklik,
+  // atau kunci kolom angka yang diklik. Disimpan ID-nya, bukan barisnya,
+  // supaya jendela ikut berubah kalau data dimuat ulang.
+  const [rincian, setRincian] = useState(null);
 
   const { libur } = useHariLibur();
   // Divisi hanya disetel otomatis SATU KALI, saat daftar pegawai pertama
@@ -533,17 +538,32 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
                   Tidak ada baris untuk ditampilkan.
                 </td></tr>
               )}
-              {barisTampil.map((b) => (
-                <tr key={b.id} className="hover:bg-slate-50/70">
-                  <td className="px-3 py-2 text-slate-900 font-medium">{b.nama}</td>
-                  <td className="px-3 py-2 text-slate-500">{b.divisi}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{b.hadir}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{b.standby}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{b.izin}</td>
-                  <td className={`px-3 py-2 text-right tabular-nums font-semibold ${b.tidakAbsen > 0 ? 'text-rose-700' : 'text-slate-400'}`}>
-                    {b.tidakAbsen}
+              {barisTampil.map((b) => {
+                const angka = (kolom, nilai, kelas) => (
+                  <td className={`px-3 py-2 text-right tabular-nums ${kelas}`}>
+                    {nilai > 0 ? (
+                      <button onClick={() => setRincian({ id: b.id, kolom })}
+                        title="Lihat tanggalnya"
+                        className="tabular-nums underline decoration-dotted decoration-slate-300 underline-offset-4 hover:decoration-current hover:text-blue-700">
+                        {nilai}
+                      </button>
+                    ) : nilai}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-700">{b.lengkap}</td>
+                );
+                return (
+                <tr key={b.id} className="hover:bg-slate-50/70">
+                  <td className="px-3 py-2 font-medium">
+                    <button onClick={() => setRincian({ id: b.id, kolom: 'semua' })}
+                      className="text-left text-slate-900 hover:text-blue-700 hover:underline underline-offset-2">
+                      {b.nama}
+                    </button>
+                  </td>
+                  <td className="px-3 py-2 text-slate-500">{b.divisi}</td>
+                  {angka('hadir', b.hadir, 'text-slate-700')}
+                  {angka('standby', b.standby, 'text-slate-700')}
+                  {angka('izin', b.izin, 'text-slate-700')}
+                  {angka('tidak', b.tidakAbsen, b.tidakAbsen > 0 ? 'font-semibold text-rose-700' : 'font-semibold text-slate-400')}
+                  {angka('lengkap', b.lengkap, 'text-slate-700')}
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-2">
                       <div className="w-[70px] h-1.5 rounded-full bg-slate-100 overflow-hidden">
@@ -556,7 +576,8 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -566,8 +587,19 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
           Produktifitas = hari dengan absen LENGKAP (ada masuk DAN ada pulang) dibagi hari kerja
           efektif — yaitu hari kerja dikurangi hari izin/cuti/sakit/dinas orang itu. Selisih antara
           kolom Hadir dan kolom Lengkap adalah hari yang absennya hanya sebelah.
+          Klik nama untuk melihat riwayat absennya, atau klik angka untuk melihat tanggal-tanggalnya.
         </p>
       </div>
+
+      {rincian && rekap.perOrang.find((b) => b.id === rincian.id) && (
+        <RincianKerani
+          orang={rekap.perOrang.find((b) => b.id === rincian.id)}
+          tanggal={rekap.tanggal}
+          kolomAwal={rincian.kolom}
+          warna={WARNA}
+          onClose={() => setRincian(null)}
+        />
+      )}
     </div>
   );
 }

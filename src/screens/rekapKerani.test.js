@@ -235,3 +235,41 @@ describe('susunRekapKerani', () => {
     expect(Number.isNaN(r.ringkas.persenHadir)).toBe(false);
   });
 });
+
+describe('rincian per orang', () => {
+  const { tanggalPerKolom, jamDari } = require('./rekapKerani');
+  const dasar = { kerani: KERANI, dari: DARI, sampai: SAMPAI, libur: {} };
+
+  test('jumlah tanggal per kolom sama dengan angka di tabel', () => {
+    const r = susunRekapKerani({ ...dasar, history: [
+      absen('U1', 'Hadir', '2026-09-01'), absen('U1', 'Pulang', '2026-09-01'),
+      absen('U1', 'Hadir', '2026-09-02'),
+      absen('U1', 'Standby', '2026-09-03'),
+      absen('U1', 'Cuti', '2026-09-04', { tglMulai: '2026-09-04', tglSelesai: '2026-09-04', status: 'Approved' })
+    ] });
+    const ani = r.perOrang.find((b) => b.id === 'U1');
+    expect(tanggalPerKolom(ani, r.tanggal, 'hadir')).toEqual(['2026-09-01', '2026-09-02']);
+    expect(tanggalPerKolom(ani, r.tanggal, 'lengkap')).toEqual(['2026-09-01']);
+    expect(tanggalPerKolom(ani, r.tanggal, 'sebelah')).toEqual(['2026-09-02']);
+    expect(tanggalPerKolom(ani, r.tanggal, 'standby').length).toBe(ani.standby);
+    expect(tanggalPerKolom(ani, r.tanggal, 'izin').length).toBe(ani.izin);
+    expect(tanggalPerKolom(ani, r.tanggal, 'tidak').length).toBe(ani.tidakAbsen);
+    expect(tanggalPerKolom(ani, r.tanggal, 'semua').length).toBe(r.tanggal.length);
+    expect(ani.barisPer['2026-09-01'].length).toBe(2);
+  });
+
+  test('baris ditolak tetap tersimpan untuk riwayat, tapi tidak dihitung', () => {
+    const r = susunRekapKerani({ ...dasar, history: [
+      absen('U1', 'Sakit', '2026-09-01', { tglMulai: '2026-09-01', tglSelesai: '2026-09-01', status: 'Rejected' })
+    ] });
+    const ani = r.perOrang.find((b) => b.id === 'U1');
+    expect(ani.sel['2026-09-01']).toBe(STATUS.KOSONG);
+    expect(ani.barisPer['2026-09-01'].length).toBe(1);
+  });
+
+  test('jamDari membaca teks dd/MM/yyyy dan ISO tanpa zona', () => {
+    expect(jamDari('01/09/2026 07:05:33')).toBe('07:05');
+    expect(jamDari('2026-09-01T16:40:00')).toBe('16:40');
+    expect(jamDari('')).toBe('');
+  });
+});

@@ -199,10 +199,11 @@ export function susunRekapKerani(opsi) {
       jabatan: String(p.jabatan || '-').trim(),
       sel: {},
       lengkapPer: {},
+      barisPer: {},
       hadir: 0, standby: 0, izin: 0, tidakAbsen: 0, lengkap: 0,
       persenProduktif: 0
     };
-    tanggal.forEach(function (t) { baris.sel[t] = STATUS.KOSONG; });
+    tanggal.forEach(function (t) { baris.sel[t] = STATUS.KOSONG; baris.barisPer[t] = []; });
     peta[id] = baris;
     urut.push(baris);
   });
@@ -214,11 +215,16 @@ export function susunRekapKerani(opsi) {
   (o.history || []).forEach(function (item) {
     const id = String((item && item.userId) || '').trim();
     if (!id || !peta[id]) return;
-    if (String(item.status || '').trim() === 'Rejected') return;
+    const ditolak = String(item.status || '').trim() === 'Rejected';
 
     const tipe = String(item.tipe || '').trim();
     tanggalBaris(item).forEach(function (t) {
       if (!adaTanggal[t]) return;
+      // Baris mentah disimpan untuk layar riwayat — termasuk yang
+      // DITOLAK, supaya admin bisa melihat kenapa hari itu tetap kosong
+      // padahal orangnya sempat mengajukan sesuatu.
+      peta[id].barisPer[t].push(item);
+      if (ditolak) return;
       const k = id + '|' + t;
       if (!tanda[k]) tanda[k] = { hadir: false, pulang: false, standby: false, izin: false };
       if (tipe === TIPE_HADIR) tanda[k].hadir = true;
@@ -312,4 +318,58 @@ export function susunRekapKerani(opsi) {
       persenProduktif: persen(lengkap, efektif)
     }
   };
+}
+
+// ---------------------------------------------------------------------
+// RIWAYAT PER ORANG — untuk jendela rincian di layar.
+// ---------------------------------------------------------------------
+
+/**
+ * Kolom tabel -> tanggal-tanggal yang membentuk angkanya. Angka di tabel
+ * dan daftar tanggal di jendela rincian HARUS berasal dari sumber yang
+ * sama (b.sel / b.lengkapPer), supaya klik angka "4" selalu menampilkan
+ * tepat empat tanggal.
+ *
+ *   semua    seluruh hari kerja
+ *   hadir / standby / izin / tidak   menurut status hari itu
+ *   lengkap  ada masuk DAN pulang
+ *   sebelah  hadir tapi tidak lengkap (selisih Hadir − Lengkap)
+ */
+export const KOLOM_RINCIAN = ['semua', 'hadir', 'standby', 'izin', 'tidak', 'lengkap', 'sebelah'];
+
+export function tanggalPerKolom(b, tanggal, kolom) {
+  if (!b) return [];
+  const sel = b.sel || {};
+  const lk = b.lengkapPer || {};
+  return (tanggal || []).filter(function (t) {
+    switch (kolom) {
+      case 'hadir': return sel[t] === STATUS.HADIR;
+      case 'standby': return sel[t] === STATUS.STANDBY;
+      case 'izin': return sel[t] === STATUS.IZIN;
+      case 'tidak': return sel[t] === STATUS.KOSONG;
+      case 'lengkap': return !!lk[t];
+      case 'sebelah': return sel[t] === STATUS.HADIR && !lk[t];
+      default: return true;
+    }
+  });
+}
+
+/**
+ * Jam 'HH:MM' dari kolom Waktu. Kolom itu bisa datang sebagai teks
+ * "dd/MM/yyyy HH:mm:ss" (yang ditulis backend) ATAU sebagai tanggal ISO
+ * kalau Sheets sudah mengubah selnya jadi Date. ISO dengan zona (Z /
+ * +07:00) dikonversi ke jam lokal perangkat; teks biasa diambil apa
+ * adanya — tidak ada zona yang bisa dipakai menggesernya.
+ */
+export function jamDari(waktu) {
+  const teks = String(waktu || '').trim();
+  if (!teks) return '';
+  if (/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/.test(teks)) {
+    const d = new Date(teks);
+    if (!isNaN(d.getTime())) {
+      return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+  }
+  const m = teks.match(/[ T](\d{1,2})[:.](\d{2})/);
+  return m ? ('0' + m[1]).slice(-2) + ':' + m[2] : '';
 }
