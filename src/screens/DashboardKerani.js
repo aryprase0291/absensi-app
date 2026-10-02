@@ -597,6 +597,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
           tanggal={rekap.tanggal}
           kolomAwal={rincian.kolom}
           warna={WARNA}
+          periode={{ dari, sampai }}
           onClose={() => setRincian(null)}
         />
       )}
