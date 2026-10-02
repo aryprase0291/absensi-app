@@ -36,11 +36,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import {
   Users, CalendarDays, Gauge, CheckCircle2, Clock, FileText, XCircle,
-  Download, RefreshCcw, Loader2, Search, AlertTriangle, Info
+  Download, RefreshCcw, Loader2, Search, AlertTriangle, Info, Camera, Check
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
 import RincianKerani from './RincianKerani';
+import { tangkapKeClipboard } from '../utils/tangkapLayar';
 import { useHariLibur } from '../utils/hariLibur';
 import {
   susunRekapKerani, saringKerani, daftarDivisi, STATUS
@@ -84,6 +85,12 @@ function tglPendek(y) {
   return Number(b[2]) + ' ' + (bl[Number(b[1]) - 1] || b[1]);
 }
 
+function tglPanjang(y) {
+  const b = String(y || '').split('-');
+  if (b.length !== 3) return String(y || '');
+  return tglPendek(y) + ' ' + b[0];
+}
+
 // --- Kartu angka ------------------------------------------------------
 function Kartu({ ikon: Ikon, label, nilai, catatan, warna }) {
   return (
@@ -117,6 +124,8 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
   // atau kunci kolom angka yang diklik. Disimpan ID-nya, bukan barisnya,
   // supaya jendela ikut berubah kalau data dimuat ulang.
   const [rincian, setRincian] = useState(null);
+  const tabelRef = useRef(null);
+  const [foto, setFoto] = useState('');   // '' | 'proses' | 'tersalin' | 'terunduh'
 
   const { libur } = useHariLibur();
   // Divisi hanya disetel otomatis SATU KALI, saat daftar pegawai pertama
@@ -249,13 +258,13 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
       ['Izin / Cuti / Dinas', R.izin, pct(R.persenIzin)],
       ['Tidak absen sama sekali', R.tidakAbsen, pct(R.persenTidakAbsen)],
       [],
-      ['Absen lengkap (Hadir + Pulang)', R.lengkap, pct(R.persenProduktif)],
-      ['Produktifitas = absen lengkap / hari-orang efektif']
+      ['Absensi — absen lengkap (Hadir + Pulang)', R.lengkap, pct(R.persenProduktif)],
+      ['Absensi = absen lengkap / hari-orang efektif']
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ringkas), 'Ringkas');
 
     const perOrang = [['No', 'Nama', 'Divisi', 'Jabatan', 'Hari kerja', 'Hadir', 'Standby',
-      'Izin', 'Tidak absen', 'Absen lengkap', 'Hari efektif', 'Produktifitas %']];
+      'Izin', 'Tidak absen', 'Absen lengkap', 'Hari efektif', 'Absensi %']];
     rekap.perOrang.forEach((b, i) => {
       perOrang.push([i + 1, b.nama, b.divisi, b.jabatan, rekap.tanggal.length, b.hadir,
         b.standby, b.izin, b.tidakAbsen, b.lengkap, b.hariEfektif,
@@ -274,6 +283,21 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
   };
 
   const adaKerani = R.jumlahOrang > 0;
+
+  // Periode yang BENAR-BENAR dihitung = hari kerja pertama s/d terakhir di
+  // rekap, bukan isi kotak tanggal (yang bisa sudah diubah tapi belum
+  // diterapkan).
+  const periodeTabel = rekap.tanggal.length
+    ? tglPanjang(rekap.tanggal[0]) + ' – ' + tglPanjang(rekap.tanggal[rekap.tanggal.length - 1])
+    : '';
+
+  const fotoTabel = async () => {
+    if (!tabelRef.current || foto === 'proses') return;
+    setFoto('proses');
+    const h = await tangkapKeClipboard(tabelRef.current, { namaFile: 'rincian-kerani-' + dari + '_' + sampai });
+    setFoto(!h.ok ? '' : h.tersalin ? 'tersalin' : 'terunduh');
+    if (h.ok) setTimeout(() => setFoto(''), 2500);
+  };
 
   return (
     <div className="pb-8">
@@ -398,7 +422,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
           catatan={R.totalHariOrang + ' hari-orang' + (hitungMinggu ? '' : ' · Minggu & libur dikecualikan')} />
         <Kartu ikon={CheckCircle2} label="Hadir" nilai={pct(R.persenHadir)} warna={WARNA.hadir}
           catatan={R.hadir + ' hari-orang · ' + R.lengkap + ' di antaranya lengkap'} />
-        <Kartu ikon={Gauge} label="Produktifitas" nilai={pct(R.persenProduktif)} warna={WARNA.hadir}
+        <Kartu ikon={Gauge} label="Absensi" nilai={pct(R.persenProduktif)} warna={WARNA.hadir}
           catatan={R.lengkap + ' absen lengkap / ' + R.hariEfektif + ' hari efektif'} />
       </div>
 
@@ -510,18 +534,35 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
       </div>
 
       {/* TABEL PER KERANI */}
-      <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
-        <div className="flex items-baseline justify-between flex-wrap gap-2 px-4 pt-4 pb-2">
-          <h3 className="text-[14px] font-semibold text-slate-900">Rincian per kerani</h3>
-          <p className="text-[11px] text-slate-400">
-            Produktifitas terendah di atas · {barisTampil.length} dari {R.jumlahOrang} orang
-          </p>
+      <div ref={tabelRef} className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+        <div className="flex items-start justify-between flex-wrap gap-2 px-4 pt-4 pb-2">
+          <div>
+            <h3 className="text-[14px] font-semibold text-slate-900">Rincian per kerani</h3>
+            <p className="text-[12px] text-slate-500 mt-0.5">
+              {periodeTabel ? 'Periode absen ' + periodeTabel + ' · ' + R.hariKerja + ' hari kerja' : 'Belum ada periode'}
+              {divisiDipilih.length ? ' · ' + divisiDipilih.join(', ') : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <p className="text-[11px] text-slate-400">
+              Absensi terendah di atas · {barisTampil.length} dari {R.jumlahOrang} orang
+            </p>
+            <button data-tanpa-foto onClick={fotoTabel} disabled={foto === 'proses' || !adaKerani}
+              title="Salin gambar tabel — lalu paste (Ctrl/Cmd+V) di WhatsApp"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 disabled:opacity-50">
+              {foto === 'proses' ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : foto ? <Check className="w-3.5 h-3.5 text-emerald-600" />
+                : <Camera className="w-3.5 h-3.5" strokeWidth={1.75} />}
+              {foto === 'tersalin' ? 'Tersalin — paste di WA' : foto === 'terunduh' ? 'Gambar diunduh' : 'Screenshot'}
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-[12px]">
             <thead>
               <tr className="bg-slate-50 text-slate-600">
+                <th className="px-3 py-2 text-center font-medium w-10">No</th>
                 <th className="px-3 py-2 text-left font-medium">Nama</th>
                 <th className="px-3 py-2 text-left font-medium">Divisi</th>
                 <th className="px-3 py-2 text-right font-medium">Hadir</th>
@@ -529,16 +570,16 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
                 <th className="px-3 py-2 text-right font-medium">Izin</th>
                 <th className="px-3 py-2 text-right font-medium">Tidak absen</th>
                 <th className="px-3 py-2 text-right font-medium">Lengkap</th>
-                <th className="px-3 py-2 text-right font-medium w-[150px]">Produktifitas</th>
+                <th className="px-3 py-2 text-right font-medium w-[150px]">Absensi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {barisTampil.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">
                   Tidak ada baris untuk ditampilkan.
                 </td></tr>
               )}
-              {barisTampil.map((b) => {
+              {barisTampil.map((b, i) => {
                 const angka = (kolom, nilai, kelas) => (
                   <td className={`px-3 py-2 text-right tabular-nums ${kelas}`}>
                     {nilai > 0 ? (
@@ -552,6 +593,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
                 );
                 return (
                 <tr key={b.id} className="hover:bg-slate-50/70">
+                  <td className="px-3 py-2 text-center tabular-nums text-slate-400">{i + 1}</td>
                   <td className="px-3 py-2 font-medium">
                     <button onClick={() => setRincian({ id: b.id, kolom: 'semua' })}
                       className="text-left text-slate-900 hover:text-blue-700 hover:underline underline-offset-2">
@@ -584,7 +626,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
 
         <p className="px-4 py-3 text-[11px] text-slate-400 leading-relaxed border-t border-slate-100">
           Hadir = hari yang punya absen masuk ATAU pulang. Tidak absen = hari tanpa satu baris pun.
-          Produktifitas = hari dengan absen LENGKAP (ada masuk DAN ada pulang) dibagi hari kerja
+          Absensi = hari dengan absen LENGKAP (ada masuk DAN ada pulang) dibagi hari kerja
           efektif — yaitu hari kerja dikurangi hari izin/cuti/sakit/dinas orang itu. Selisih antara
           kolom Hadir dan kolom Lengkap adalah hari yang absennya hanya sebelah.
           Klik nama untuk melihat riwayat absennya, atau klik angka untuk melihat tanggal-tanggalnya.

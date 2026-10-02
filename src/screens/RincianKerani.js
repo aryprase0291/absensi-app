@@ -19,6 +19,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { X, Download, Camera, Loader2, Check } from 'lucide-react';
 import { STATUS, tanggalPerKolom, jamDari } from './rekapKerani';
+import { tangkapKeClipboard } from '../utils/tangkapLayar';
 
 const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
@@ -132,7 +133,7 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
       ['Tampilan', labelKolom + ' (' + baris.length + ' hari)'],
       ['Ringkasan', 'Hadir ' + orang.hadir + ' · Standby ' + orang.standby + ' · Izin ' + orang.izin +
         ' · Tidak absen ' + orang.tidakAbsen + ' · Lengkap ' + orang.lengkap +
-        ' · Produktifitas ' + orang.persenProduktif.toFixed(1) + '%'],
+        ' · Absensi ' + orang.persenProduktif.toFixed(1) + '%'],
       []
     ];
     const kepala = ['No', 'Tanggal', 'Hari', 'Status', 'Masuk', 'Pulang', 'Standby', 'Keterangan', 'Lokasi'];
@@ -146,44 +147,15 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
     XLSX.writeFile(wb, namaFile + '.xlsx');
   };
 
-  // Tangkapan layar SELURUH lembar, bukan hanya bagian yang terlihat:
-  // salinan DOM untuk html2canvas dilepas dari batas tinggi & scroll-nya.
+  // Tangkapan layar SELURUH lembar -> clipboard, siap paste ke WhatsApp.
   const ambilGambar = async () => {
     if (!lembarRef.current || proses === 'foto') return;
     setProses('foto');
-    try {
-      const html2canvas = (await import('html2canvas')).default;
-      const kanvas = await html2canvas(lembarRef.current, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        useCORS: true,
-        onclone: (doc) => {
-          ['[data-lembar-gulir]', '[data-lembar-panel]'].forEach((q) => {
-            const el = doc.querySelector(q);
-            if (el) { el.style.maxHeight = 'none'; el.style.overflow = 'visible'; }
-          });
-          // Header lengket tidak perlu di gambar diam — dan html2canvas
-          // kadang menaruhnya di posisi gulir terakhir.
-          doc.querySelectorAll('[data-lembar-gulir] th').forEach((el) => { el.style.position = 'static'; });
-        }
-      });
-      const blob = await new Promise((ok) => kanvas.toBlob(ok, 'image/png'));
-      let tersalin = false;
-      try {
-        if (navigator.clipboard && window.ClipboardItem) {
-          await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
-          tersalin = true;
-        }
-      } catch (e) { /* peramban menolak — tetap diunduh */ }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = namaFile + '.png'; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setProses(tersalin ? 'tersalin' : 'terunduh');
-      setTimeout(() => setProses(''), 2500);
-    } catch (e) {
-      setProses('');
-    }
+    const h = await tangkapKeClipboard(lembarRef.current, {
+      namaFile, lepas: ['[data-lembar-gulir]', '[data-lembar-panel]']
+    });
+    setProses(!h.ok ? '' : h.tersalin ? 'tersalin' : 'terunduh');
+    if (h.ok) setTimeout(() => setProses(''), 2500);
   };
 
   const th = 'px-2.5 py-2 text-left font-semibold text-slate-600 border-r border-b border-slate-200 bg-slate-100 sticky top-0 z-10 whitespace-nowrap';
@@ -220,7 +192,7 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
             {proses === 'foto' ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : proses ? <Check className="w-3.5 h-3.5 text-emerald-600" />
               : <Camera className="w-3.5 h-3.5" strokeWidth={1.75} />}
-            {proses === 'tersalin' ? 'Tersalin & diunduh' : proses === 'terunduh' ? 'Diunduh' : 'Screenshot'}
+            {proses === 'tersalin' ? 'Tersalin — paste di WA' : proses === 'terunduh' ? 'Diunduh' : 'Screenshot'}
           </button>
           <button onClick={onClose} aria-label="Tutup" className="p-1.5 rounded-md text-slate-500 hover:bg-slate-200">
             <X className="w-4 h-4" strokeWidth={1.75} />
@@ -242,7 +214,7 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
               <span>Izin <b className="text-slate-900">{orang.izin}</b></span>
               <span>Tidak absen <b className="text-rose-700">{orang.tidakAbsen}</b></span>
               <span>Lengkap <b className="text-slate-900">{orang.lengkap}</b></span>
-              <span>Produktifitas <b className="text-slate-900">{orang.persenProduktif.toFixed(1)}%</b></span>
+              <span>Absensi <b className="text-slate-900">{orang.persenProduktif.toFixed(1)}%</b></span>
             </div>
           </div>
 
