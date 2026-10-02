@@ -35,7 +35,9 @@ function tglTampil(ymd) {
 function urutJam(a, b) { return jamDari(a.waktu).localeCompare(jamDari(b.waktu)); }
 function bersih(v) { const s = String(v == null ? '' : v).trim(); return s === '-' ? '' : s; }
 
+const OFF = 'OFF';
 const LABEL_STATUS = {
+  [OFF]: 'Off',
   [STATUS.HADIR]: 'Hadir', [STATUS.STANDBY]: 'Standby',
   [STATUS.IZIN]: 'Izin', [STATUS.KOSONG]: 'Tidak absen'
 };
@@ -43,14 +45,15 @@ const LABEL_STATUS = {
 /** Satu baris lembar kerja per tanggal. */
 function susunBaris(orang, daftarTgl) {
   return daftarTgl.map((t, i) => {
-    const semua = (orang.barisPer && orang.barisPer[t]) || [];
+    const diOff = !!(orang.hariOff && orang.hariOff[t]);
+    const semua = diOff ? orang.hariOff[t] : ((orang.barisPer && orang.barisPer[t]) || []);
     const sah = semua.filter((x) => bersih(x.status) !== 'Rejected');
     const tipe = (x) => String(x.tipe || '').trim();
     const masuk = sah.filter((x) => tipe(x) === 'Hadir').sort(urutJam)[0];
     const pulang = sah.filter((x) => tipe(x) === 'Pulang').sort(urutJam).slice(-1)[0];
     const standby = sah.filter((x) => tipe(x) === 'Standby').sort(urutJam);
     const pengajuan = semua.filter((x) => ['Hadir', 'Pulang', 'Standby'].indexOf(tipe(x)) === -1);
-    const status = orang.sel[t] || STATUS.KOSONG;
+    const status = diOff ? OFF : (orang.sel[t] || STATUS.KOSONG);
     const hadir = status === STATUS.HADIR;
     const ket = pengajuan.map((x) => {
       const st = bersih(x.status);
@@ -58,6 +61,7 @@ function susunBaris(orang, daftarTgl) {
         (bersih(x.catatan) ? ': ' + bersih(x.catatan) : '');
     });
     if (hadir && !orang.lengkapPer[t]) ket.unshift(masuk ? 'Tidak absen pulang' : 'Tidak absen masuk');
+    if (diOff) ket.unshift((hariKe(t) === 0 ? 'Hari Minggu' : 'Hari libur') + ' — masuk, tidak dihitung');
     const sumberLokasi = masuk || pulang || standby[0];
     return {
       no: i + 1,
@@ -65,7 +69,7 @@ function susunBaris(orang, daftarTgl) {
       hari: HARI[hariKe(t)] || '',
       minggu: hariKe(t) === 0,
       status,
-      statusLabel: LABEL_STATUS[status],
+      statusLabel: diOff ? (hariKe(t) === 0 ? 'Off · Minggu' : 'Off · Libur') : LABEL_STATUS[status],
       sebelah: hadir && !orang.lengkapPer[t],
       masuk: masuk ? (jamDari(masuk.waktu) || '✓') : '',
       pulang: pulang ? (jamDari(pulang.waktu) || '✓') : '',
@@ -95,7 +99,8 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
     { kunci: 'izin',    label: 'Izin',          warna: warna.izin },
     { kunci: 'tidak',   label: 'Tidak absen',   warna: warna.tidak },
     { kunci: 'lengkap', label: 'Lengkap' },
-    { kunci: 'sebelah', label: 'Hanya sebelah' }
+    { kunci: 'sebelah', label: 'Hanya sebelah' },
+    { kunci: 'off',     label: 'Masuk hari off', warna: '#94a3b8' }
   ], [warna]);
 
   const jumlah = useMemo(() => {
@@ -121,7 +126,8 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
     [STATUS.HADIR]:   { bg: '#e8f1fc', fg: '#1d5fb0', titik: warna.hadir },
     [STATUS.STANDBY]: { bg: '#fdf4dc', fg: '#8a5d00', titik: warna.standby },
     [STATUS.IZIN]:    { bg: '#eeebf8', fg: '#3b2e8a', titik: warna.izin },
-    [STATUS.KOSONG]:  { bg: '#fcebea', fg: '#b4302f', titik: warna.tidak }
+    [STATUS.KOSONG]:  { bg: '#fcebea', fg: '#b4302f', titik: warna.tidak },
+    [OFF]:            { bg: '#f1f5f9', fg: '#475569', titik: '#94a3b8' }
   };
 
   const eksporExcel = () => {
@@ -170,7 +176,7 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
         {/* Bilah alat — tidak ikut tertangkap gambar */}
         <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-200 bg-slate-50">
           <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
-            {PILIHAN.map((p) => {
+            {PILIHAN.filter((p) => p.kunci !== 'off' || jumlah.off > 0).map((p) => {
               const aktif = kolom === p.kunci;
               return (
                 <button key={p.kunci} onClick={() => setKolom(p.kunci)}
@@ -206,6 +212,7 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
               <h3 className="text-[15px] font-semibold text-slate-900">{orang.nama}</h3>
               <p className="text-[12px] text-slate-500">
                 {orang.divisi}{teksPeriode && ' · ' + teksPeriode} · {labelKolom} ({baris.length} hari)
+                {jumlah.off > 0 && kolom === 'semua' ? ' · ' + jumlah.off + ' di antaranya hari off, tidak dihitung' : ''}
               </p>
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-500 tabular-nums">
@@ -241,7 +248,7 @@ export default function RincianKerani({ orang, tanggal, kolomAwal, warna, period
                   const w = WARNA_SEL[r.status];
                   const kosong = r.status === STATUS.KOSONG;
                   return (
-                    <tr key={r.tanggal} className={kosong ? 'bg-rose-50/40' : 'hover:bg-sky-50/50'}>
+                    <tr key={r.tanggal} className={kosong ? 'bg-rose-50/40' : r.status === OFF ? 'bg-slate-50 text-slate-500' : 'hover:bg-sky-50/50'}>
                       <td className={td + ' text-center text-slate-400 bg-slate-50'}>{r.no}</td>
                       <td className={td + ' whitespace-nowrap text-slate-900'}>{tglTampil(r.tanggal)}</td>
                       <td className={td + ' whitespace-nowrap ' + (r.minggu ? 'text-rose-600' : 'text-slate-600')}>{r.hari}</td>

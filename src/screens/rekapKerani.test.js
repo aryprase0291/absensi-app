@@ -273,3 +273,37 @@ describe('rincian per orang', () => {
     expect(jamDari('')).toBe('');
   });
 });
+
+describe('zona waktu & hari off', () => {
+  const { tanggalPerKolom, jamDari, tglLokal } = require('./rekapKerani');
+  const dasar = { kerani: KERANI, dari: DARI, sampai: SAMPAI, libur: {} };
+
+  test('ISO UTC dibaca sebagai tanggal & jam Jakarta', () => {
+    // 2 Sep 06:48 WIB = 1 Sep 23:48 UTC
+    expect(tglLokal('2026-09-01T23:48:00.000Z')).toBe('2026-09-02');
+    expect(jamDari('2026-09-01T23:48:00.000Z')).toBe('06:48');
+    // tanggal tanpa jam dari sheet (tengah malam WIB) = 17:00 UTC sehari sebelumnya
+    expect(tglLokal('2026-09-01T17:00:00.000Z')).toBe('2026-09-02');
+    expect(tglLokal('02/09/2026 06:48:00')).toBe('2026-09-02');
+  });
+
+  test('absen pagi tidak bergeser ke hari sebelumnya', () => {
+    const r = susunRekapKerani({ ...dasar, history: [
+      { userId: 'U1', tipe: 'Hadir', waktu: '2026-09-01T23:48:00.000Z', tglMulai: '-', tglSelesai: '-' }
+    ] });
+    const ani = r.perOrang.find((b) => b.id === 'U1');
+    expect(ani.sel['2026-09-02']).toBe(STATUS.HADIR);
+    expect(ani.sel['2026-09-01']).toBe(STATUS.KOSONG);
+  });
+
+  test('Minggu tidak dihitung, tapi absennya tetap terbaca', () => {
+    const r = susunRekapKerani({ ...dasar, history: [absen('U1', 'Hadir', '2026-09-06'), absen('U1', 'Pulang', '2026-09-06')] });
+    const ani = r.perOrang.find((b) => b.id === 'U1');
+    expect(r.tanggal).not.toContain('2026-09-06');
+    expect(ani.hadir).toBe(0);
+    expect(ani.hariOff['2026-09-06'].length).toBe(2);
+    expect(tanggalPerKolom(ani, r.tanggal, 'off')).toEqual(['2026-09-06']);
+    expect(tanggalPerKolom(ani, r.tanggal, 'semua')).toContain('2026-09-06');
+    expect(tanggalPerKolom(ani, r.tanggal, 'tidak')).not.toContain('2026-09-06');
+  });
+});

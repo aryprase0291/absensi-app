@@ -141,16 +141,49 @@ export function daftarDivisi(pegawai) {
  *
  * Baris harian (Hadir / Pulang / Standby) memakai kolom Waktu.
  */
+// ZONA WAKTU.
+//   Kalau sel Waktu / Tgl Mulai di sheet sudah menjadi tipe Date,
+//   getValues() mengirimnya sebagai ISO UTC, mis. "2026-10-01T23:48:00.000Z"
+//   untuk absen 2 Okt pukul 06:48 WIB. keYmd() memotong 10 karakter pertama
+//   -> "2026-10-01": absen sebelum jam 07:00 WIB jatuh ke HARI SEBELUMNYA,
+//   dan hari ini terlihat "tidak absen" padahal orangnya sudah absen.
+//   Teks ISO yang membawa zona (Z / +07:00) karena itu dibaca dalam zona
+//   Asia/Jakarta — zona script backend — bukan zona perangkat yang membuka.
+const ZONA = 'Asia/Jakarta';
+const ISO_BERZONA = /^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/;
+
+function bagianJakarta(teks) {
+  const d = new Date(teks);
+  if (isNaN(d.getTime())) return null;
+  const b = {};
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: ZONA, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(d).forEach((x) => { b[x.type] = x.value; });
+  return b;
+}
+
+/** 'YYYY-MM-DD' menurut kalender Jakarta. */
+export function tglLokal(nilai) {
+  if (nilai instanceof Date) nilai = nilai.toISOString();
+  const teks = String(nilai || '').trim();
+  if (ISO_BERZONA.test(teks)) {
+    const b = bagianJakarta(teks);
+    if (b) return b.year + '-' + b.month + '-' + b.day;
+  }
+  return keYmd(teks);
+}
+
 export function tanggalBaris(item) {
   if (!item) return [];
   const tipe = String(item.tipe || '').trim();
-  const mulai = keYmd(item.tglMulai && item.tglMulai !== '-' ? item.tglMulai : '');
-  const selesai = keYmd(item.tglSelesai && item.tglSelesai !== '-' ? item.tglSelesai : '');
+  const mulai = tglLokal(item.tglMulai && item.tglMulai !== '-' ? item.tglMulai : '');
+  const selesai = tglLokal(item.tglSelesai && item.tglSelesai !== '-' ? item.tglSelesai : '');
 
   if (TIPE_PENGAJUAN.indexOf(tipe) !== -1 && mulai) {
     return rentangTanggal(mulai, selesai || mulai, 400);
   }
-  const t = mulai || keYmd(item.waktu);
+  const t = mulai || tglLokal(item.waktu);
   return t ? [t] : [];
 }
 
@@ -182,6 +215,11 @@ export function susunRekapKerani(opsi) {
   });
   const adaTanggal = {};
   tanggal.forEach(function (t) { adaTanggal[t] = true; });
+  // Hari DI LUAR hari kerja (Minggu / libur nasional) yang masih dalam
+  // rentang. Tidak dihitung di angka mana pun, tapi kalau ada yang absen
+  // di hari itu barisnya tetap disimpan supaya jamnya terbaca di rincian.
+  const adaRentang = {};
+  rentangTanggal(o.dari, o.sampai).forEach(function (t) { adaRentang[t] = true; });
 
   // Satu kerangka per orang, diisi nol dulu. Orang yang TIDAK punya satu
   // baris pun tetap muncul dengan seluruh harinya KOSONG — itu justru
@@ -200,6 +238,7 @@ export function susunRekapKerani(opsi) {
       sel: {},
       lengkapPer: {},
       barisPer: {},
+      hariOff: {},
       hadir: 0, standby: 0, izin: 0, tidakAbsen: 0, lengkap: 0,
       persenProduktif: 0
     };
@@ -219,7 +258,17 @@ export function susunRekapKerani(opsi) {
 
     const tipe = String(item.tipe || '').trim();
     tanggalBaris(item).forEach(function (t) {
-      if (!adaTanggal[t]) return;
+      if (!adaTanggal[t]) {
+        // Hari off: catat untuk dilihat, jangan dihitung. Hanya absen
+        // harian — cuti panjang yang kebetulan melewati hari Minggu tidak
+        // perlu memunculkan baris Minggu.
+        if (adaRentang[t] && !ditolak &&
+            (tipe === TIPE_HADIR || tipe === TIPE_PULANG || tipe === TIPE_STANDBY)) {
+          if (!peta[id].hariOff[t]) peta[id].hariOff[t] = [];
+          peta[id].hariOff[t].push(item);
+        }
+        return;
+      }
       // Baris mentah disimpan untuk layar riwayat — termasuk yang
       // DITOLAK, supaya admin bisa melihat kenapa hari itu tetap kosong
       // padahal orangnya sempat mengajukan sesuatu.
@@ -330,17 +379,21 @@ export function susunRekapKerani(opsi) {
  * sama (b.sel / b.lengkapPer), supaya klik angka "4" selalu menampilkan
  * tepat empat tanggal.
  *
- *   semua    seluruh hari kerja
+ *   semua    seluruh hari kerja + hari off yang ada absennya
+ *   off      Minggu / libur yang ada absennya (tidak dihitung)
  *   hadir / standby / izin / tidak   menurut status hari itu
  *   lengkap  ada masuk DAN pulang
  *   sebelah  hadir tapi tidak lengkap (selisih Hadir − Lengkap)
  */
-export const KOLOM_RINCIAN = ['semua', 'hadir', 'standby', 'izin', 'tidak', 'lengkap', 'sebelah'];
+export const KOLOM_RINCIAN = ['semua', 'off', 'hadir', 'standby', 'izin', 'tidak', 'lengkap', 'sebelah'];
 
 export function tanggalPerKolom(b, tanggal, kolom) {
   if (!b) return [];
   const sel = b.sel || {};
   const lk = b.lengkapPer || {};
+  const off = Object.keys(b.hariOff || {});
+  if (kolom === 'off') return off.sort();
+  if (kolom === 'semua') return (tanggal || []).concat(off).sort();
   return (tanggal || []).filter(function (t) {
     switch (kolom) {
       case 'hadir': return sel[t] === STATUS.HADIR;
@@ -358,17 +411,14 @@ export function tanggalPerKolom(b, tanggal, kolom) {
  * Jam 'HH:MM' dari kolom Waktu. Kolom itu bisa datang sebagai teks
  * "dd/MM/yyyy HH:mm:ss" (yang ditulis backend) ATAU sebagai tanggal ISO
  * kalau Sheets sudah mengubah selnya jadi Date. ISO dengan zona (Z /
- * +07:00) dikonversi ke jam lokal perangkat; teks biasa diambil apa
- * adanya — tidak ada zona yang bisa dipakai menggesernya.
+ * +07:00) dibaca dalam zona Asia/Jakarta; teks biasa diambil apa adanya.
  */
 export function jamDari(waktu) {
   const teks = String(waktu || '').trim();
   if (!teks) return '';
-  if (/^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/.test(teks)) {
-    const d = new Date(teks);
-    if (!isNaN(d.getTime())) {
-      return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
-    }
+  if (ISO_BERZONA.test(teks)) {
+    const b = bagianJakarta(teks);
+    if (b) return b.hour + ':' + b.minute;
   }
   const m = teks.match(/[ T](\d{1,2})[:.](\d{2})/);
   return m ? ('0' + m[1]).slice(-2) + ':' + m[2] : '';
