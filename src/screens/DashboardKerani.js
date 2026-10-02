@@ -85,6 +85,39 @@ function tglPendek(y) {
   return Number(b[2]) + ' ' + (bl[Number(b[1]) - 1] || b[1]);
 }
 
+// --- Cache sesi -------------------------------------------------------
+// Dashboard ini dibuka berulang dalam satu sesi (bolak-balik ke panel
+// admin). Hasil terakhir disimpan di sessionStorage supaya pembukaan
+// berikutnya langsung berisi, sementara data segar diambil di belakang.
+// Hanya kolom yang dipakai layar ini yang disimpan — foto, lampiran,
+// dsb. dibuang supaya tetap jauh di bawah batas ±5 MB sessionStorage.
+const KUNCI_CACHE = 'dashboard_kerani_v1';
+const UMUR_CACHE_MS = 30 * 60 * 1000;
+
+function ringkasPegawai(list) {
+  return (list || []).map((p) => ({
+    id: p.id, uuid: p.uuid, nama: p.nama, divisi: p.divisi, jabatan: p.jabatan
+  }));
+}
+function ringkasHistory(list) {
+  return (list || []).map((h) => ({
+    uuid: h.uuid, userId: h.userId, tipe: h.tipe, waktu: h.waktu, status: h.status,
+    tglMulai: h.tglMulai, tglSelesai: h.tglSelesai, catatan: h.catatan,
+    lokasi: h.lokasi, alamat: h.alamat
+  }));
+}
+function bacaCache() {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(KUNCI_CACHE) || 'null');
+    if (!c || Date.now() - (c.waktu || 0) > UMUR_CACHE_MS) return null;
+    return c;
+  } catch (e) { return null; }
+}
+function simpanCache(isi) {
+  try { sessionStorage.setItem(KUNCI_CACHE, JSON.stringify({ ...isi, waktu: Date.now() })); }
+  catch (e) { /* penuh / diblokir — layar tetap jalan tanpa cache */ }
+}
+
 function tglPanjang(y) {
   const b = String(y || '').split('-');
   if (b.length !== 3) return String(y || '');
@@ -106,17 +139,22 @@ function Kartu({ ikon: Ikon, label, nilai, catatan, warna }) {
 }
 
 export default function DashboardKerani({ user, setView, fetchApi: customFetchApi }) {
-  const [dari, setDari] = useState(() => ymd(new Date(Date.now() - HARI_DEFAULT * 86400000)));
-  const [sampai, setSampai] = useState(() => ymd(new Date()));
+  // Tanggal awal diambil dari CACHE periode terakhir kalau ada (supaya
+  // layar langsung berisi), lalu disamakan dengan periode aktif dari
+  // server saat respons pertama tiba. Cadangan terakhir: 30 hari.
+  const cacheAwal = useMemo(() => bacaCache(), []);
+  const [dari, setDari] = useState(() => (cacheAwal && cacheAwal.dari) || ymd(new Date(Date.now() - HARI_DEFAULT * 86400000)));
+  const [sampai, setSampai] = useState(() => (cacheAwal && cacheAwal.sampai) || ymd(new Date()));
   const [kataKunci, setKataKunci] = useState('KERANI');
   const [divisiDipilih, setDivisiDipilih] = useState([]);
   const [cari, setCari] = useState('');
   const [hitungMinggu, setHitungMinggu] = useState(false);
   const [hitungLibur, setHitungLibur] = useState(false);
 
-  const [pegawai, setPegawai] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [rentangDipakai, setRentangDipakai] = useState(null);
+  const [pegawai, setPegawai] = useState(() => (cacheAwal && cacheAwal.pegawai) || []);
+  const [history, setHistory] = useState(() => (cacheAwal && cacheAwal.history) || []);
+  const [rentangDipakai, setRentangDipakai] = useState(() => (cacheAwal && cacheAwal.period) || null);
+  const [dariCache, setDariCache] = useState(() => !!cacheAwal);
   const [memuat, setMemuat] = useState(false);
   const [galat, setGalat] = useState('');
   const [hover, setHover] = useState(null);
@@ -148,8 +186,13 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
     return await res.json();
   }, [customFetchApi]);
 
-  const muat = useCallback(async () => {
+  // `awal`: pembukaan pertama. get_history dikirim TANPA filterStart/End,
+  // sehingga server memakai PERIODE AKTIF dan mengembalikannya di
+  // `period` — satu permintaan, tidak perlu memanggil get_absence_period
+  // terpisah. Kotak tanggal lalu disamakan dengan periode itu.
+  const muat = useCallback(async (opsi) => {
     if (!user) return;
+    const awal = !!(opsi && opsi.awal);
     setMemuat(true);
     setGalat('');
     try {
@@ -164,22 +207,39 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
           canViewAll: true,
           requestorLokasi: user.lokasi || 'All',
           targetUserIds: [],
-          filterStart: dari,
-          filterEnd: sampai
+          ...(awal ? {} : { filterStart: dari, filterEnd: sampai })
         })
       ]);
 
+      let listPegawai = null, listHistory = null, period = null;
       if (jwbPegawai && jwbPegawai.result === 'success') {
-        setPegawai(jwbPegawai.list || []);
+        listPegawai = ringkasPegawai(jwbPegawai.list || []);
+        setPegawai(listPegawai);
       } else {
         setGalat((jwbPegawai && jwbPegawai.message) || 'Gagal mengambil daftar pegawai.');
       }
 
       if (jwbHistory && jwbHistory.result === 'success') {
-        setHistory(jwbHistory.history || []);
-        setRentangDipakai(jwbHistory.period || null);
+        listHistory = ringkasHistory(jwbHistory.history || []);
+        period = jwbHistory.period || null;
+        setHistory(listHistory);
+        setRentangDipakai(period);
+        // Kotak tanggal mengikuti rentang yang BENAR-BENAR dipakai server.
+        if (period && period.mulai && period.selesai) {
+          setDari(period.mulai);
+          setSampai(period.selesai);
+        }
       } else {
         setGalat((jwbHistory && jwbHistory.message) || 'Gagal mengambil riwayat absen.');
+      }
+
+      if (listPegawai && listHistory) {
+        setDariCache(false);
+        simpanCache({
+          dari: (period && period.mulai) || dari,
+          sampai: (period && period.selesai) || sampai,
+          period, pegawai: listPegawai, history: listHistory
+        });
       }
     } catch (e) {
       setGalat('Tidak bisa menghubungi server. Periksa koneksi lalu coba lagi.');
@@ -188,8 +248,16 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
     }
   }, [user, dari, sampai, panggil]);
 
-  useEffect(() => { muat(); /* sekali saat layar dibuka */ // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Sekali saat layar dibuka: periode aktif dari server. Kalau ada cache,
+  // isinya sudah tampil duluan dan ini menyegarkannya di belakang.
+  useEffect(() => { muat({ awal: true }); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Hari yang BELUM terjadi tidak boleh dihitung "tidak absen". Periode
+  // aktif biasanya berakhir beberapa minggu ke depan; tanpa batas ini
+  // persentase kehadiran anjlok hanya karena kalendernya belum sampai.
+  const hariIni = ymd(new Date());
+  const sampaiHitung = sampai > hariIni ? hariIni : sampai;
 
   // Kerani sebelum saringan divisi — dipakai untuk menyusun daftar divisi
   // yang ditawarkan. Kalau daftarnya disusun SESUDAH saringan divisi,
@@ -216,8 +284,8 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
   );
 
   const rekap = useMemo(() => susunRekapKerani({
-    kerani, history, dari, sampai, libur, hitungMinggu, hitungLibur
-  }), [kerani, history, dari, sampai, libur, hitungMinggu, hitungLibur]);
+    kerani, history, dari, sampai: sampaiHitung, libur, hitungMinggu, hitungLibur
+  }), [kerani, history, dari, sampaiHitung, libur, hitungMinggu, hitungLibur]);
 
   const barisTampil = useMemo(() => {
     const q = cari.trim().toLowerCase();
@@ -309,12 +377,17 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
           </h2>
           <p className="text-[12px] text-slate-500 mt-0.5">
             {rentangDipakai
-              ? 'Data ' + tglPendek(rentangDipakai.mulai) + ' – ' + tglPendek(rentangDipakai.selesai)
+              ? (rentangDipakai.aktif && rentangDipakai.aktif.label && rentangDipakai.aktif.mulai === rentangDipakai.mulai
+                  ? 'Periode ' + rentangDipakai.aktif.label + ' · '
+                  : 'Data ') +
+                tglPendek(rentangDipakai.mulai) + ' – ' + tglPendek(rentangDipakai.selesai) +
+                (sampai > hariIni ? ' · dihitung s/d hari ini' : '')
               : 'Rekap kehadiran dari aplikasi, bukan mesin fingerprint'}
+            {dariCache && memuat && <span className="ml-1.5 text-amber-600">· memperbarui…</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={muat} disabled={memuat}
+          <button onClick={() => muat()} disabled={memuat}
             className="p-2.5 bg-white text-slate-700 hover:text-blue-600 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/50 active:scale-95 transition-all shadow-sm disabled:opacity-50">
             {memuat ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" strokeWidth={1.75} />}
           </button>
@@ -349,7 +422,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
                 className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-[13px] text-slate-900 outline-none focus:border-slate-400" />
             </div>
           </div>
-          <button onClick={muat} disabled={memuat}
+          <button onClick={() => muat()} disabled={memuat}
             className="px-4 py-2 rounded-lg text-[13px] font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
             Terapkan
           </button>
@@ -639,7 +712,7 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
           tanggal={rekap.tanggal}
           kolomAwal={rincian.kolom}
           warna={WARNA}
-          periode={{ dari, sampai }}
+          periode={{ dari, sampai: sampaiHitung }}
           onClose={() => setRincian(null)}
         />
       )}
