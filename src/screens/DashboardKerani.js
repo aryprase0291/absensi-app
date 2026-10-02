@@ -118,6 +118,12 @@ function simpanCache(isi) {
   catch (e) { /* penuh / diblokir — layar tetap jalan tanpa cache */ }
 }
 
+/** Tanggal akhir dipotong ke hari ini — hari yang belum terjadi tidak ditarik. */
+function batasHariIni(selesai) {
+  const hariIni = ymd(new Date());
+  return selesai && selesai < hariIni ? selesai : hariIni;
+}
+
 function tglPanjang(y) {
   const b = String(y || '').split('-');
   if (b.length !== 3) return String(y || '');
@@ -144,7 +150,10 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
   // server saat respons pertama tiba. Cadangan terakhir: 30 hari.
   const cacheAwal = useMemo(() => bacaCache(), []);
   const [dari, setDari] = useState(() => (cacheAwal && cacheAwal.dari) || ymd(new Date(Date.now() - HARI_DEFAULT * 86400000)));
-  const [sampai, setSampai] = useState(() => (cacheAwal && cacheAwal.sampai) || ymd(new Date()));
+  const [sampai, setSampai] = useState(() => {
+    if (cacheAwal && cacheAwal.otomatis && cacheAwal.selesaiPeriode) return batasHariIni(cacheAwal.selesaiPeriode);
+    return (cacheAwal && cacheAwal.sampai) || ymd(new Date());
+  });
   const [kataKunci, setKataKunci] = useState('KERANI');
   const [divisiDipilih, setDivisiDipilih] = useState([]);
   const [cari, setCari] = useState('');
@@ -224,10 +233,12 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
         period = jwbHistory.period || null;
         setHistory(listHistory);
         setRentangDipakai(period);
-        // Kotak tanggal mengikuti rentang yang BENAR-BENAR dipakai server.
-        if (period && period.mulai && period.selesai) {
+        // Pembukaan pertama: kotak tanggal = awal periode aktif s/d HARI
+        // INI (bukan akhir periode). Periode 21 Sep–20 Okt yang dibuka
+        // 2 Okt menjadi 21 Sep–2 Okt; besok otomatis 21 Sep–3 Okt.
+        if (awal && period && period.mulai && period.selesai) {
           setDari(period.mulai);
-          setSampai(period.selesai);
+          setSampai(batasHariIni(period.selesai));
         }
       } else {
         setGalat((jwbHistory && jwbHistory.message) || 'Gagal mengambil riwayat absen.');
@@ -236,8 +247,11 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
       if (listPegawai && listHistory) {
         setDariCache(false);
         simpanCache({
-          dari: (period && period.mulai) || dari,
-          sampai: (period && period.selesai) || sampai,
+          dari: awal && period ? period.mulai : dari,
+          sampai: awal && period ? batasHariIni(period.selesai) : sampai,
+          // Tanggal hasil periode aktif (bukan pilihan manual) ikut maju
+          // ke hari ini saat cache dibaca di hari berikutnya.
+          otomatis: awal, selesaiPeriode: period ? period.selesai : '',
           period, pegawai: listPegawai, history: listHistory
         });
       }
@@ -380,8 +394,9 @@ export default function DashboardKerani({ user, setView, fetchApi: customFetchAp
               ? (rentangDipakai.aktif && rentangDipakai.aktif.label && rentangDipakai.aktif.mulai === rentangDipakai.mulai
                   ? 'Periode ' + rentangDipakai.aktif.label + ' · '
                   : 'Data ') +
-                tglPendek(rentangDipakai.mulai) + ' – ' + tglPendek(rentangDipakai.selesai) +
-                (sampai > hariIni ? ' · dihitung s/d hari ini' : '')
+                tglPendek(dari) + ' – ' + tglPendek(sampaiHitung) +
+                (rentangDipakai.aktif && rentangDipakai.aktif.selesai && rentangDipakai.aktif.selesai > sampaiHitung
+                  ? ' (periode s/d ' + tglPendek(rentangDipakai.aktif.selesai) + ')' : '')
               : 'Rekap kehadiran dari aplikasi, bukan mesin fingerprint'}
             {dariCache && memuat && <span className="ml-1.5 text-amber-600">· memperbarui…</span>}
           </p>
