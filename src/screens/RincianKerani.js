@@ -61,7 +61,7 @@ function susunBaris(orang, daftarTgl) {
         (bersih(x.catatan) ? ': ' + bersih(x.catatan) : '');
     });
     if (hadir && !orang.lengkapPer[t]) ket.unshift(masuk ? 'Tidak absen pulang' : 'Tidak absen masuk');
-    if (diOff) ket.unshift((hariKe(t) === 0 ? 'Hari Minggu' : 'Hari libur') + ' — masuk, tidak dihitung');
+    if (diOff) ket.unshift((hariKe(t) === 0 ? 'Hari Minggu' : 'Hari libur') + ', Masuk');
     const sumberLokasi = masuk || pulang || standby[0];
     return {
       no: i + 1,
