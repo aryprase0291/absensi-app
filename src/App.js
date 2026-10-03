@@ -8078,7 +8078,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                         <button type="button" onClick={() => handleRemoveGeoMaster(index)} className="text-[11px] font-medium text-rose-500 hover:text-rose-700">Hapus</button>
                       </div>
                       <input className={inputCls} value={m.nama} onChange={e => handleUpdateGeoMaster(index, 'nama', e.target.value)} placeholder="Nama lokasi, mis. Kebun Sei Rokan" />
-                      <input className={inputCls} value={m.link || ''} onChange={e => handleUpdateGeoMaster(index, 'link', e.target.value)} placeholder="Link / alamat Google Maps" />
+                      <input className={inputCls} value={m.link || ''} onChange={e => handleUpdateGeoMaster(index, 'link', e.target.value)} placeholder="Link Google Maps ATAU koordinat, mis. -7.2575, 112.7521" />
                       <div className="grid grid-cols-2 gap-2">
                         <input className={inputCls} type="number" step="any" value={m.lat} onChange={e => handleUpdateGeoMaster(index, 'lat', e.target.value)} placeholder="Latitude (opsional)" />
                         <input className={inputCls} type="number" step="any" value={m.lng} onChange={e => handleUpdateGeoMaster(index, 'lng', e.target.value)} placeholder="Longitude (opsional)" />
