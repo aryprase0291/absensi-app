@@ -12,7 +12,12 @@ const SHEET_ANNOUNCEMENTS = "Announcements"; // Sheet Informasi HRD
 const SHEET_MASTER_CUTI_NAME = "MASTER-CUTI";
 const SHEET_GEOFENCE = "Geofence";
 const SHEET_APPROVAL_TEAMS = "ApprovalTeams";
-const GEOFENCE_HEADERS = ["UserID", "Nama", "Wajib", "Nama Area", "Latitude", "Longitude", "RadiusMeter", "Aktif"];
+// "MasterID" ditambah BELAKANGAN sebagai kolom TERAKHIR supaya baris lama
+// (koordinat tertanam per karyawan) tetap terbaca. Baris dengan MasterID
+// mengambil koordinat dari sheet MasterGeofence.
+const GEOFENCE_HEADERS = ["UserID", "Nama", "Wajib", "Nama Area", "Latitude", "Longitude", "RadiusMeter", "Aktif", "MasterID"];
+const SHEET_GEOFENCE_MASTER = "MasterGeofence";
+const GEOFENCE_MASTER_HEADERS = ["ID", "Nama Lokasi", "Link Maps", "Latitude", "Longitude", "RadiusMeter", "Aktif"];
 // "Jabatan" ditambah BELAKANGAN sebagai kolom TERAKHIR (bukan disisip di
 // tengah) supaya sheet ApprovalTeams yang sudah berisi data lama tetap
 // terbaca benar — semua index kolom sebelumnya (0-6) tidak berubah.
@@ -243,6 +248,8 @@ function doPost(e) {
     if (action === 'run_gps_audit_historis') return handleRunGpsAuditHistoris(data);
     if (action === 'get_geofence_config') return handleGetGeofenceConfig(data);
     if (action === 'save_geofence_config') return handleSaveGeofenceConfig(data);
+    if (action === 'save_geofence_master') return handleSaveGeofenceMaster(data);
+    if (action === 'apply_geofence_divisi') return handleApplyGeofenceDivisi(data);
     if (action === 'reset_password_user') return handleResetPasswordUser(data); // Reset password
     if (action === 'set_approval_role') return handleSetApprovalRole(data); // Jadikan user sbg kepala divisi (approval)
     if (action === 'get_analysis_data') return handleGetAnalysisData(data);
@@ -1899,10 +1906,35 @@ function _ambilKonfigurasiGeofence() {
   return getGeofenceConfigCached();
 }
 
+// Master lokasi: peta id -> { id, nama, link, lat, lng, radius, aktif }.
+function _bacaMasterGeofence_() {
+  const sheet = SS.getSheetByName(SHEET_GEOFENCE_MASTER);
+  const out = [];
+  if (!sheet || sheet.getLastRow() < 2) return out;
+  const rows = bacaSheet(sheet, GEOFENCE_MASTER_HEADERS.length);
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const id = String(r[0] === null || r[0] === undefined ? '' : r[0]).trim();
+    if (!id) continue;
+    const radius = Number(r[5]);
+    out.push({
+      id: id,
+      nama: String(r[1] || '').trim(),
+      link: String(r[2] || '').trim(),
+      lat: Number(r[3]), lng: Number(r[4]),
+      radius: isFinite(radius) && radius > 0 ? Math.min(radius, 100000) : 150,
+      aktif: _normalisasiBooleanGeofence(r[6], true)
+    });
+  }
+  return out;
+}
+
 function _susunKonfigurasiGeofence_() {
   const sheet = SS.getSheetByName(SHEET_GEOFENCE);
   const map = {};
   if (!sheet || sheet.getLastRow() < 2) return map;
+  const masterMap = {};
+  _bacaMasterGeofence_().forEach(function (m) { masterMap[m.id] = m; });
   const rows = bacaSheet(sheet, GEOFENCE_HEADERS.length);
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -1910,16 +1942,26 @@ function _susunKonfigurasiGeofence_() {
     if (!userId) continue;
     if (!map[userId]) map[userId] = { required: false, areas: [] };
     map[userId].required = map[userId].required || _normalisasiBooleanGeofence(row[2], false);
-    const lat = Number(row[4]);
-    const lng = Number(row[5]);
-    const radius = Number(row[6]);
-    const aktif = _normalisasiBooleanGeofence(row[7], true);
+    const masterId = String(row[8] === null || row[8] === undefined ? '' : row[8]).trim();
+    let nama, lat, lng, radius, aktif;
+    if (masterId) {
+      // Koordinat selalu diambil dari master, jadi mengubah master langsung
+      // berlaku ke semua karyawan yang memakainya. Master terhapus/nonaktif
+      // = area dilewati (karyawan wajib-geofence jadi ditolak, bukan lolos).
+      const m = masterMap[masterId];
+      if (!m || !m.aktif) continue;
+      nama = m.nama || 'Area kantor'; lat = m.lat; lng = m.lng; radius = m.radius; aktif = true;
+    } else {
+      nama = String(row[3] || 'Area kantor').trim() || 'Area kantor';
+      lat = Number(row[4]); lng = Number(row[5]); radius = Number(row[6]);
+      aktif = _normalisasiBooleanGeofence(row[7], true);
+    }
     if (!aktif || !isFinite(lat) || !isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
     map[userId].areas.push({
-      nama: String(row[3] || 'Area kantor').trim() || 'Area kantor',
-      lat: lat, lng: lng,
+      nama: nama, lat: lat, lng: lng,
       radius: isFinite(radius) && radius > 0 ? Math.min(radius, 100000) : 150,
-      aktif: true
+      aktif: true,
+      masterId: masterId
     });
   }
   return map;
@@ -2022,7 +2064,141 @@ function _pastikanSheetGeofence() {
   let sheet = SS.getSheetByName(SHEET_GEOFENCE);
   if (!sheet) sheet = SS.insertSheet(SHEET_GEOFENCE);
   if (sheet.getLastRow() < 1 || sheet.getRange(1, 1, 1, GEOFENCE_HEADERS.length).getValues()[0].join('').trim() === '') sheet.getRange(1, 1, 1, GEOFENCE_HEADERS.length).setValues([GEOFENCE_HEADERS]);
+  else if (String(sheet.getRange(1, GEOFENCE_HEADERS.length).getValue() || '').trim() === '') sheet.getRange(1, GEOFENCE_HEADERS.length).setValue(GEOFENCE_HEADERS[GEOFENCE_HEADERS.length - 1]);
   return sheet;
+}
+
+function _pastikanSheetGeofenceMaster() {
+  let sheet = SS.getSheetByName(SHEET_GEOFENCE_MASTER);
+  if (!sheet) sheet = SS.insertSheet(SHEET_GEOFENCE_MASTER);
+  if (sheet.getLastRow() < 1) sheet.getRange(1, 1, 1, GEOFENCE_MASTER_HEADERS.length).setValues([GEOFENCE_MASTER_HEADERS]);
+  return sheet;
+}
+
+// Ambil koordinat dari tautan Google Maps (atau teks "lat,lng").
+// Format yang dikenali: .../@-7.25,112.75,17z  |  !3d-7.25!4d112.75  |
+// ?q=-7.25,112.75 / ?ll= / ?query=  |  teks polos "-7.25, 112.75".
+// Tautan pendek (maps.app.goo.gl, goo.gl/maps) diikuti redirect-nya di server.
+function _koordinatDariTeksMaps_(teks) {
+  const t = String(teks || '');
+  const pola = [
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+    /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /[?&](?:q|ll|query|center|destination)=(-?\d+(?:\.\d+)?)(?:,|%2C)\s*(-?\d+(?:\.\d+)?)/i,
+    /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/
+  ];
+  for (let i = 0; i < pola.length; i++) {
+    const m = t.match(pola[i]);
+    if (!m) continue;
+    const lat = Number(m[1]), lng = Number(m[2]);
+    if (isFinite(lat) && isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat: lat, lng: lng };
+  }
+  return null;
+}
+
+function parseKoordinatMaps(link) {
+  let url = String(link || '').trim();
+  if (!url) return null;
+  const langsung = _koordinatDariTeksMaps_(url);
+  if (langsung) return langsung;
+  if (!/^https?:\/\//i.test(url)) return null;
+  for (let i = 0; i < 5; i++) {
+    let res;
+    try { res = UrlFetchApp.fetch(url, { followRedirects: false, muteHttpExceptions: true }); }
+    catch (e) { return null; }
+    const code = res.getResponseCode();
+    const headers = res.getHeaders();
+    const lokasi = headers['Location'] || headers['location'];
+    if (code >= 300 && code < 400 && lokasi) {
+      url = String(lokasi);
+      const k = _koordinatDariTeksMaps_(decodeURIComponent(url));
+      if (k) return k;
+      continue;
+    }
+    return _koordinatDariTeksMaps_(res.getContentText().slice(0, 20000)) ;
+  }
+  return null;
+}
+
+
+// Ganti seluruh baris geofence satu karyawan (area manual lama + lokasi master).
+function _tulisGeofenceUser_(userId, nama, required, areas, masterIds, masterAktif) {
+  const sheet = _pastikanSheetGeofence();
+  const rows = bacaSheet(sheet, GEOFENCE_HEADERS.length);
+  for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][0]).trim() === userId) sheet.deleteRow(i + 1);
+  const wajib = required ? 'YA' : 'TIDAK';
+  const baru = areas.map(function (a) { return [userId, nama, wajib, a.nama, a.lat, a.lng, a.radius, 'YA', '']; })
+    .concat(masterIds.map(function (id) { return [userId, nama, wajib, masterAktif[id].nama, '', '', '', 'YA', id]; }));
+  if (baru.length) sheet.getRange(sheet.getLastRow() + 1, 1, baru.length, GEOFENCE_HEADERS.length).setValues(baru);
+}
+
+function _bersihkanCacheGeofence_() {
+  if (typeof GEOFENCE_CACHE_BERSIHKAN === 'function') {
+    try { GEOFENCE_CACHE_BERSIHKAN(); } catch (e) { console.warn('Gagal bersihkan cache geofence: ' + e.message); }
+  }
+}
+
+// Simpan SELURUH daftar master lokasi (admin). Koordinat dihitung dari
+// tautan Google Maps; kalau tidak terbaca, lat/lng isian manual dipakai.
+function handleSaveGeofenceMaster(data) {
+  if (String(data.roleRequester || '').toLowerCase() !== 'admin') return responseJSON({ result: 'error', message: 'Hanya Admin yang boleh mengubah master geofence.' });
+  const masuk = Array.isArray(data.locations) ? data.locations : [];
+  const sudah = {};
+  const hasil = [];
+  for (let i = 0; i < masuk.length; i++) {
+    const m = masuk[i] || {};
+    const nama = String(m.nama || '').trim();
+    const link = String(m.link || '').trim();
+    if (!nama) return responseJSON({ result: 'error', message: 'Lokasi no. ' + (i + 1) + ': nama lokasi wajib diisi.' });
+    const dariLink = link ? parseKoordinatMaps(link) : null;
+    const adaManual = String(m.lat === null || m.lat === undefined ? '' : m.lat).trim() !== '' && String(m.lng === null || m.lng === undefined ? '' : m.lng).trim() !== '';
+    const lat = dariLink ? dariLink.lat : Number(m.lat);
+    const lng = dariLink ? dariLink.lng : Number(m.lng);
+    if (!dariLink && (!adaManual || !isFinite(lat) || !isFinite(lng))) {
+      return responseJSON({ result: 'error', message: 'Lokasi "' + nama + '": koordinat tidak terbaca dari link. Gunakan link Google Maps yang memuat koordinat (Share > Salin link) atau isi latitude/longitude manual.' });
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return responseJSON({ result: 'error', message: 'Lokasi "' + nama + '": koordinat di luar jangkauan.' });
+    let radius = Number(m.radius);
+    if (!isFinite(radius) || radius <= 0) radius = 150;
+    let id = String(m.id || '').trim();
+    if (!id || sudah[id]) id = 'GF' + new Date().getTime().toString(36) + i;
+    sudah[id] = true;
+    hasil.push([id, nama, link, lat, lng, Math.min(Math.round(radius), 100000), m.aktif === false ? 'TIDAK' : 'YA']);
+  }
+  const sheet = _pastikanSheetGeofenceMaster();
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, GEOFENCE_MASTER_HEADERS.length).clearContent();
+  if (hasil.length) sheet.getRange(2, 1, hasil.length, GEOFENCE_MASTER_HEADERS.length).setValues(hasil);
+  _bersihkanCacheGeofence_();
+  return responseJSON({ result: 'success', message: 'Master geofence disimpan (' + hasil.length + ' lokasi).', master: _bacaMasterGeofence_() });
+}
+
+// Terapkan daftar lokasi master + status wajib ke SEMUA karyawan satu divisi.
+// Karyawan yang dikecualikan dari gerbang GPS dilewati (kombinasinya mustahil).
+function handleApplyGeofenceDivisi(data) {
+  if (String(data.roleRequester || '').toLowerCase() !== 'admin') return responseJSON({ result: 'error', message: 'Hanya Admin yang boleh mengubah konfigurasi geofence.' });
+  const divisi = String(data.divisi || '').trim().toLowerCase();
+  if (!divisi) return responseJSON({ result: 'error', message: 'Divisi belum dipilih.' });
+  const required = _normalisasiBooleanGeofence(data.required, true);
+  const masterAktif = {};
+  _bacaMasterGeofence_().forEach(function (m) { if (m.aktif) masterAktif[m.id] = m; });
+  const masterIds = (Array.isArray(data.masterIds) ? data.masterIds : []).map(String).filter(function (id, i, arr) { return masterAktif[id] && arr.indexOf(id) === i; });
+  if (required && !masterIds.length) return responseJSON({ result: 'error', message: 'Pilih minimal satu lokasi geofence.' });
+  const bebas = (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : [];
+  const users = bacaSheet(SS.getSheetByName(SHEET_USERS), 6).slice(1)
+    .filter(function (r) { return String(r[0]).trim() !== '' && String(r[4] || '').trim().toLowerCase() === divisi; });
+  let diterapkan = 0, dilewati = 0;
+  users.forEach(function (r) {
+    const id = String(r[0]).trim();
+    if (required && bebas.indexOf(id) !== -1) { dilewati++; return; }
+    const lama = _ambilGeofenceUser(id);
+    // Area manual lama dipertahankan; hanya pilihan master yang diganti.
+    const manual = lama.areas.filter(function (a) { return !a.masterId; }).map(function (a) { return { nama: a.nama, lat: a.lat, lng: a.lng, radius: a.radius }; });
+    _tulisGeofenceUser_(id, r[3], required, manual, masterIds, masterAktif);
+    diterapkan++;
+  });
+  _bersihkanCacheGeofence_();
+  if (!users.length) return responseJSON({ result: 'error', message: 'Tidak ada karyawan pada divisi tersebut.' });
+  return responseJSON({ result: 'success', message: 'Diterapkan ke ' + diterapkan + ' karyawan' + (dilewati ? ' (' + dilewati + ' dilewati karena dikecualikan dari gerbang GPS)' : '') + '.' });
 }
 
 function handleGetGeofenceConfig(data) {
@@ -2034,6 +2210,7 @@ function handleGetGeofenceConfig(data) {
     result: 'success',
     users: users,
     configs: _ambilKonfigurasiGeofence(),
+    master: _bacaMasterGeofence_(),
     gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : []
   });
 }
@@ -2066,11 +2243,11 @@ function handleSaveGeofenceConfig(data) {
 
   const incomingAreas = Array.isArray(data.areas) ? data.areas : [];
   const areas = incomingAreas.map(area => ({ nama: String(area.nama || 'Area kantor').trim() || 'Area kantor', lat: Number(area.lat), lng: Number(area.lng), radius: Number(area.radius), aktif: area.aktif !== false })).filter(area => area.aktif && isFinite(area.lat) && isFinite(area.lng) && area.lat >= -90 && area.lat <= 90 && area.lng >= -180 && area.lng <= 180 && isFinite(area.radius) && area.radius > 0).map(area => ({ nama: area.nama, lat: area.lat, lng: area.lng, radius: Math.min(Math.round(area.radius), 100000), aktif: true }));
-  if (required && !areas.length) return responseJSON({ result: 'error', message: 'Tambahkan minimal satu area aktif jika geofence diwajibkan.' });
-  const sheet = _pastikanSheetGeofence();
-  const rows = bacaSheet(sheet, GEOFENCE_HEADERS.length);
-  for (let i = rows.length - 1; i >= 1; i--) if (String(rows[i][0]).trim() === userId) sheet.deleteRow(i + 1);
-  if (areas.length) sheet.getRange(sheet.getLastRow() + 1, 1, areas.length, GEOFENCE_HEADERS.length).setValues(areas.map(area => [userId, userRow[3], required ? 'YA' : 'TIDAK', area.nama, area.lat, area.lng, area.radius, 'YA']));
+  const masterAktif = {};
+  _bacaMasterGeofence_().forEach(function (m) { if (m.aktif) masterAktif[m.id] = m; });
+  const masterIds = (Array.isArray(data.masterIds) ? data.masterIds : []).map(String).filter(function (id, i, arr) { return masterAktif[id] && arr.indexOf(id) === i; });
+  if (required && !areas.length && !masterIds.length) return responseJSON({ result: 'error', message: 'Pilih minimal satu lokasi geofence jika geofence diwajibkan.' });
+  _tulisGeofenceUser_(userId, userRow[3], required, areas, masterIds, masterAktif);
 
   // WAJIB: tanpa ini, login/absen user lain masih memakai konfigurasi lama
   // dari cache sampai TTL-nya habis (lihat Cache.gs).
@@ -2086,7 +2263,7 @@ function handleSaveGeofenceConfig(data) {
   return responseJSON({
     result: 'success',
     message: (required ? 'Geofence diwajibkan dan disimpan.' : 'Geofence opsional dan disimpan.') + pesanBebas,
-    config: { required: required, areas: areas },
+    config: { required: required, areas: areas, masterIds: masterIds },
     gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : []
   });
 }
