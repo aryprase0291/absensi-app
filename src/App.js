@@ -8027,11 +8027,16 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
 
               <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
                 <div className="p-4 border-b border-slate-100">
-                  <p className="text-[13px] font-semibold text-slate-800">Lokasi yang diizinkan</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Pilih dari master lokasi. Absen Hadir/Pulang hanya sah di lokasi yang dicentang; Standby tidak dibatasi.</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[13px] font-semibold text-slate-800">Lokasi yang diizinkan</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Pilih dari master lokasi. Absen Hadir/Pulang hanya sah di lokasi yang dicentang; Standby tidak dibatasi.</p>
+                    </div>
+                    <button type="button" onClick={() => switchTab('geomaster')} className="shrink-0 px-3 py-2 rounded-lg bg-slate-900 text-white text-[12px] font-medium hover:bg-slate-800">+ Tambah lokasi</button>
+                  </div>
                 </div>
                 <div className="p-4 space-y-2">
-                  {geoMaster.filter(m => m.aktif).length === 0 && <p className="py-4 text-center text-[12px] text-slate-400">Belum ada master lokasi. Tambahkan dulu di menu "Master lokasi geofence".</p>}
+                  {geoMaster.filter(m => m.aktif).length === 0 && <p className="py-4 text-center text-[12px] text-slate-400">Belum ada master lokasi. Klik "+ Tambah lokasi" untuk membuatnya.</p>}
                   {geoMaster.filter(m => m.aktif).map(m => (
                     <label key={m.id} className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer">
                       <input type="checkbox" checked={geofenceMasterIds.includes(String(m.id))} onChange={() => toggleGeofenceMaster(String(m.id))} className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
