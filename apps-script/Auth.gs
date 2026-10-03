@@ -258,6 +258,8 @@ const ACTION_ROLES = {
   'set_approval_role': ['admin'],
   'reset_password_user': ['admin'],
   'save_geofence_config': ['admin'],
+  'save_geofence_master': ['admin'],
+  'apply_geofence_divisi': ['admin'],
   'save_absence_period': ['admin'],
   'save_absence_periods': ['admin'],   // daftar periode (Agu 2026)
   'tambah_user': ['admin'],

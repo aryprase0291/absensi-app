@@ -6929,6 +6929,12 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [gpsBebasList, setGpsBebasList] = useState([]);
   const [gpsBebasUser, setGpsBebasUser] = useState(false);
   const [geofenceAreas, setGeofenceAreas] = useState([]);
+  // Master lokasi geofence (sheet MasterGeofence) + pilihan lokasi per karyawan.
+  const [geoMaster, setGeoMaster] = useState([]);
+  const [geoMasterDraft, setGeoMasterDraft] = useState([]);
+  const [geofenceMasterIds, setGeofenceMasterIds] = useState([]);
+  const [geofenceDivisi, setGeofenceDivisi] = useState('');
+  const [divisiMasterIds, setDivisiMasterIds] = useState([]);
   const [loadingGeofence, setLoadingGeofence] = useState(false);
   // PERIODE ABSENSI — sejak Agu 2026 berupa DAFTAR, bukan satu periode.
   // Tiap entri: { id, mulai, selesai, aktif }. Boleh lebih dari satu yang
@@ -7012,7 +7018,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
 
   useEffect(() => {
     if (activeTab === 'master_user') fetchAdminUserList();
-    if (activeTab === 'geofence') fetchGeofenceConfig();
+    if (activeTab === 'geofence' || activeTab === 'geomaster') fetchGeofenceConfig();
     if (activeTab === 'period') fetchAbsencePeriod();
     if (activeTab === 'approval_team') fetchApprovalTeamConfig();
     if (activeTab === 'perangkat') fetchDeviceList();
@@ -7288,7 +7294,9 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     setGeofenceUserId(String(userId || ''));
     setGeofenceRequired(!!cfg.required);
     setGpsBebasUser((bebasList || []).indexOf(String(userId || '')) !== -1);
-    setGeofenceAreas((cfg.areas || []).map(area => ({
+    // Area bermasterID ditampilkan sebagai centang; sisanya area manual lama.
+    setGeofenceMasterIds((cfg.areas || []).filter(a => a.masterId).map(a => String(a.masterId)));
+    setGeofenceAreas((cfg.areas || []).filter(a => !a.masterId).map(area => ({
       nama: area.nama || 'Area kantor', lat: area.lat, lng: area.lng,
       radius: area.radius || 150, aktif: area.aktif !== false
     })));
@@ -7304,6 +7312,9 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         const configs = data.configs || {};
         const bebas = (data.gpsBebas || []).map(String);
         setGeofenceUsers(users); setGeofenceConfigs(configs); setGpsBebasList(bebas);
+        const master = data.master || [];
+        setGeoMaster(master);
+        setGeoMasterDraft(master.map(m => ({ ...m })));
         if (users.length) applyGeofenceUser(geofenceUserId || users[0].id, configs, bebas);
       } else alert(data.message || 'Gagal memuat konfigurasi geofence.');
     } catch (e) { alert('Gagal koneksi saat memuat geofence.'); }
@@ -7314,16 +7325,47 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const handleAddGeofenceArea = () => setGeofenceAreas(prev => [...prev, { nama: '', lat: '', lng: '', radius: 150, aktif: true }]);
   const handleUpdateGeofenceArea = (index, field, value) => setGeofenceAreas(prev => prev.map((area, i) => i === index ? { ...area, [field]: value } : area));
   const handleRemoveGeofenceArea = (index) => setGeofenceAreas(prev => prev.filter((_, i) => i !== index));
+  const toggleGeofenceMaster = (id) => setGeofenceMasterIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const handleAddGeoMaster = () => setGeoMasterDraft(prev => [...prev, { id: '', nama: '', link: '', lat: '', lng: '', radius: 150, aktif: true }]);
+  const handleUpdateGeoMaster = (index, field, value) => setGeoMasterDraft(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m));
+  const handleRemoveGeoMaster = (index) => {
+    const m = geoMasterDraft[index];
+    if (m.id && !window.confirm(`Hapus lokasi "${m.nama || 'ini'}"? Karyawan yang memakainya kehilangan lokasi ini setelah disimpan.`)) return;
+    setGeoMasterDraft(prev => prev.filter((_, i) => i !== index));
+  };
+  const handleSaveGeoMaster = async () => {
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'save_geofence_master', roleRequester: user.role, locations: geoMasterDraft }) });
+      const data = await res.json();
+      if (data.result === 'success') { alert(data.message); fetchGeofenceConfig(); }
+      else alert(data.message || 'Gagal menyimpan master geofence.');
+    } catch (e) { alert('Gagal koneksi saat menyimpan master geofence.'); }
+    finally { setLoading(false); }
+  };
+  const handleApplyGeofenceDivisi = async () => {
+    if (!geofenceDivisi) return alert('Pilih divisi terlebih dahulu.');
+    if (divisiMasterIds.length === 0) return alert('Centang minimal satu lokasi di atas.');
+    if (!window.confirm(`Terapkan ${divisiMasterIds.length} lokasi terpilih (wajib geofence) ke SEMUA karyawan divisi "${geofenceDivisi}"? Pilihan lokasi master mereka sebelumnya diganti.`)) return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'apply_geofence_divisi', roleRequester: user.role, divisi: geofenceDivisi, required: true, masterIds: divisiMasterIds }) });
+      const data = await res.json();
+      if (data.result === 'success') { alert(data.message); fetchGeofenceConfig(); }
+      else alert(data.message || 'Gagal menerapkan geofence.');
+    } catch (e) { alert('Gagal koneksi saat menerapkan geofence.'); }
+    finally { setLoading(false); }
+  };
   const handleSaveGeofence = async () => {
     if (!geofenceUserId) return alert('Pilih karyawan terlebih dahulu.');
-    if (geofenceRequired && geofenceAreas.length === 0) return alert('Tambahkan minimal satu area aktif.');
+    if (geofenceRequired && geofenceAreas.length === 0 && geofenceMasterIds.length === 0) return alert('Pilih minimal satu lokasi geofence.');
     if (gpsBebasUser && geofenceRequired) return alert('Tidak bisa keduanya: karyawan yang dikecualikan dari gerbang GPS tidak punya lokasi untuk dicocokkan dengan area kantor.');
     if (gpsBebasUser && !window.confirm('Karyawan ini akan bisa absen TANPA lokasi sama sekali.\n\nPakai ini hanya untuk staf yang memang bekerja di PC tanpa GPS. Setiap absennya akan ditandai "tanpa lokasi" di Audit GPS.\n\nLanjutkan?')) return;
     setLoading(true);
     try {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
         action: 'save_geofence_config', roleRequester: user.role, userId: geofenceUserId,
-        required: geofenceRequired, areas: geofenceAreas, gpsGerbangBebas: gpsBebasUser
+        required: geofenceRequired, areas: geofenceAreas, masterIds: geofenceMasterIds, gpsGerbangBebas: gpsBebasUser
       }) });
       const data = await res.json();
       if (data.result === 'success') { alert(data.message); fetchGeofenceConfig(); }
@@ -7656,6 +7698,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         { view: 'analysis', label: 'Analisa data', ikon: ChartColumn },
         { tab: 'master', label: 'Master data', ikon: Database },
         { tab: 'import_db', label: 'Import data mesin absen', ikon: FileUp },
+        { tab: 'geomaster', label: 'Master lokasi geofence', ikon: MapPin },
         { tab: 'geofence', label: 'Geofence absen online', ikon: LocateFixed },
         { tab: 'period', label: 'Periode absensi', ikon: CalendarRange },
         { tab: 'approval_team', label: 'Tim approval', ikon: UsersRound },
@@ -7717,6 +7760,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'import_db': return 'Import Data Mesin Absen';
           case 'news': return 'Broadcast Info HRD';
           case 'geofence': return 'Area Geofence Absen Online';
+          case 'geomaster': return 'Master Lokasi Geofence';
           case 'period': return 'Periode Absensi';
           case 'approval_team': return 'Tim Approval';
           case 'board': return 'Board Absensi';
@@ -7982,25 +8026,83 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
               </div>
 
               <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
-                <div className="p-4 flex items-center justify-between gap-3 border-b border-slate-100">
-                  <div><p className="text-[13px] font-semibold text-slate-800">Area kantor yang diizinkan</p><p className="text-[11px] text-slate-400 mt-0.5">Bisa lebih dari satu alamat per karyawan.</p></div>
-                  <button type="button" onClick={handleAddGeofenceArea} className="shrink-0 px-3 py-2 rounded-lg bg-slate-900 text-white text-[12px] font-medium hover:bg-slate-800">+ Tambah area</button>
+                <div className="p-4 border-b border-slate-100">
+                  <p className="text-[13px] font-semibold text-slate-800">Lokasi yang diizinkan</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Pilih dari master lokasi. Absen Hadir/Pulang hanya sah di lokasi yang dicentang; Standby tidak dibatasi.</p>
                 </div>
-                {geofenceAreas.length === 0 && <p className="p-6 text-center text-[12px] text-slate-400">Belum ada area. Tambahkan jika geofence diwajibkan.</p>}
+                <div className="p-4 space-y-2">
+                  {geoMaster.filter(m => m.aktif).length === 0 && <p className="py-4 text-center text-[12px] text-slate-400">Belum ada master lokasi. Tambahkan dulu di menu "Master lokasi geofence".</p>}
+                  {geoMaster.filter(m => m.aktif).map(m => (
+                    <label key={m.id} className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer">
+                      <input type="checkbox" checked={geofenceMasterIds.includes(String(m.id))} onChange={() => toggleGeofenceMaster(String(m.id))} className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
+                      <span><span className="block text-[13px] font-semibold text-slate-800">{m.nama}</span><span className="block text-[11px] text-slate-400">Radius {m.radius} m</span></span>
+                    </label>
+                  ))}
+                  {geofenceAreas.length > 0 && (
+                    <div className="pt-2 space-y-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Area manual lama</p>
+                      {geofenceAreas.map((area, index) => (
+                        <div key={index} className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+                          <span className="text-[12px] text-slate-700">{area.nama} · {area.radius} m</span>
+                          <button type="button" onClick={() => handleRemoveGeofenceArea(index)} className="text-[11px] font-medium text-rose-500 hover:text-rose-700">Hapus</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="p-4 pt-0"><button type="button" onClick={handleSaveGeofence} disabled={loading || !geofenceUserId} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">{loading && <Loader2 className="w-4 h-4 animate-spin" />} {loading ? 'Menyimpan…' : 'Simpan konfigurasi geofence'}</button></div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* KONTEN TAB: MASTER LOKASI GEOFENCE */}
+      {activeTab === 'geomaster' && user.role === 'admin' && (
+        <div className="animate-in fade-in duration-300 space-y-3">
+          {loadingGeofence ? (
+            <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin" /></div>
+          ) : (
+            <>
+              <div className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
+                <div className="p-4 flex items-center justify-between gap-3 border-b border-slate-100">
+                  <div><p className="text-[13px] font-semibold text-slate-800">Daftar lokasi</p><p className="text-[11px] text-slate-400 mt-0.5">Isi nama lokasi dan tempel link Google Maps (Share &gt; Salin link). Koordinat dibaca otomatis saat disimpan.</p></div>
+                  <button type="button" onClick={handleAddGeoMaster} className="shrink-0 px-3 py-2 rounded-lg bg-slate-900 text-white text-[12px] font-medium hover:bg-slate-800">+ Tambah lokasi</button>
+                </div>
+                {geoMasterDraft.length === 0 && <p className="p-6 text-center text-[12px] text-slate-400">Belum ada lokasi.</p>}
                 <div className="p-4 space-y-3">
-                  {geofenceAreas.map((area, index) => (
-                    <div key={index} className="rounded-xl border border-slate-200 p-3 space-y-2.5">
-                      <div className="flex items-center justify-between"><span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Area {index + 1}</span><button type="button" onClick={() => handleRemoveGeofenceArea(index)} className="text-[11px] font-medium text-rose-500 hover:text-rose-700">Hapus</button></div>
-                      <input className={inputCls} value={area.nama} onChange={e => handleUpdateGeofenceArea(index, 'nama', e.target.value)} placeholder="Nama area, mis. Kantor Surabaya" />
-                      <div className="grid grid-cols-2 gap-2">
-                        <input className={inputCls} type="number" step="any" min="-90" max="90" value={area.lat} onChange={e => handleUpdateGeofenceArea(index, 'lat', e.target.value)} placeholder="Latitude" />
-                        <input className={inputCls} type="number" step="any" min="-180" max="180" value={area.lng} onChange={e => handleUpdateGeofenceArea(index, 'lng', e.target.value)} placeholder="Longitude" />
+                  {geoMasterDraft.map((m, index) => (
+                    <div key={m.id || `baru-${index}`} className="rounded-xl border border-slate-200 p-3 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 text-[11px] font-medium text-slate-500"><input type="checkbox" checked={m.aktif !== false} onChange={e => handleUpdateGeoMaster(index, 'aktif', e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-slate-900" /> Aktif</label>
+                        <button type="button" onClick={() => handleRemoveGeoMaster(index)} className="text-[11px] font-medium text-rose-500 hover:text-rose-700">Hapus</button>
                       </div>
-                      <div className="flex items-center gap-2"><input className={inputCls} type="number" min="1" max="100000" value={area.radius} onChange={e => handleUpdateGeofenceArea(index, 'radius', e.target.value)} placeholder="Radius meter" /><span className="shrink-0 text-[11px] text-slate-400">meter</span></div>
+                      <input className={inputCls} value={m.nama} onChange={e => handleUpdateGeoMaster(index, 'nama', e.target.value)} placeholder="Nama lokasi, mis. Kebun Sei Rokan" />
+                      <input className={inputCls} value={m.link || ''} onChange={e => handleUpdateGeoMaster(index, 'link', e.target.value)} placeholder="Link Google Maps ATAU koordinat, mis. -7.2575, 112.7521" />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input className={inputCls} type="number" step="any" value={m.lat} onChange={e => handleUpdateGeoMaster(index, 'lat', e.target.value)} placeholder="Latitude (opsional)" />
+                        <input className={inputCls} type="number" step="any" value={m.lng} onChange={e => handleUpdateGeoMaster(index, 'lng', e.target.value)} placeholder="Longitude (opsional)" />
+                      </div>
+                      <div className="flex items-center gap-2"><input className={inputCls} type="number" min="1" max="100000" value={m.radius} onChange={e => handleUpdateGeoMaster(index, 'radius', e.target.value)} placeholder="Radius meter" /><span className="shrink-0 text-[11px] text-slate-400">meter</span></div>
+                      {m.link && m.lat !== '' && Number.isFinite(Number(m.lat)) && <a href={`https://www.google.com/maps?q=${m.lat},${m.lng}`} target="_blank" rel="noreferrer" className="inline-block text-[11px] text-sky-600 hover:underline">Cek titik di peta ({Number(m.lat).toFixed(5)}, {Number(m.lng).toFixed(5)})</a>}
                     </div>
                   ))}
                 </div>
-                <div className="p-4 pt-0"><button type="button" onClick={handleSaveGeofence} disabled={loading || !geofenceUserId} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">{loading && <Loader2 className="w-4 h-4 animate-spin" />} {loading ? 'Menyimpan…' : 'Simpan konfigurasi geofence'}</button></div>
+                <div className="p-4 pt-0"><button type="button" onClick={handleSaveGeoMaster} disabled={loading} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">{loading && <Loader2 className="w-4 h-4 animate-spin" />} {loading ? 'Menyimpan…' : 'Simpan master lokasi'}</button></div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3">
+                <div><p className="text-[13px] font-semibold text-slate-800">Terapkan ke satu divisi</p><p className="text-[11px] text-slate-400 mt-0.5">Centang lokasi, pilih divisi (mis. Kerani). Semua karyawan divisi itu jadi wajib geofence pada lokasi tercentang. Standby tetap bebas.</p></div>
+                <div className="space-y-2">
+                  {geoMaster.filter(m => m.aktif).map(m => (
+                    <label key={m.id} className="flex items-center gap-3 text-[13px] text-slate-700"><input type="checkbox" checked={divisiMasterIds.includes(String(m.id))} onChange={() => setDivisiMasterIds(prev => prev.includes(String(m.id)) ? prev.filter(x => x !== String(m.id)) : [...prev, String(m.id)])} className="w-4 h-4 rounded border-slate-300 text-slate-900" /> {m.nama}</label>
+                  ))}
+                </div>
+                <select className={inputCls} value={geofenceDivisi} onChange={e => setGeofenceDivisi(e.target.value)}>
+                  <option value="">Pilih divisi…</option>
+                  {[...new Set(geofenceUsers.map(u => String(u.divisi || '').trim()).filter(Boolean))].sort().map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <button type="button" onClick={handleApplyGeofenceDivisi} disabled={loading || !geofenceDivisi} className="w-full bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">Terapkan ke semua karyawan divisi</button>
               </div>
             </>
           )}
