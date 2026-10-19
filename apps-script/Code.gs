@@ -51,6 +51,14 @@ const EXTERNAL_TARGETS = [
 // dilaporkan lewat Lapor HRD kategori KATEGORI_REMARK_LUPA_DL, lalu HRD
 // mencatatnya dari dialog respon (opsi "Dinas").
 const TIPE_DL_ONLINE = ['Dinas', 'Dinas Luar'];
+
+// Off (termasuk "Off (Tukar Shift)") dan Standby tidak butuh approval
+// atasan (Okt 2026): langsung Approved oleh System saat dikirim, simbolnya
+// langsung ditulis ke payroll eksternal, dan tidak ada email ke atasan.
+function isTipeAutoApprove_(tipe) {
+  const t = String(tipe || '').trim().toLowerCase();
+  return t === 'standby' || t === 'off' || t.indexOf('off ') === 0 || t.indexOf('off(') === 0;
+}
 const KATEGORI_REMARK_LUPA_DL = 'Lupa Pengajuan Dinas Luar (DL)';
 
 // Nama Header Kolom di External Sheet untuk pencocokan (SESUAIKAN JIKA BEDA)
@@ -678,6 +686,12 @@ function handleAbsen(data) {
     approverAwal = 'System';
     timeStampAwal = new Date();
   }
+  const isAutoApprove = isTipeAutoApprove_(data.tipe);
+  if (isAutoApprove) {
+    statusAwal = 'Approved';
+    approverAwal = 'System';
+    timeStampAwal = new Date();
+  }
 
   // --- SIMPAN KE SHEET ---
   sheet.appendRow([
@@ -733,6 +747,19 @@ function handleAbsen(data) {
   if (isDlOnline && typeof syncToExternalPayroll === 'function') {
     try { syncToExternalPayroll(String(data.userId).trim(), data.tglMulai, data.tglSelesai, data.tipe); }
     catch (e) { console.error('Sync payroll DL gagal: ' + e); }
+  }
+
+  // Off / Standby langsung Approved -> tulis simbol payroll sekarang, dan
+  // tidak perlu email approval ke atasan.
+  if (isAutoApprove) {
+    if (typeof syncToExternalPayroll === 'function') {
+      const tglA = data.tglMulai && data.tglMulai !== '-' ? data.tglMulai : waktu;
+      const tglB = data.tglSelesai && data.tglSelesai !== '-' ? data.tglSelesai : tglA;
+      try { syncToExternalPayroll(String(data.userId).trim(), tglA, tglB, data.tipe); }
+      catch (e) { console.error('Sync payroll Off/Standby gagal: ' + e); }
+    }
+    if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_();
+    return responseJSON({ result: 'success', message: `✅ ${data.tipe} tersimpan & otomatis Approved.`, alamat: alamatTersimpan || '' });
   }
 
   // --- KIRIM EMAIL ---
@@ -6328,4 +6355,69 @@ function _hitungNominalDenda(telatVal, existingNominal) {
   if (minutes <= 35) return 50000;
   if (minutes <= 50) return 75000;
   return 100000;
+}
+
+
+// =====================================================================
+// SEKALI JALAN — ubah Off / Standby yang masih Pending menjadi Approved
+// (Okt 2026). Jalankan dari editor Apps Script:
+//   1. OFF_STANDBY_PENDING_CEK()      -> hanya menampilkan daftar, tidak mengubah apa pun
+//   2. OFF_STANDBY_PENDING_APPROVE()  -> mengubah status + menulis payroll eksternal
+// Aman dijalankan ulang: hanya baris yang MASIH Pending yang disentuh.
+// Kalau mendekati batas waktu eksekusi, berhenti sendiri — jalankan lagi.
+// =====================================================================
+function _offStandbyPending_() {
+  const sheet = SS.getSheetByName(SHEET_ABSENSI);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { sheet: sheet, daftar: [] };
+  const rows = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+  const daftar = [];
+  for (let i = 0; i < rows.length; i++) {
+    const status = String(rows[i][12] || 'Pending').trim() || 'Pending';
+    if (status === 'Pending' && isTipeAutoApprove_(rows[i][4])) {
+      daftar.push({ baris: i + 2, row: rows[i] });
+    }
+  }
+  return { sheet: sheet, daftar: daftar };
+}
+
+function OFF_STANDBY_PENDING_CEK() {
+  const hasil = _offStandbyPending_();
+  console.log('Off/Standby berstatus Pending: ' + hasil.daftar.length + ' baris');
+  hasil.daftar.forEach(function (d) {
+    console.log('Baris ' + d.baris + ' | ' + d.row[3] + ' | ' + d.row[4] + ' | ' +
+      formatDateYMD_Strict(d.row[8] && d.row[8] !== '-' ? d.row[8] : d.row[1]));
+  });
+}
+
+function OFF_STANDBY_PENDING_APPROVE() {
+  const mulaiMs = Date.now();
+  const BATAS_MS = 4.5 * 60 * 1000;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  let selesai = 0;
+  let sisa = 0;
+  try {
+    const hasil = _offStandbyPending_();
+    const tz = Session.getScriptTimeZone();
+    for (let k = 0; k < hasil.daftar.length; k++) {
+      if (Date.now() - mulaiMs > BATAS_MS) { sisa = hasil.daftar.length - k; break; }
+      const d = hasil.daftar[k];
+      const waktuApprove = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss');
+      hasil.sheet.getRange(d.baris, 13, 1, 3).setValues([['Approved', 'System', waktuApprove]]);
+      try {
+        const tglA = d.row[8] && d.row[8] !== '-' ? d.row[8] : d.row[1];
+        const tglB = d.row[9] && d.row[9] !== '-' ? d.row[9] : tglA;
+        syncToExternalPayroll(String(d.row[2]).trim(), tglA, tglB, String(d.row[4]).trim());
+      } catch (e) {
+        console.error('Sync payroll gagal baris ' + d.baris + ': ' + e);
+      }
+      selesai++;
+    }
+    if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_();
+  } finally {
+    lock.releaseLock();
+  }
+  console.log('Selesai di-Approve: ' + selesai + ' baris.' +
+    (sisa > 0 ? ' Masih ada ' + sisa + ' baris — jalankan fungsi ini sekali lagi.' : ' Semua beres.'));
 }
