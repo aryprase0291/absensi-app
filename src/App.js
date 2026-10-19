@@ -6623,9 +6623,33 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   })();
   const isReportDuplicate = (it) => it && it.col_periode && it.col_periode !== '-' && (reportDuplicateKeys[`${it.col_userId}|${it.tipe}|${it.col_periode}`] || 0) > 1;
 
+  // Label aksi per baris untuk filter kolom ACTION (bisa lebih dari satu).
+  const ACTION_LABEL = {
+    approve: 'Perlu Approval',
+    edit: 'Bisa Edit / Batal',
+    hapus: 'Bisa Dihapus',
+    dup: 'Duplikat',
+    none: 'Tidak Ada Aksi'
+  };
+  const reportRows = reportCategory !== 'General' ? currentReportData : currentReportData.map(it => {
+      const isPending = it.status === 'Pending';
+      const isFinal = it.status === 'Approved' || it.status === 'Verified';
+      const canCancel = it.status === 'Approved' || (it.status === 'Verified' && TIPE_DL_ONLINE.includes(it.tipe));
+      const canDelete = userRole === 'admin' && !isFinal;
+      const labels = [];
+      if (isPending) labels.push(ACTION_LABEL.approve);
+      if (canCancel) labels.push(ACTION_LABEL.edit);
+      if (canDelete) labels.push(ACTION_LABEL.hapus);
+      if (isReportDuplicate(it)) labels.push(ACTION_LABEL.dup);
+      if (labels.length === 0) labels.push(ACTION_LABEL.none);
+      // Jumlah ikon yang menyala (✓ ✗ ✏️ ✉️ 🗑️) — dipakai urutan default.
+      const activeCount = (isPending ? 3 : 0) + (canCancel ? 1 : 0) + (canDelete ? 1 : 0);
+      return { ...it, col_action: labels, _actCount: activeCount };
+  });
+
   // --- FILTERING & SORTING ---
   const getReportUniqueValues = (field) => {
-      const values = currentReportData.map(item => item[field]).filter(v => v !== null && v !== undefined && v !== '');
+      const values = reportRows.flatMap(item => Array.isArray(item[field]) ? item[field] : [item[field]]).filter(v => v !== null && v !== undefined && v !== '');
       return [...new Set(values)].sort();
   };
   const toggleReportFilterValue = (field, value) => {
@@ -6648,24 +6672,36 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       });
   };
   const requestReportSort = (key, direction) => { setReportSortConfig({ key, direction }); };
-  const filteredReportTable = currentReportData.filter(item => {
+  const filteredReportTable = reportRows.filter(item => {
       return Object.keys(reportColumnFilters).every(key => {
           const selectedValues = reportColumnFilters[key];
           if (!selectedValues || selectedValues.length === 0) return true;
+          if (Array.isArray(item[key])) return item[key].some(v => selectedValues.includes(String(v)));
           return selectedValues.includes(String(item[key]));
       });
   });
   const sortedReportTable = React.useMemo(() => {
       let sortableItems = [...filteredReportTable];
-      if (reportSortConfig.key !== null) {
-          sortableItems.sort((a, b) => {
+      // Laporan Absensi: status Verified SELALU di paling bawah. Tanpa sort
+      // kolom pilihan user, sisanya diurutkan dari ikon ACTION yang paling
+      // banyak menyala (Pending dulu, lalu yang bisa Edit/Hapus, lalu yang
+      // tanpa aksi). Sort bawaan JS stabil, jadi urutan asli (terbaru di
+      // atas) tetap terjaga di dalam kelompok yang sama.
+      const isGeneral = reportCategory === 'General';
+      const verifiedRank = (it) => (isGeneral && it.status === 'Verified') ? 1 : 0;
+      sortableItems.sort((a, b) => {
+          const v = verifiedRank(a) - verifiedRank(b);
+          if (v !== 0) return v;
+          if (reportSortConfig.key !== null) {
               let valA = a[reportSortConfig.key] || '';
               let valB = b[reportSortConfig.key] || '';
               return reportSortConfig.direction === 'asc' ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
-          });
-      }
+          }
+          if (isGeneral) return (b._actCount || 0) - (a._actCount || 0);
+          return 0;
+      });
       return sortableItems;
-  }, [filteredReportTable, reportSortConfig]);
+  }, [filteredReportTable, reportSortConfig, reportCategory]);
 
   // --- ACTIONS HANDLERS ---
   const toggleReportUserSelection = (id) => { if(reportUserIds.includes(id)) setReportUserIds(reportUserIds.filter(x => x !== id)); else setReportUserIds([...reportUserIds, id]); };
@@ -6922,7 +6958,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                     ) : (
                                         <>
                                             {/* [NEW] KOLOM ACTION (Hanya untuk General Report) */}
-                                            {canViewAll && <th className="px-2 py-3 text-xs font-bold text-center text-gray-700 uppercase bg-gray-100 border border-gray-300">ACTION</th>}
+                                            {canViewAll && <ReportFilterHeader label="Action" field="col_action" width="min-w-[150px]" />}
                                             <ReportFilterHeader label="UserID" field="col_userId" />
                                             <ReportFilterHeader label="PAYROLL" field="col_payroll" />
                                             <ReportFilterHeader label="NAMA" field="nama" width="min-w-[140px]"/>
