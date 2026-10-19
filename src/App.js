@@ -5661,9 +5661,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
               {dlKeteranganTerbuka && (
                 <>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden" aria-readonly="true">
-                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200/80">
-                      <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-400">Data otomatis</span>
-                      <span className="flex items-center gap-1 text-[9.5px] font-medium text-slate-400"><Lock className="w-2.5 h-2.5" strokeWidth={2.2} /> Tidak bisa diubah</span>
+                    <div className="px-3 py-1.5 border-b border-slate-200/80">
+                      <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-400">Waktu &amp; Lokasi Dinas</span>
                     </div>
                     <dl className="grid grid-cols-[18px_52px_1fr] items-start gap-x-1.5 gap-y-2 px-3 py-2.5 text-[12px] leading-snug select-none">
                       <Clock className="w-3.5 h-3.5 mt-px text-slate-400" strokeWidth={2} />

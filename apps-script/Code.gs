@@ -519,7 +519,9 @@ function handleAbsen(data) {
   // =================================================================
   
   // 1. Daftar tipe yang dicek agar tidak duplikat tanggalnya
-  const TYPES_CHECK_DUPLICATE = ['Ijin', 'Cuti', 'Sakit', 'Dinas Luar', 'Cuti EO', 'Tukar Shift', 'Off', 'Dinas'];
+  // Dinas / Dinas Luar dikeluarkan (Okt 2026): DL boleh dikirim lebih dari
+  // sekali pada tanggal yang sama (beberapa lokasi dinas dalam sehari).
+  const TYPES_CHECK_DUPLICATE = ['Ijin', 'Cuti', 'Sakit', 'Cuti EO', 'Tukar Shift', 'Off'];
 
   if (TYPES_CHECK_DUPLICATE.includes(data.tipe)) {
       // Tentukan Tanggal Input yang akan dicek (Format: yyyy-MM-dd)
@@ -1306,7 +1308,7 @@ function validasiPotonganAbsensi_(rowsAbsen, userId, tipePotong, intervals) {
       ijinTerpakai++;
     }
 
-    if (rTipe === tipePotong) {
+    if (rTipe === tipePotong && tipePotong !== 'Dinas') {
       for (let j = 0; j < intervals.length; j++) {
         if (intervalBertabrakan_(rMulai, rSelesai, intervals[j].mulai, intervals[j].selesai)) {
           return {
