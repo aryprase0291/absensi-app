@@ -6393,6 +6393,44 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     }
   };
 
+  // --- HAPUS PENGAJUAN (Laporan & Cetak Data, khusus admin) ---
+  // Untuk membersihkan pengajuan dobel (tanggal sama). Approved/Verified
+  // ditolak server — batalkan dulu lewat Edit.
+  const [deletingUuid, setDeletingUuid] = useState(null);
+  const handleDeletePengajuan = async (item) => {
+    if (!item || !item.uuid || deletingUuid) return;
+    const ok = window.confirm(
+      `Hapus pengajuan ini secara permanen?\n\n` +
+      `Nama    : ${item.nama}\n` +
+      `Form    : ${item.tipe}\n` +
+      `Periode : ${item.col_periode}\n` +
+      `Input   : ${item.col_date}\n` +
+      `Status  : ${item.status}\n\n` +
+      `Data yang dihapus tidak bisa dikembalikan.`
+    );
+    if (!ok) return;
+    setDeletingUuid(item.uuid);
+    try {
+      const res = await fetchApi(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'delete_absensi', uuid: item.uuid, approverName: user.nama })
+      });
+      const data = await res.json();
+      if (data.result === 'success') {
+        alert(data.message || 'Pengajuan dihapus.');
+        setIsReportLoading(true);
+        try { await fetchHistory(reportStartDate, reportEndDate); } finally { setIsReportLoading(false); }
+      } else {
+        alert('Gagal hapus: ' + data.message);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Terjadi kesalahan koneksi.');
+    } finally {
+      setDeletingUuid(null);
+    }
+  };
+
   // --- REPORT PROCESSING LOGIC ---
   const processReportData = () => {
       try {
@@ -6514,6 +6552,19 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       }
   };
   const { finalData: currentReportData, availableUsers, availableDivisions } = processReportData();
+
+  // Kunci pengajuan dobel: karyawan + form + periode yang sama.
+  const reportDuplicateKeys = (() => {
+      const hitung = {};
+      if (reportCategory !== 'General') return hitung;
+      currentReportData.forEach(it => {
+          if (!it.col_periode || it.col_periode === '-') return;
+          const k = `${it.col_userId}|${it.tipe}|${it.col_periode}`;
+          hitung[k] = (hitung[k] || 0) + 1;
+      });
+      return hitung;
+  })();
+  const isReportDuplicate = (it) => it && it.col_periode && it.col_periode !== '-' && (reportDuplicateKeys[`${it.col_userId}|${it.tipe}|${it.col_periode}`] || 0) > 1;
 
   // --- FILTERING & SORTING ---
   const getReportUniqueValues = (field) => {
@@ -6859,7 +6910,9 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                             <>
                                                 {/* [NEW] TOMBOL ACTION APPROVE/REJECT */}
                                                 {canViewAll && (
-                                                    <td className="px-2 py-1.5 text-center border border-gray-300 align-top">
+                                                    <td className={`px-2 py-1.5 text-center border border-gray-300 align-top ${isReportDuplicate(item) ? 'bg-orange-50' : ''}`}>
+                                                        <div className="flex flex-col items-center gap-1">
+                                                        <div className="flex gap-1 justify-center items-center">
                                                         {item.status === 'Pending' ? (
                                                             <div className="flex gap-1 justify-center">
                                                                 <button
@@ -6885,9 +6938,24 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                                             >
                                                                 <Edit className="w-3 h-3" /> Edit
                                                             </button>
-                                                        ) : (
+                                                        ) : (userRole === 'admin' ? null : (
                                                             <span className="text-[9px] text-gray-400 font-medium">-</span>
+                                                        ))}
+                                                        {userRole === 'admin' && (
+                                                            <button
+                                                                onClick={() => handleDeletePengajuan(item)}
+                                                                disabled={deletingUuid === item.uuid}
+                                                                className="p-1 bg-white hover:bg-red-50 text-red-600 rounded border border-red-300 transition-colors disabled:opacity-50"
+                                                                title="Hapus pengajuan"
+                                                            >
+                                                                {deletingUuid === item.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                                            </button>
                                                         )}
+                                                        </div>
+                                                        {isReportDuplicate(item) && (
+                                                            <span className="text-[9px] font-bold text-orange-700 bg-orange-100 border border-orange-300 rounded px-1 leading-tight" title="Ada pengajuan lain dengan karyawan, form & periode yang sama">Duplikat</span>
+                                                        )}
+                                                        </div>
                                                     </td>
                                                 )}
                                                 

@@ -4909,20 +4909,58 @@ function extractAllTimes_Backend(val) {
 
 // 1. HAPUS DATA
 function handleDeleteAbsensi(data) {
-  if (data.roleRequester !== 'admin') return responseJSON({ result: 'error', message: 'Akses Ditolak.' });
+  // Dipakai tombol HAPUS di kolom ACTION "Laporan & Cetak Data" (khusus
+  // admin — dijaga di Auth.gs, roleRequester diisi dari token di sana).
+  // Tujuan utamanya membersihkan pengajuan dobel (tanggal sama).
+  //
+  // Dulu UUID dicari di kolom C (userId) — jadi tidak pernah ketemu.
+  // UUID ada di kolom A, sama seperti handleUpdateStatusAbsen.
+  //
+  // Baris Approved / Verified DITOLAK: sel simbolnya sudah ditulis ke
+  // payroll eksternal. Batalkan dulu lewat tombol Edit (Approved ->
+  // Rejected, yang ikut membersihkan payroll), baru hapus.
+  if (data.roleRequester !== 'admin') return responseJSON({ result: 'error', message: 'Akses Ditolak. Hanya admin yang boleh menghapus.' });
 
-  const targetUuid = data.uuid;
+  const uuid = String(data.uuid || '').trim();
+  if (!uuid) return responseJSON({ result: 'error', message: 'ID data kosong.' });
+
   const sheet = SS.getSheetByName(SHEET_ABSENSI);
-  const rows = sheet.getDataRange().getValues();
-  
-  // Loop cari UUID (Kolom C / Index 2)
-  for (let i = 1; i < rows.length; i++) {
-    if (String(rows[i][2]) === String(targetUuid)) {
-      sheet.deleteRow(i + 1); // Hapus Baris
-      return responseJSON({ result: 'success', message: 'Data berhasil dihapus.' });
-    }
+  if (!sheet) return responseJSON({ result: 'error', message: 'Sheet Absensi tidak ditemukan' });
+
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch (e) {
+    return responseJSON({ result: 'error', message: 'Server sibuk, coba lagi sebentar.' });
   }
-  return responseJSON({ result: 'error', message: 'Data tidak ditemukan.' });
+
+  try {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return responseJSON({ result: 'error', message: 'Data tidak ditemukan.' });
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    let rowIndex = -1;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === uuid) { rowIndex = i + 2; break; }
+    }
+    if (rowIndex === -1) return responseJSON({ result: 'error', message: 'Data tidak ditemukan (mungkin sudah dihapus).' });
+
+    const row = sheet.getRange(rowIndex, 1, 1, 17).getValues()[0];
+    const status = String(row[12] || 'Pending').trim() || 'Pending';
+    if (status === 'Approved' || status === 'Verified') {
+      return responseJSON({
+        result: 'error',
+        message: 'Data berstatus ' + status + ' tidak bisa langsung dihapus. Batalkan dulu lewat tombol Edit (menjadi Rejected), lalu hapus.'
+      });
+    }
+
+    // Jejak audit di log eksekusi Apps Script.
+    console.log('HAPUS PENGAJUAN oleh ' + (data.approverName || 'admin') + ': ' + JSON.stringify(row));
+
+    sheet.deleteRow(rowIndex);
+    if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_();
+
+    return responseJSON({ result: 'success', message: 'Pengajuan berhasil dihapus.' });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // 2. UPDATE DATA (GANTI TIPE ABSEN)
