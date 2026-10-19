@@ -4709,6 +4709,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const [alamat, setAlamat] = useState('');
   const [alamatStatus, setAlamatStatus] = useState('idle');
   const [catatan, setCatatan] = useState('');
+  // DL: jam jepret selfie, dipakai sebagai teks terkunci di atas keterangan.
+  const [waktuJepret, setWaktuJepret] = useState('');
   const [intervalData, setIntervalData] = useState({ tglMulai: '', tglSelesai: '', jamMulai: '', jamSelesai: '' });
   
   // UI STATES
@@ -5060,6 +5062,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
         ? alamat
         : (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : "No GPS");
       gambarStempelFoto(ctx, canvas.width, canvas.height, timestampText, lokasiText);
+      setWaktuJepret(timestampText);
       setPhoto(kecilkanCanvas(canvas, FOTO_MUTU_KIRIM));
       setFotoTerverifikasi(true);
       if (trackerRef.current) {
@@ -5088,6 +5091,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
     }
     if (isShiftWorker && isClockIn && !isEditMode && !selectedShift) { alert('Pilih Shift!'); return; }
     if (isPhotoRequired && !isEditMode && !photo) { alert('Foto Wajib.'); return; }
+    if (isDlOnline && !isEditMode && catatan.trim().length < 3) { alert('Keterangan dinas wajib diisi (min. 3 huruf).'); return; }
     if (wajibWajah && !isEditMode && !fotoTerverifikasi) {
         alert('Foto presensi harus diambil langsung dari kamera depan dengan wajah penuh terverifikasi. Silakan ambil ulang foto.');
         return;
@@ -5117,7 +5121,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           uuid: isEditMode ? editItem.uuid : null, 
           userId: user.id, nama: user.nama, tipe: type, 
           lokasi: location ? `${location.lat}, ${location.lng}` : '-', 
-          catatan: catatan, foto: photo, 
+          catatan: dlKeteranganTerbuka ? `${dlPrefix}\n${catatan.trim()}` : catatan, foto: photo, 
           fileLampiran: isUploading ? fileLampiran : null, 
           fileName: isUploading ? fileName : '', fileMime: isUploading ? fileMime : '',
           isMockGps: gpsValidation.isMock,
@@ -5220,6 +5224,15 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   // Nilainya juga bukan sekadar hiasan: sebelum ini satu-satunya cara tahu
   // ada yang kurang adalah menekan tombol lalu membaca alert.
   const NOTE_WAJIB = ['Ijin', 'Cuti', 'Sakit', 'Dinas Luar', 'Dinas', 'Cuti EO', 'Tukar Shift', 'Off', 'Lembur'];
+  // DL: keterangan baru dibuka setelah selfie diambil. Di atasnya baris
+  // terkunci berisi waktu jepret + lokasi (alamat, atau koordinat sampai
+  // alamat tiba) — sama dengan stempel di foto, dan ikut tersimpan di
+  // depan keterangan supaya HRD membacanya tanpa membuka foto.
+  const dlKeteranganTerbuka = isDlOnline && !isEditMode && !!photo;
+  const dlLokasiTeks = (alamatStatus === 'ada' && alamat)
+      ? alamat
+      : (location ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}` : 'Lokasi belum terbaca');
+  const dlPrefix = `Waktu: ${waktuJepret || '-'} | Lokasi: ${dlLokasiTeks}`;
   const kurang = [];
   if (isShiftWorker && isClockIn && !isEditMode && !selectedShift) kurang.push('pilih shift');
   if (isIntervalType && (!intervalData.tglMulai || !intervalData.tglSelesai)) kurang.push('tanggal');
@@ -5381,17 +5394,6 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                 </div>
               )}
             </SeksiForm>
-          )}
-
-          {/* ---- INFO DL ---- */}
-          {isDlOnline && !isEditMode && (
-            <div className="flex gap-2.5 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-[11.5px] leading-relaxed text-sky-900">
-              <CalendarDays className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" strokeWidth={2} />
-              <span>
-                Dinas dicatat untuk <b>hari ini ({new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })})</b> dan langsung terverifikasi.
-                Lupa mengajukan DL di hari sebelumnya? Gunakan menu <b>Lapor HRD</b> → <i>{KATEGORI_LUPA_DL}</i>.
-              </span>
-            </div>
           )}
 
           {/* ---- LAMPIRAN ---- */}
@@ -5644,6 +5646,54 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           )}
 
           {/* ---- ALASAN ---- */}
+          {isDlOnline && !isEditMode ? (
+            <SeksiForm
+              ikon={NotebookPen}
+              judul="Keterangan dinas"
+              catatan={dlKeteranganTerbuka ? 'Wajib diisi — minimal 3 huruf' : 'Terbuka setelah foto selfie diambil'}
+              warnaIkon={tema.chip}
+              aksi={!dlKeteranganTerbuka && (
+                <span className="flex items-center gap-1 shrink-0 text-[10px] font-medium text-slate-300">
+                  <Lock className="w-3 h-3" strokeWidth={2} /> Terkunci
+                </span>
+              )}
+            >
+              {dlKeteranganTerbuka && (
+                <>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden" aria-readonly="true">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-200/80">
+                      <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-400">Data otomatis</span>
+                      <span className="flex items-center gap-1 text-[9.5px] font-medium text-slate-400"><Lock className="w-2.5 h-2.5" strokeWidth={2.2} /> Tidak bisa diubah</span>
+                    </div>
+                    <dl className="grid grid-cols-[18px_52px_1fr] items-start gap-x-1.5 gap-y-2 px-3 py-2.5 text-[12px] leading-snug select-none">
+                      <Clock className="w-3.5 h-3.5 mt-px text-slate-400" strokeWidth={2} />
+                      <dt className="text-slate-400">Waktu</dt>
+                      <dd className="font-semibold text-slate-700 tabular-nums">{waktuJepret || '-'}</dd>
+                      <MapPin className="w-3.5 h-3.5 mt-px text-slate-400" strokeWidth={2} />
+                      <dt className="text-slate-400">Lokasi</dt>
+                      <dd className={`font-semibold break-words ${alamatStatus === 'mencari' ? 'text-slate-400 animate-pulse' : 'text-slate-700'}`}>
+                        {alamatStatus === 'mencari' && !alamat ? 'Mencari nama lokasi…' : dlLokasiTeks}
+                      </dd>
+                    </dl>
+                  </div>
+                  <LabelKecil><span className="mt-3.5 block">Keterangan dinas</span></LabelKecil>
+                  <textarea
+                    className={`${INPUT_FORM} ${tema.fokus} resize-none leading-relaxed`}
+                    placeholder="Tujuan, lokasi, dan keperluan dinas…"
+                    rows="3"
+                    autoFocus
+                    value={catatan}
+                    onChange={e => setCatatan(e.target.value)}
+                  />
+                  <div className="mt-1.5 flex justify-end">
+                    <span className={`text-[10px] tabular-nums ${catatan.trim().length < 3 ? 'text-slate-300' : 'text-slate-400'}`}>
+                      {catatan.length} huruf
+                    </span>
+                  </div>
+                </>
+              )}
+            </SeksiForm>
+          ) : (
           <SeksiForm
             ikon={NotebookPen}
             judul={isDlOnline ? 'Keterangan dinas' : 'Keterangan'}
@@ -5663,6 +5713,12 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
               </span>
             </div>
           </SeksiForm>
+          )}
+          {isDlOnline && !isEditMode && (
+            <p className="px-2 text-center text-[10.5px] leading-relaxed text-slate-400">
+              Dinas dicatat untuk hari ini dan langsung terverifikasi. Lupa mengajukan DL di hari lain? Gunakan <span className="font-semibold text-slate-500">Lapor HRD</span>.
+            </p>
+          )}
 
           <p className="flex items-center justify-center gap-1.5 pt-1 pb-2 text-[10px] text-slate-400">
             <ShieldCheck className="w-3 h-3" strokeWidth={2} />

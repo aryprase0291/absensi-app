@@ -492,6 +492,15 @@ function handleAbsen(data) {
       'Cuti EO', 'Tukar Shift', 'Off', 'Lembur'
   ];
 
+  // DL: catatan diawali baris terkunci "Waktu: .. | Lokasi: ..". Yang
+  // dinilai wajib-isi adalah keterangan karyawan di bawahnya.
+  if (isDlOnline && /^Waktu: .*\| Lokasi: /.test(String(data.catatan || ''))) {
+    const ketDl = String(data.catatan).split('\n').slice(1).join('\n').trim();
+    if (ketDl.length < 3) {
+      return responseJSON({ result: 'error', message: 'GAGAL: Keterangan dinas harus diisi.' });
+    }
+  }
+
   // Cek apakah tipe saat ini termasuk yang wajib catatan
   if (TYPES_MUST_HAVE_NOTE.includes(data.tipe)) {
       // Cek jika catatan kosong, null, atau hanya tanda strip (-)
