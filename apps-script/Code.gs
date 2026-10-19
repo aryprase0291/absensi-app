@@ -45,6 +45,14 @@ const EXTERNAL_TARGETS = [
   }
 ];
 
+// DINAS LUAR (Okt 2026): DL diperlakukan seperti Absen Online — selfie
+// kamera depan + GPS + keterangan, tanggal SELALU hari ini (dipaksa server),
+// status langsung Verified tanpa approval atasan. DL yang lupa diajukan
+// dilaporkan lewat Lapor HRD kategori KATEGORI_REMARK_LUPA_DL, lalu HRD
+// mencatatnya dari dialog respon (opsi "Dinas").
+const TIPE_DL_ONLINE = ['Dinas', 'Dinas Luar'];
+const KATEGORI_REMARK_LUPA_DL = 'Lupa Pengajuan Dinas Luar (DL)';
+
 // Nama Header Kolom di External Sheet untuk pencocokan (SESUAIKAN JIKA BEDA)
 const COL_HEADER_ID = "NIK."; // Nama kolom ID User
 const COL_HEADER_DATE = "Tanggal";    // Nama kolom Tanggal
@@ -68,7 +76,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.30";
+const APP_VERSION = "1.0.31";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -463,6 +471,18 @@ function handleAbsen(data) {
   // oleh deviceTandaAbsen() dan faceGerbangAbsen().
   if (typeof deviceTandaAbsen === 'function') { deviceTandaAbsen(data); }
 
+  // DL online: tanggal tidak dipilih karyawan. Apa pun yang dikirim klien
+  // diganti hari ini, jam dikosongkan — mencegah DL mundur tanggal lewat
+  // form; yang lupa harus lewat Lapor HRD.
+  const isDlOnline = TIPE_DL_ONLINE.indexOf(data.tipe) !== -1;
+  if (isDlOnline) {
+    const hariIniDl = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    data.tglMulai = hariIniDl;
+    data.tglSelesai = hariIniDl;
+    data.jamMulai = '-';
+    data.jamSelesai = '-';
+  }
+
   // =================================================================
   // --- [BARU] VALIDASI CATATAN WAJIB DIISI ---
   // =================================================================
@@ -616,7 +636,8 @@ function handleAbsen(data) {
   }
 
   // --- CEK DATA USER (Hanya jika tipe form membutuhkan approval / kuota) ---
-  const allowedTypes = ['Cuti', 'Sakit', 'Cuti EO', 'Dinas Luar', 'Lembur', 'Tukar Shift', 'Off'];
+  // 'Dinas Luar' dikeluarkan (Okt 2026): DL tidak lagi butuh approval/email atasan.
+  const allowedTypes = ['Cuti', 'Sakit', 'Cuti EO', 'Lembur', 'Tukar Shift', 'Off'];
   let currentSisaCuti = 0;
   let emailAtasan = '';
   
@@ -641,7 +662,7 @@ function handleAbsen(data) {
   let approverAwal = '-';
   let timeStampAwal = '-';
 
-  if (data.tipe === 'Hadir' || data.tipe === 'Pulang') {
+  if (data.tipe === 'Hadir' || data.tipe === 'Pulang' || isDlOnline) {
     statusAwal = 'Verified';
     approverAwal = 'System';
     timeStampAwal = new Date();
@@ -694,6 +715,13 @@ function handleAbsen(data) {
   if (typeof tulisAlamatAbsensi === 'function') {
     try { alamatTersimpan = tulisAlamatAbsensi(sheet, barisBaru, data.lokasi); }
     catch (e) { console.warn('Alamat gagal ditulis: ' + e.message); }
+  }
+
+  // DL langsung Verified, jadi simbol DL di payroll eksternal ditulis di
+  // sini (dulu baru ditulis saat atasan meng-approve).
+  if (isDlOnline && typeof syncToExternalPayroll === 'function') {
+    try { syncToExternalPayroll(String(data.userId).trim(), data.tglMulai, data.tglSelesai, data.tipe); }
+    catch (e) { console.error('Sync payroll DL gagal: ' + e); }
   }
 
   // --- KIRIM EMAIL ---
@@ -949,6 +977,16 @@ function handleSendRemark(data) {
   // [UBAH] Ambil tglKoreksi dari React
   const tglKoreksi = data.tglKoreksi || '-'; 
 
+  // Lupa pengajuan DL: foto bukti dinas + keterangan wajib.
+  if (String(data.kategori || '').trim() === KATEGORI_REMARK_LUPA_DL) {
+    if (!data.file || String(data.file).indexOf('base64') === -1 || String(data.file).indexOf('data:image/') !== 0) {
+      return responseJSON({ result: 'error', message: 'Lupa pengajuan DL wajib melampirkan foto kegiatan dinas.' });
+    }
+    if (!data.pesan || String(data.pesan).trim().length < 3) {
+      return responseJSON({ result: 'error', message: 'Keterangan dinas wajib diisi.' });
+    }
+  }
+
   // Upload File Logic
   let fileUrl = '-';
   if (data.file && data.file.includes('base64')) {
@@ -1165,6 +1203,7 @@ function normalisasiPotongKuota_(value) {
   const v = String(value || 'none').trim().toLowerCase();
   if (v === 'ijin' || v === 'izin') return 'Ijin';
   if (v === 'cuti') return 'Cuti';
+  if (v === 'dinas' || v === 'dl' || v === 'dinas luar') return 'Dinas';
   return 'none';
 }
 
@@ -1309,7 +1348,7 @@ function buatPotonganKuotaDariRemark_(remarkRow, tipePotong, approverName, respo
   }
   if (uuidSudahAda.length > 0) {
     return {
-      jumlah: tipePotong === 'Cuti'
+      jumlah: (tipePotong === 'Cuti' || tipePotong === 'Dinas')
         ? intervals.reduce(function (total, item) { return total + hitungDurasiIntervalPotong_(item.mulai, item.selesai); }, 0)
         : intervals.length,
       uuidList: uuidSudahAda,
@@ -1323,7 +1362,7 @@ function buatPotonganKuotaDariRemark_(remarkRow, tipePotong, approverName, respo
   const now = new Date();
   const uuidList = [];
   let jumlah = intervals.reduce(function (total, interval) {
-    return total + (tipePotong === 'Cuti' ? hitungDurasiIntervalPotong_(interval.mulai, interval.selesai) : 1);
+    return total + ((tipePotong === 'Cuti' || tipePotong === 'Dinas') ? hitungDurasiIntervalPotong_(interval.mulai, interval.selesai) : 1);
   }, 0);
 
   if (tipePotong === 'Cuti') {
@@ -1338,7 +1377,12 @@ function buatPotonganKuotaDariRemark_(remarkRow, tipePotong, approverName, respo
     const uuidAbsen = Utilities.getUuid();
     uuidList.push(uuidAbsen);
 
-    const catatan = `Potongan dari Lapor HRD (${remarkRow[6] || '-'}): ${responPesan || remarkRow[7] || '-'}`;
+    const isDl = tipePotong === 'Dinas';
+    const catatan = isDl
+      ? `Lupa pengajuan DL (Lapor HRD): ${remarkRow[7] || '-'}${responPesan ? ' | HRD: ' + responPesan : ''}`
+      : `Potongan dari Lapor HRD (${remarkRow[6] || '-'}): ${responPesan || remarkRow[7] || '-'}`;
+    // Foto bukti DL dari lampiran laporan, supaya tampil di Riwayat/Laporan.
+    const fotoBaris = isDl && remarkRow[8] && remarkRow[8] !== '-' ? remarkRow[8] : '-';
     sheetAbsensi.appendRow([
       uuidAbsen,
       now,
@@ -1347,7 +1391,7 @@ function buatPotonganKuotaDariRemark_(remarkRow, tipePotong, approverName, respo
       tipePotong,
       '-',
       catatan,
-      '-',
+      fotoBaris,
       interval.mulai,
       interval.selesai,
       '-',
@@ -1380,7 +1424,9 @@ function buatPotonganKuotaDariRemark_(remarkRow, tipePotong, approverName, respo
   return {
     jumlah: jumlah,
     uuidList: uuidList,
-    status: `${tipePotong} dipotong ${jumlah} ${tipePotong === 'Ijin' ? 'x' : 'hari'}`
+    status: tipePotong === 'Dinas'
+      ? `DL dicatat ${jumlah} hari`
+      : `${tipePotong} dipotong ${jumlah} ${tipePotong === 'Ijin' ? 'x' : 'hari'}`
   };
 }
 
@@ -2691,7 +2737,11 @@ function handleEditAbsen(data) {
         .map(function (v) { return (v === undefined || v === null) ? '' : v; });
 
     sheet.getRange(ketemu.baris, 7).setValue(data.catatan === undefined ? '' : data.catatan);
-    sheet.getRange(ketemu.baris, 9, 1, 4).setValues([isiEdit]);
+    // DL online: tanggal milik server (hari pengiriman), hanya keterangan
+    // yang boleh disunting.
+    if (TIPE_DL_ONLINE.indexOf(String(ketemu.isi[4] || '').trim()) === -1) {
+      sheet.getRange(ketemu.baris, 9, 1, 4).setValues([isiEdit]);
+    }
     return responseJSON({ result: 'success', message: 'Data berhasil diubah' });
 }
 
@@ -5241,7 +5291,10 @@ function handleUpdateStatusAbsen(data) {
     // M=status(12) N=approver(13) O=waktu approval(14) Q=alasan(16)
     const row = sheet.getRange(rowIndex, 1, 1, 17).getValues()[0];
     const statusLama = String(row[12] || 'Pending').trim() || 'Pending';
-    const isBatal = statusLama === 'Approved' && newStatus === 'Rejected';
+    const tipeBaris = String(row[4] || '').trim();
+    // Pembatalan: Approved -> Rejected, atau DL online Verified -> Rejected.
+    const isBatal = newStatus === 'Rejected' && (statusLama === 'Approved' ||
+      (statusLama === 'Verified' && TIPE_DL_ONLINE.indexOf(tipeBaris) !== -1));
 
     if (statusLama === newStatus) {
       return responseJSON({ result: 'error', message: 'Status sudah ' + newStatus + '.' });
@@ -5257,7 +5310,7 @@ function handleUpdateStatusAbsen(data) {
     let alasanSimpan = keterangan || '-';
     if (isBatal) {
       const approverLama = String(row[13] || '-');
-      alasanSimpan = '[Batal Approval] ' + keterangan + ' (sebelumnya Approved oleh ' + approverLama + ')';
+      alasanSimpan = '[Batal Approval] ' + keterangan + ' (sebelumnya ' + statusLama + ' oleh ' + approverLama + ')';
     }
 
     // M, N, O sekaligus, lalu Q.

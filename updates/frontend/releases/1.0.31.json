@@ -1,0 +1,11 @@
+{
+  "version": "1.0.31",
+  "releasedAt": "2026-10-19",
+  "required": true,
+  "notes": [
+    "Dinas Luar (DL) kini sama dengan Absen Online: selfie kamera depan + lokasi GPS + keterangan dinas, tanpa memilih tanggal/jam. Tanggal otomatis hari ini dan langsung terverifikasi.",
+    "Lapor HRD: kategori baru 'Lupa Pengajuan Dinas Luar (DL)' — pilih tanggal dinas, wajib lampirkan foto kegiatan dinas dan keterangan.",
+    "Respon HRD untuk laporan lupa DL: pilihan 'Setujui & catat DL' langsung mencatat DL pada tanggal laporan.",
+    "Laporan & Cetak Data: DL yang terverifikasi bisa dibatalkan lewat tombol Edit."
+  ]
+}

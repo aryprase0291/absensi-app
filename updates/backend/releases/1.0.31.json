@@ -1,0 +1,11 @@
+{
+  "version": "1.0.31",
+  "releasedAt": "2026-10-19",
+  "required": true,
+  "notes": [
+    "handleAbsen: tipe Dinas/Dinas Luar (TIPE_DL_ONLINE) memaksa tanggal = hari ini, status Verified oleh System, tanpa email approval, dan langsung menulis simbol DL ke payroll eksternal.",
+    "handleEditAbsen: DL hanya boleh mengubah keterangan, tanggal tidak.",
+    "send_remark: kategori 'Lupa Pengajuan Dinas Luar (DL)' wajib foto + keterangan. update_remark_status: potongKuota 'Dinas' mencatat Dinas Approved (foto dari lampiran) dan sync payroll DL.",
+    "update_status_absen: DL Verified boleh dibatalkan menjadi Rejected."
+  ]
+}

@@ -232,6 +232,13 @@ const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return n
 // Ikon dipilih per makna, bukan per kemiripan bentuk:
 // Sakit = medis (bukan segitiga peringatan), Tukar Shift = panah dua arah
 // (dulu memakai ikon kalender yang sama persis dengan Off).
+// DINAS LUAR = ABSEN ONLINE (Okt 2026). Selfie kamera depan + GPS +
+// keterangan, tanpa pilih tanggal/jam (server memaksa hari ini), langsung
+// Verified. DL yang lupa diajukan -> Lapor HRD kategori KATEGORI_LUPA_DL.
+// Cermin TIPE_DL_ONLINE / KATEGORI_REMARK_LUPA_DL di apps-script/Code.gs.
+const TIPE_DL_ONLINE = ['Dinas', 'Dinas Luar'];
+const KATEGORI_LUPA_DL = 'Lupa Pengajuan Dinas Luar (DL)';
+
 const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': ClipboardList, 'Sakit': HeartPulse, 'Lembur': Timer, 'Dinas': PlaneTakeoff, 'Dinas Luar': PlaneTakeoff, 'Cuti': Palmtree, 'Cuti EO': Palmtree, 'Tukar Shift': ArrowLeftRight, 'Off': Coffee, 'Standby': Clock };
 // Tint lembut + ikon berwarna. Blok warna penuh bikin 4 kartu saling berebut perhatian.
 const COLOR_MAP = {'Hadir': 'bg-emerald-50 text-emerald-600', 'Pulang': 'bg-rose-50 text-rose-600', 'Ijin': 'bg-amber-50 text-amber-600', 'Sakit': 'bg-red-50 text-red-600', 'Lembur': 'bg-violet-50 text-violet-600', 'Dinas': 'bg-sky-50 text-sky-600', 'Cuti': 'bg-teal-50 text-teal-600', 'Tukar Shift': 'bg-indigo-50 text-indigo-600', 'Off': 'bg-slate-100 text-slate-500'};
@@ -3347,6 +3354,7 @@ function RemarkScreen({ user, setView }) {
     const [tanggalPilihan, setTanggalPilihan] = useState([]);
     const [tanggalUntukDitambah, setTanggalUntukDitambah] = useState('');
     const [kategori, setKategori] = useState(laporanAwal.kategori || 'Koreksi Absensi');
+    const isLupaDl = kategori === KATEGORI_LUPA_DL;
     const [pesan, setPesan] = useState(laporanAwal.pesan || '');
     const [file, setFile] = useState(null);
     const [fileName, setFileName] = useState('');
@@ -3518,6 +3526,16 @@ function RemarkScreen({ user, setView }) {
             alert(hasilTanggal.error || 'Pilih tanggal koreksi terlebih dahulu.');
             return;
         }
+        if (isLupaDl) {
+            if (!file || !String(file).startsWith('data:image/')) {
+                alert('Lampirkan foto kegiatan dinas (gambar) untuk laporan lupa pengajuan DL.');
+                return;
+            }
+            if (pesan.trim().length < 3) {
+                alert('Keterangan dinas wajib diisi.');
+                return;
+            }
+        }
         setLoading(true);
         try {
             const res = await fetchApi(SCRIPT_URL, {
@@ -3550,8 +3568,15 @@ function RemarkScreen({ user, setView }) {
 
     const kuotaTidakTersedia = (item) => angkaKuota(item?.sisaIjin) <= 0 && angkaKuota(item?.sisaCuti) <= 0;
 
+    const remarkIsLupaDl = (item) => String(item?.kategori || '').trim() === KATEGORI_LUPA_DL;
+
     const openMarkDoneDialog = (item) => {
         setRemarkDoneItem(item);
+        if (remarkIsLupaDl(item)) {
+            setRemarkDoneResponse('Disetujui, DL dicatat.');
+            setRemarkPotongKuota('Dinas');
+            return;
+        }
         setRemarkDoneResponse(kuotaTidakTersedia(item) ? 'Ditolak karena jatah Ijin dan Cuti tidak tersedia.' : 'Sudah diproses.');
         setRemarkPotongKuota('none');
     };
@@ -3568,7 +3593,7 @@ function RemarkScreen({ user, setView }) {
         if (!tipe) return '-';
         const jumlah = Number(item.potongJumlah) || 1;
         const satuan = tipe === 'Ijin' ? 'x' : 'hari';
-        return `${tipe} ${jumlah} ${satuan}`;
+        return `${tipe === 'Dinas' ? 'DL' : tipe} ${jumlah} ${satuan}`;
     };
 
     const opsiPotongTidakTersedia = (value, item = remarkDoneItem) => {
@@ -3841,7 +3866,11 @@ function RemarkScreen({ user, setView }) {
         return null;
     };
 
-    const opsiPotongKuota = [
+    const dialogLupaDl = remarkIsLupaDl(remarkDoneItem);
+    const opsiPotongKuota = dialogLupaDl ? [
+        { value: 'Dinas', label: 'Setujui & catat DL', desc: 'Mencatat Dinas Approved pada tanggal laporan, foto lampiran jadi bukti, dan simbol DL ditulis ke payroll.' },
+        { value: 'none', label: 'Tolak / tutup tanpa mencatat', desc: 'Laporan ditutup dengan tanggapan HRD, tidak ada DL yang dicatat.' }
+    ] : [
         { value: 'none', label: 'Tidak memotong', desc: 'Laporan hanya ditutup dan diberi tanggapan.' },
         { value: 'Ijin', label: 'Potong jatah Ijin', desc: 'Mencatat Ijin Approved agar terhitung dalam batas 4x per periode.' },
         { value: 'Cuti', label: 'Potong jatah Cuti', desc: 'Mencatat Cuti Approved agar ikut sinkron ke MASTER-CUTI.' }
@@ -3866,6 +3895,16 @@ function RemarkScreen({ user, setView }) {
                         </div>
 
                         <div className="space-y-4 px-5 py-4">
+                            {dialogLupaDl && (
+                                <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-[12px] text-sky-900">
+                                    <p className="font-semibold">Laporan lupa pengajuan DL</p>
+                                    <p className="mt-0.5 leading-relaxed">{remarkDoneItem.pesan || '-'}</p>
+                                    {remarkDoneItem.lampiran && remarkDoneItem.lampiran !== '-' && (
+                                        <a href={remarkDoneItem.lampiran} target="_blank" rel="noreferrer" className="mt-1 inline-block font-semibold text-sky-700 underline">Lihat foto dinas</a>
+                                    )}
+                                </div>
+                            )}
+                            {!dialogLupaDl && (<>
                             <div className="grid grid-cols-2 gap-2">
                                 <div className={`rounded-xl border px-3 py-2.5 ${angkaKuota(remarkDoneItem.sisaIjin) <= 0 ? 'border-rose-200 bg-rose-50' : 'border-amber-200 bg-amber-50'}`}>
                                     <p className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${angkaKuota(remarkDoneItem.sisaIjin) <= 0 ? 'text-rose-500' : 'text-amber-600'}`}>Sisa Ijin</p>
@@ -3885,6 +3924,7 @@ function RemarkScreen({ user, setView }) {
                                     <p className="mt-0.5 text-[11px] leading-relaxed text-rose-600">Opsi pemotongan dikunci. Simpan sebagai respon penolakan HRD.</p>
                                 </div>
                             )}
+                            </>)}
 
                             <div>
                                 <label className="mb-2 block text-[12px] font-semibold text-slate-700">Tanggapan HRD</label>
@@ -3898,12 +3938,12 @@ function RemarkScreen({ user, setView }) {
                             </div>
 
                             <div>
-                                <label className="mb-2 block text-[12px] font-semibold text-slate-700">Pemotongan kuota</label>
+                                <label className="mb-2 block text-[12px] font-semibold text-slate-700">{dialogLupaDl ? 'Keputusan' : 'Pemotongan kuota'}</label>
                                 <div className="grid gap-2">
                                     {opsiPotongKuota.map((opsi) => {
                                         const terkunci = opsiPotongTidakTersedia(opsi.value);
-                                        const labelTampil = opsi.value === 'none' && kuotaTidakTersedia(remarkDoneItem) ? 'Tolak karena jatah habis' : opsi.label;
-                                        const deskripsiTampil = opsi.value === 'none' && kuotaTidakTersedia(remarkDoneItem)
+                                        const labelTampil = !dialogLupaDl && opsi.value === 'none' && kuotaTidakTersedia(remarkDoneItem) ? 'Tolak karena jatah habis' : opsi.label;
+                                        const deskripsiTampil = !dialogLupaDl && opsi.value === 'none' && kuotaTidakTersedia(remarkDoneItem)
                                             ? 'Simpan sebagai penolakan HRD karena tidak ada jatah Ijin atau Cuti.'
                                             : terkunci
                                                 ? `Jatah ${opsi.value} sudah 0, jadi laporan harus ditolak tanpa pemotongan.`
@@ -4065,6 +4105,7 @@ function RemarkScreen({ user, setView }) {
                                 <option>Koreksi Absensi (Ijin, Lupa Absen Masuk/Pulang)</option>
                                 <option>Koreksi Cuti / Sisa Cuti</option>
                                 <option>Koreksi Shift / Jam Kerja</option>
+                                <option>{KATEGORI_LUPA_DL}</option>
                                 <option>Koreksi Lainnya</option>
                             </select>
                             <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" strokeWidth={1.8}/>
@@ -4072,14 +4113,19 @@ function RemarkScreen({ user, setView }) {
                         </div>
                         <div>
                             <label className="mb-2 block text-[13px] font-medium text-slate-700">Keterangan detail <span className="text-rose-500">*</span></label>
-                            <textarea required rows="4" className="w-full resize-y rounded-xl border border-slate-200 px-4 py-3 text-[15px] leading-relaxed text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder="Jelaskan detail laporan atau koreksi yang diperlukan…" value={pesan} onChange={e => setPesan(e.target.value)} ></textarea>
+                            <textarea required rows="4" className="w-full resize-y rounded-xl border border-slate-200 px-4 py-3 text-[15px] leading-relaxed text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" placeholder={isLupaDl ? 'Tujuan, lokasi, keperluan dinas, dan alasan lupa mengajukan…' : 'Jelaskan detail laporan atau koreksi yang diperlukan…'} value={pesan} onChange={e => setPesan(e.target.value)} ></textarea>
                         </div>
-                        <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50/60 p-3 transition-colors hover:border-blue-400 hover:bg-blue-50">
-                            <input type="file" id="fileInput" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={handleFileChange}/>
+                        {isLupaDl && (
+                            <div className="rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-3 text-[12px] leading-relaxed text-sky-900">
+                                Untuk dinas yang <b>lupa diajukan</b>. Pilih tanggal dinas di atas, lampirkan <b>foto kegiatan dinas</b>, dan tulis keterangannya. HRD akan memverifikasi lalu mencatat DL.
+                            </div>
+                        )}
+                        <div className={`rounded-xl border border-dashed p-3 transition-colors ${isLupaDl && !file ? 'border-rose-300 bg-rose-50/50 hover:border-rose-400' : 'border-blue-300 bg-blue-50/60 hover:border-blue-400 hover:bg-blue-50'}`}>
+                            <input type="file" id="fileInput" className="hidden" accept={isLupaDl ? 'image/*' : 'image/*,.pdf,.doc,.docx,.xls,.xlsx'} onChange={handleFileChange}/>
                             <label htmlFor="fileInput" className="flex min-h-[92px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg text-center">
                                 <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm ring-1 ring-blue-100"><Upload className="h-5 w-5" strokeWidth={2}/></span>
-                                <span className="mt-1 text-[14px] font-semibold text-blue-700">{fileName || 'Tambahkan lampiran'}</span>
-                                <span className="text-[11px] text-slate-500">Opsional · Foto, PDF, Word, atau Excel · Maks. 5 MB</span>
+                                <span className="mt-1 text-[14px] font-semibold text-blue-700">{fileName || (isLupaDl ? 'Lampirkan foto dinas' : 'Tambahkan lampiran')}</span>
+                                <span className="text-[11px] text-slate-500">{isLupaDl ? 'Wajib · Foto kegiatan dinas · Maks. 5 MB' : 'Opsional · Foto, PDF, Word, atau Excel · Maks. 5 MB'}</span>
                             </label>
                         </div>
                         <button type="submit" disabled={loading} className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-[15px] font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/25 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none active:scale-[0.99]">
@@ -4584,11 +4630,11 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   // 'Standby' ikut sejak 1.0.20: barisnya dipakai sebagai penanda
   // kehadiran pada rekap (sekolom dengan Masuk/Pulang), jadi bukti
   // fotonya harus setara — lihat wajibKameraDepan / wajibWajah di bawah.
-  const PHOTO_REQUIRED_TYPES = ['Hadir', 'Pulang', 'Standby', 'Dinas', 'Sakit'];
-  const NO_GPS_TYPES = ['Ijin', 'Cuti', 'Dinas Luar', 'Sakit', 'Cuti EO', 'Tukar Shift'];
+  const PHOTO_REQUIRED_TYPES = ['Hadir', 'Pulang', 'Standby', 'Dinas', 'Dinas Luar', 'Sakit'];
+  const NO_GPS_TYPES = ['Ijin', 'Cuti', 'Sakit', 'Cuti EO', 'Tukar Shift'];
   // const NO_TIME_TYPES = ['Cuti', 'Dinas Luar', 'Sakit', 'Cuti EO']; // (Digantikan logic manual)
   const H3_REQUIRED_TYPES = ['Ijin', 'Tukar Shift'];
-  const UPLOAD_ALLOWED_TYPES = ['Dinas Luar', 'Cuti', 'Cuti EO', 'Ijin']; 
+  const UPLOAD_ALLOWED_TYPES = ['Cuti', 'Cuti EO', 'Ijin']; 
 
   const isPhotoRequired = PHOTO_REQUIRED_TYPES.includes(type);
   // Karyawan yang dikecualikan admin dari gerbang GPS (staf kantor di PC
@@ -4602,7 +4648,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const isGeofenceRequired = !isEditMode && ['Hadir', 'Pulang'].includes(type) && user.geofenceRequired === true;
   const isH3Required = H3_REQUIRED_TYPES.includes(type);
   const isUploadAllowed = UPLOAD_ALLOWED_TYPES.includes(type);
-  const isIntervalType = !['Hadir', 'Pulang'].includes(type);
+  const isDlOnline = TIPE_DL_ONLINE.includes(type);
+  const isIntervalType = !['Hadir', 'Pulang'].includes(type) && !isDlOnline;
   const isShiftWorker = user.role === 'karyawan_shift'; 
   const isClockIn = type === 'Hadir';
   // DUA ATURAN YANG BERBEDA, SENGAJA DIPISAH.
@@ -4621,7 +4668,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   //   wajibKameraDepan -> kamera belakang ditolak, tombol ganti kamera hilang
   //   wajibWajah       -> verifikasi wajah penuh + liveness + pencocokan
   //                       identitas, dan karena itu HANYA SATU wajah
-  const wajibKameraDepan = ['Hadir', 'Pulang', 'Standby', 'Dinas'].includes(type);
+  const wajibKameraDepan = ['Hadir', 'Pulang', 'Standby', 'Dinas', 'Dinas Luar'].includes(type);
   const wajibWajah = ['Hadir', 'Pulang', 'Standby'].includes(type);
 
   const [selectedShift, setSelectedShift] = useState('');
@@ -4665,7 +4712,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const [intervalData, setIntervalData] = useState({ tglMulai: '', tglSelesai: '', jamMulai: '', jamSelesai: '' });
   
   // UI STATES
-  const [isUploading, setIsUploading] = useState(type === 'Dinas Luar');
+  const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -5179,7 +5226,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   if (isIntervalType && useTime && (!intervalData.jamMulai || !intervalData.jamSelesai)) kurang.push('jam mulai & selesai');
   if (isPhotoRequired && !isEditMode && !photo) kurang.push('foto');
   if (isGpsRequired && !isEditMode && !location) kurang.push('lokasi GPS');
-  if (NOTE_WAJIB.includes(type) && catatan.trim().length < 3) kurang.push('alasan');
+  if (NOTE_WAJIB.includes(type) && catatan.trim().length < 3) kurang.push(isDlOnline ? 'keterangan dinas' : 'alasan');
 
   const adaTanggal = !!intervalData.tglMulai;
   const teksTanggal = adaTanggal
@@ -5334,6 +5381,17 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                 </div>
               )}
             </SeksiForm>
+          )}
+
+          {/* ---- INFO DL ---- */}
+          {isDlOnline && !isEditMode && (
+            <div className="flex gap-2.5 rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-[11.5px] leading-relaxed text-sky-900">
+              <CalendarDays className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" strokeWidth={2} />
+              <span>
+                Dinas dicatat untuk <b>hari ini ({new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })})</b> dan langsung terverifikasi.
+                Lupa mengajukan DL di hari sebelumnya? Gunakan menu <b>Lapor HRD</b> → <i>{KATEGORI_LUPA_DL}</i>.
+              </span>
+            </div>
           )}
 
           {/* ---- LAMPIRAN ---- */}
@@ -5588,13 +5646,13 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
           {/* ---- ALASAN ---- */}
           <SeksiForm
             ikon={NotebookPen}
-            judul="Keterangan"
+            judul={isDlOnline ? 'Keterangan dinas' : 'Keterangan'}
             catatan={NOTE_WAJIB.includes(type) ? 'Wajib diisi — minimal 3 huruf' : 'Opsional'}
             warnaIkon={tema.chip}
           >
             <textarea
               className={`${INPUT_FORM} ${tema.fokus} resize-none leading-relaxed`}
-              placeholder={`Tulis alasan pengajuan ${type} Anda…`}
+              placeholder={isDlOnline ? 'Tujuan, lokasi, dan keperluan dinas…' : `Tulis alasan pengajuan ${type} Anda…`}
               rows="3"
               value={catatan}
               onChange={e => setCatatan(e.target.value)}
@@ -6134,7 +6192,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
   const [locationFilter, setLocationFilter] = useState('All');
   const [searchUser, setSearchUser] = useState('');
-  const APPROVAL_TYPES = ['Cuti', 'Sakit', 'Dinas Luar', 'Lembur', 'Tukar Shift', 'Off', 'Cuti EO'];
+  const APPROVAL_TYPES = ['Cuti', 'Sakit', 'Lembur', 'Tukar Shift', 'Off', 'Cuti EO'];
 
   // --- EFFECT & FETCH DATA ---
   useEffect(() => {
@@ -6776,7 +6834,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                                                     <X className="w-3 h-3" />
                                                                 </button>
                                                             </div>
-                                                        ) : item.status === 'Approved' ? (
+                                                        ) : (item.status === 'Approved' || (item.status === 'Verified' && TIPE_DL_ONLINE.includes(item.tipe))) ? (
                                                             <button
                                                                 onClick={() => openStatusEdit(item, 'cancel')}
                                                                 className="inline-flex items-center gap-1 px-1.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-300 transition-colors text-[10px] font-bold"
@@ -6833,11 +6891,11 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                 <span className="text-slate-400">Periode</span><span>{statusEdit.item.col_periode}</span>
                 <span className="text-slate-400">Status</span>
                 <span>
-                  <b className={statusEdit.item.status === 'Approved' ? 'text-green-700' : 'text-amber-700'}>{statusEdit.item.status}</b>
+                  <b className={['Approved', 'Verified'].includes(statusEdit.item.status) ? 'text-green-700' : 'text-amber-700'}>{statusEdit.item.status}</b>
                   {' → '}
                   <b className={statusEdit.mode === 'approve' ? 'text-green-700' : 'text-red-700'}>{statusEdit.mode === 'approve' ? 'Approved' : 'Rejected'}</b>
                 </span>
-                {statusEdit.mode === 'cancel' && (<><span className="text-slate-400">Di-approve</span><span>{statusEdit.item.approver || '-'} · {statusEdit.item.col_approval}</span></>)}
+                {statusEdit.mode === 'cancel' && (<><span className="text-slate-400">{statusEdit.item.status === 'Verified' ? 'Diverifikasi' : 'Di-approve'}</span><span>{statusEdit.item.approver || '-'} · {statusEdit.item.col_approval}</span></>)}
               </div>
               {statusEdit.mode === 'cancel' && (
                 <p className="flex gap-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2 text-[11px]">
@@ -6946,7 +7004,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           {displayData.map((item, idx) => {
             const canEdit = isEditable(item.waktu, item.status);
             const isRegularAbsen = item.tipe === 'Hadir' || item.tipe === 'Pulang';
-            const bisaLihatMaps = ['Hadir', 'Pulang', 'Dinas', 'Standby'].includes(item.tipe);
+            const bisaLihatMaps = ['Hadir', 'Pulang', 'Dinas', 'Dinas Luar', 'Standby'].includes(item.tipe);
             const showResendButton = APPROVAL_TYPES.includes(item.tipe) && item.status === 'Pending' && !canViewAll;
             return (
               <div key={idx} className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm relative group transition-all hover:border-blue-200">
