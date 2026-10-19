@@ -5591,10 +5591,10 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
               warnaIkon={tema.chip}
               padat
               aksi={location
-                ? <span className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-1 rounded-lg shrink-0 ${gpsValidation.isMock ? 'text-rose-600 bg-rose-50' : 'text-emerald-600 bg-emerald-50'}`}><CheckCircle className="w-3 h-3" strokeWidth={2.4} /> {gpsValidation.isMock ? 'Mock GPS' : 'Terkunci'}</span>
+                ? ((isDlOnline && !gpsValidation.isMock) ? null : <span className={`inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-1 rounded-lg shrink-0 ${gpsValidation.isMock ? 'text-rose-600 bg-rose-50' : 'text-emerald-600 bg-emerald-50'}`}><CheckCircle className="w-3 h-3" strokeWidth={2.4} /> {gpsValidation.isMock ? 'Mock GPS' : 'Terkunci'}</span>)
                 : <Loader2 className="w-3.5 h-3.5 text-slate-300 animate-spin shrink-0" />}
             >
-              <div className="rounded-xl overflow-hidden h-44 bg-slate-100 relative">
+              <div className={`rounded-xl overflow-hidden ${isDlOnline ? 'h-28' : 'h-44'} bg-slate-100 relative`}>
                 {location ? (
                   <iframe title="Lokasi" width="100%" height="100%" frameBorder="0" style={{ border: 0 }}
                     src={`https://maps.google.com/maps?q=${location.lat},${location.lng}&z=17&output=embed`}></iframe>
@@ -5647,19 +5647,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
 
           {/* ---- ALASAN ---- */}
           {isDlOnline && !isEditMode ? (
-            <SeksiForm
-              ikon={NotebookPen}
-              judul="Keterangan dinas"
-              catatan={dlKeteranganTerbuka ? 'Wajib diisi — minimal 3 huruf' : 'Terbuka setelah foto selfie diambil'}
-              warnaIkon={tema.chip}
-              aksi={!dlKeteranganTerbuka && (
-                <span className="flex items-center gap-1 shrink-0 text-[10px] font-medium text-slate-300">
-                  <Lock className="w-3 h-3" strokeWidth={2} /> Terkunci
-                </span>
-              )}
-            >
-              {dlKeteranganTerbuka && (
-                <>
+            dlKeteranganTerbuka ? (
+              <section className="bg-white rounded-2xl border border-slate-200/80 shadow-sm shadow-slate-900/[0.03] overflow-hidden px-4 py-3.5">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden" aria-readonly="true">
                     <div className="px-3 py-1.5 border-b border-slate-200/80">
                       <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-400">Waktu &amp; Lokasi Dinas</span>
@@ -5689,9 +5678,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                       {catatan.length} huruf
                     </span>
                   </div>
-                </>
-              )}
-            </SeksiForm>
+              </section>
+            ) : null
           ) : (
           <SeksiForm
             ikon={NotebookPen}
