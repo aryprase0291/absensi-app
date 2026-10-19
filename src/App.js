@@ -6244,26 +6244,43 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
   const uniqueForms = ['All', ...new Set(history.map(item => item.tipe))];
 
-  // --- [NEW] HANDLE APPROVAL ACTION ---
-  const handleUpdateStatus = async (uuid, newStatus) => {
-    if(!window.confirm(`Apakah Anda yakin ingin mengubah status menjadi ${newStatus}?`)) return;
-    
-    setIsReportLoading(true);
+  // --- HANDLE APPROVAL ACTION (Laporan & Cetak Data, admin/hrd) ---
+  // mode: 'approve' | 'reject' (dari Pending) | 'cancel' (Approved -> Rejected)
+  const [statusEdit, setStatusEdit] = useState(null); // { item, mode }
+  const [statusEditKet, setStatusEditKet] = useState('');
+  const [statusEditSaving, setStatusEditSaving] = useState(false);
+
+  const openStatusEdit = (item, mode) => { setStatusEdit({ item, mode }); setStatusEditKet(''); };
+  const closeStatusEdit = () => { if (!statusEditSaving) { setStatusEdit(null); setStatusEditKet(''); } };
+
+  const submitStatusEdit = async () => {
+    if (!statusEdit) return;
+    const { item, mode } = statusEdit;
+    const newStatus = mode === 'approve' ? 'Approved' : 'Rejected';
+    const ket = statusEditKet.trim();
+    if (mode !== 'approve' && ket.length < 3) {
+        alert(mode === 'cancel' ? 'Keterangan pembatalan wajib diisi (min. 3 karakter).' : 'Alasan penolakan wajib diisi (min. 3 karakter).');
+        return;
+    }
+    setStatusEditSaving(true);
     try {
         const res = await fetchApi(SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify({
-                action: 'update_status_absen', // Pastikan backend punya handler ini
-                uuid: uuid,
+                action: 'update_status_absen',
+                uuid: item.uuid,
                 status: newStatus,
-                approverName: user.nama
+                approverName: user.nama,
+                keterangan: ket
             })
         });
         const data = await res.json();
-        
         if (data.result === 'success') {
-            alert(`Berhasil di-${newStatus}`);
-            await fetchHistory(); // Refresh data agar tabel update
+            alert(data.message || `Berhasil di-${newStatus}`);
+            setStatusEdit(null);
+            setStatusEditKet('');
+            setIsReportLoading(true);
+            try { await fetchHistory(reportStartDate, reportEndDate); } finally { setIsReportLoading(false); }
         } else {
             alert("Gagal update: " + data.message);
         }
@@ -6271,7 +6288,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         console.error(e);
         alert("Terjadi kesalahan koneksi.");
     } finally {
-        setIsReportLoading(false);
+        setStatusEditSaving(false);
     }
   };
 
@@ -6371,6 +6388,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                           col_periode: periode,
                           col_durasi: durasi,
                           col_approval: item.approvalTime && item.approvalTime !== '-' ? formatDateTimeFull(item.approvalTime) : '-',
+                          col_keterangan: item.alasan && String(item.alasan).trim() && item.alasan !== '-' ? String(item.alasan) : '-',
                           col_userId: idAkunFromSheet, 
                           col_payroll: pRoll 
                       };
@@ -6457,8 +6475,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         tableHead = ["No", "UserID", "PAYROLL", "Nama", "Tanggal", "Posisi", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
         tableBody = dataToExport.map((item, index) => [ index + 1, item.col_userId, item.col_payroll, item.nama, item.col_date, item.divisi || '-', item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]);
     } else {
-        tableHead = ["No", "UserID", "PAYROLL", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
-        tableBody = dataToExport.map((item, index) => [ index + 1, item.col_userId, item.col_payroll, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval ]);
+        tableHead = ["No", "UserID", "PAYROLL", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval", "Keterangan"];
+        tableBody = dataToExport.map((item, index) => [ index + 1, item.col_userId, item.col_payroll, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval, item.col_keterangan || '-' ]);
     }
     const worksheet = XLSX.utils.aoa_to_sheet([tableHead, ...tableBody]);
     const workbook = XLSX.utils.book_new();
@@ -6486,8 +6504,8 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         tableColumn = ["No", "UserID", "PAYROLL", "Nama", "Tanggal", "Posisi", "Masuk", "Pulang", "Standby", "Foto URL", "Catatan"];
         sortedReportTable.forEach((item, index) => { tableRows.push([ index + 1, item.col_userId, item.col_payroll, item.nama, item.col_date, item.divisi, item.masuk, item.pulang, item.standby, item.foto || '-', item.catatan || '-' ]); });
     } else {
-        tableColumn = ["No", "UserID", "PAYROLL", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval"];
-        sortedReportTable.forEach((item, index) => { tableRows.push([index + 1, item.col_userId, item.col_payroll, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval]); });
+        tableColumn = ["No", "UserID", "PAYROLL", "Nama", "Form", "Waktu Input", "Periode", "Durasi", "Catatan", "Status", "Approval", "Keterangan"];
+        sortedReportTable.forEach((item, index) => { tableRows.push([index + 1, item.col_userId, item.col_payroll, item.nama, item.tipe, item.col_date, item.col_periode, item.col_durasi, item.catatan || '-', item.status, item.col_approval, item.col_keterangan || '-']); });
     }
     autoTable(doc, { head: [tableColumn], body: tableRows, startY: 18, theme: 'grid', styles: { fontSize: 6, cellPadding: 1, valign: 'middle' }, headStyles: { fillColor: [50, 50, 50] } });
     doc.save(`Laporan_${reportCategory}_${reportStartDate}.pdf`);
@@ -6701,6 +6719,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                             <ReportFilterHeader label="Catatan" field="catatan" width="min-w-[250px]"/>
                                             <ReportFilterHeader label="Status" field="status" />
                                             <ReportFilterHeader label="Approval" field="col_approval" />
+                                            <ReportFilterHeader label="Keterangan" field="col_keterangan" width="min-w-[220px]"/>
                                         </>
                                     )}
                                 </tr>
@@ -6742,21 +6761,29 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                                     <td className="px-2 py-1.5 text-center border border-gray-300 align-top">
                                                         {item.status === 'Pending' ? (
                                                             <div className="flex gap-1 justify-center">
-                                                                <button 
-                                                                    onClick={() => handleUpdateStatus(item.uuid, 'Approved')} 
+                                                                <button
+                                                                    onClick={() => openStatusEdit(item, 'approve')}
                                                                     className="p-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded border border-emerald-300 transition-colors"
                                                                     title="Approve"
                                                                 >
                                                                     <Check className="w-3 h-3" />
                                                                 </button>
-                                                                <button 
-                                                                    onClick={() => handleUpdateStatus(item.uuid, 'Rejected')} 
+                                                                <button
+                                                                    onClick={() => openStatusEdit(item, 'reject')}
                                                                     className="p-1 bg-red-100 hover:bg-red-200 text-red-700 rounded border border-red-300 transition-colors"
                                                                     title="Reject"
                                                                 >
                                                                     <X className="w-3 h-3" />
                                                                 </button>
                                                             </div>
+                                                        ) : item.status === 'Approved' ? (
+                                                            <button
+                                                                onClick={() => openStatusEdit(item, 'cancel')}
+                                                                className="inline-flex items-center gap-1 px-1.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-300 transition-colors text-[10px] font-bold"
+                                                                title="Edit / batalkan approval"
+                                                            >
+                                                                <Edit className="w-3 h-3" /> Edit
+                                                            </button>
                                                         ) : (
                                                             <span className="text-[9px] text-gray-400 font-medium">-</span>
                                                         )}
@@ -6773,6 +6800,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                                 <td className="px-2 py-1.5 text-[11px] text-gray-600 italic border border-gray-300 whitespace-normal min-w-[200px] align-top">{item.catatan}</td>
                                                 <td className="px-2 py-1.5 text-[11px] text-center border border-gray-300 align-top"><span className={`font-bold ${item.status === 'Approved' ? 'text-green-700' : (item.status === 'Rejected' ? 'text-red-700' : 'text-amber-700')}`}>{item.status}</span></td>
                                                 <td className="px-2 py-1.5 text-[11px] text-center text-gray-500 border border-gray-300 align-top">{item.col_approval}</td>
+                                                <td className={`px-2 py-1.5 text-[11px] border border-gray-300 whitespace-normal min-w-[220px] align-top ${String(item.col_keterangan || '').startsWith('[Batal Approval]') ? 'text-red-700 font-medium' : 'text-gray-600 italic'}`}>{item.col_keterangan || '-'}</td>
                                             </>
                                         )}
                                     </tr>
@@ -6789,6 +6817,60 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
         </div>
       )}
       
+      {showWebReport && statusEdit && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeStatusEdit}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className={`px-5 py-3 flex items-center justify-between text-white ${statusEdit.mode === 'approve' ? 'bg-emerald-600' : statusEdit.mode === 'reject' ? 'bg-rose-600' : 'bg-amber-600'}`}>
+              <h4 className="font-bold text-sm">
+                {statusEdit.mode === 'approve' ? 'Approve Pengajuan' : statusEdit.mode === 'reject' ? 'Tolak Pengajuan' : 'Batalkan Approval'}
+              </h4>
+              <button onClick={closeStatusEdit} className="p-1 rounded-full hover:bg-white/20"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-700">
+              <div className="grid grid-cols-[90px_1fr] gap-y-1">
+                <span className="text-slate-400">Nama</span><span className="font-bold">{statusEdit.item.nama}</span>
+                <span className="text-slate-400">Form</span><span>{statusEdit.item.tipe}</span>
+                <span className="text-slate-400">Periode</span><span>{statusEdit.item.col_periode}</span>
+                <span className="text-slate-400">Status</span>
+                <span>
+                  <b className={statusEdit.item.status === 'Approved' ? 'text-green-700' : 'text-amber-700'}>{statusEdit.item.status}</b>
+                  {' → '}
+                  <b className={statusEdit.mode === 'approve' ? 'text-green-700' : 'text-red-700'}>{statusEdit.mode === 'approve' ? 'Approved' : 'Rejected'}</b>
+                </span>
+                {statusEdit.mode === 'cancel' && (<><span className="text-slate-400">Di-approve</span><span>{statusEdit.item.approver || '-'} · {statusEdit.item.col_approval}</span></>)}
+              </div>
+              {statusEdit.mode === 'cancel' && (
+                <p className="flex gap-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2 text-[11px]">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-none mt-0.5" />
+                  Approval akan dibatalkan dan status menjadi Rejected. Simbol pengajuan ini di sheet payroll eksternal ikut dikosongkan.
+                </p>
+              )}
+              <label className="block">
+                <span className="font-bold text-[11px]">
+                  Keterangan {statusEdit.mode === 'approve' ? <span className="font-normal text-slate-400">(opsional)</span> : <span className="text-red-600">*</span>}
+                </span>
+                <textarea
+                  autoFocus
+                  rows={3}
+                  value={statusEditKet}
+                  onChange={(e) => setStatusEditKet(e.target.value)}
+                  placeholder={statusEdit.mode === 'cancel' ? 'Alasan pembatalan approval…' : statusEdit.mode === 'reject' ? 'Alasan penolakan…' : 'Catatan persetujuan…'}
+                  className="mt-1 w-full border border-slate-300 rounded-lg p-2 text-xs outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 resize-none"
+                />
+              </label>
+            </div>
+            <div className="px-5 pb-4 flex justify-end gap-2">
+              <button onClick={closeStatusEdit} disabled={statusEditSaving} className="px-4 py-1.5 rounded-full text-xs font-bold border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">Batal</button>
+              <button onClick={submitStatusEdit} disabled={statusEditSaving}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-60 ${statusEdit.mode === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : statusEdit.mode === 'reject' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700'}`}>
+                {statusEditSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {statusEdit.mode === 'approve' ? 'Approve' : statusEdit.mode === 'reject' ? 'Tolak' : 'Simpan → Rejected'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- MAIN PAGE CONTENT (RIWAYAT CARD VIEW) --- */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">

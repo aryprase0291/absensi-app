@@ -1,0 +1,9 @@
+{
+  "version": "1.0.30",
+  "releasedAt": "2026-10-19",
+  "required": true,
+  "notes": [
+    "update_status_absen: menerima keterangan (kolom Q), memvalidasi transisi Pending→Approved/Rejected dan Approved→Rejected (pembatalan).",
+    "Pembatalan approval mengosongkan simbol pengajuan di sheet payroll eksternal (hanya sel yang masih berisi simbol tsb) dan menyegarkan cache rekap."
+  ]
+}

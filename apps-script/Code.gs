@@ -68,7 +68,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.29";
+const APP_VERSION = "1.0.30";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -5201,48 +5201,146 @@ function TEST_MANUAL_SYNC() {
 
 // --- FUNGSI UPDATE STATUS (APPROVE/REJECT) ---
 function handleUpdateStatusAbsen(data) {
+  // Dipakai tombol ACTION di "Laporan & Cetak Data" (khusus admin & hrd —
+  // dijaga di Auth.gs). Transisi yang diizinkan:
+  //   Pending  -> Approved / Rejected   (keterangan opsional utk Approved,
+  //                                      wajib utk Rejected)
+  //   Approved -> Rejected              (PEMBATALAN approval, keterangan wajib)
+  // Keterangan disimpan di kolom Q (alasan) — kolom yang sama dengan alasan
+  // penolakan dari layar Approval, jadi karyawan melihatnya di Riwayat.
   const sheet = SS.getSheetByName(SHEET_ABSENSI);
   if (!sheet) return responseJSON({ result: 'error', message: 'Sheet Absensi tidak ditemukan' });
 
-  const uuid = data.uuid;
-  const newStatus = data.status; // 'Approved' atau 'Rejected'
+  const uuid = String(data.uuid || '').trim();
+  const newStatus = String(data.status || '').trim();
   const approverName = data.approverName || 'Admin';
-  const now = new Date();
+  const keterangan = String(data.keterangan || '').trim();
 
-  // Cari baris berdasarkan UUID (Kolom A)
-  // Kita cari manual biar aman
-  const dataRange = sheet.getDataRange();
-  const values = dataRange.getValues();
-  let rowIndex = -1;
+  if (!uuid) return responseJSON({ result: 'error', message: 'ID data kosong.' });
+  if (newStatus !== 'Approved' && newStatus !== 'Rejected') {
+    return responseJSON({ result: 'error', message: 'Status tidak valid: ' + newStatus });
+  }
 
-  // Loop cari UUID (mulai baris ke-2, index 1)
-  for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]) === String(uuid)) {
-      rowIndex = i + 1; // Karena index array mulai 0, tapi baris sheet mulai 1
-      break;
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch (e) {
+    return responseJSON({ result: 'error', message: 'Server sibuk, coba lagi sebentar.' });
+  }
+
+  try {
+    // Cari baris lewat kolom A saja (tidak membaca seluruh sheet).
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return responseJSON({ result: 'error', message: 'Data ID tidak ditemukan.' });
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    let rowIndex = -1;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === uuid) { rowIndex = i + 2; break; }
     }
+    if (rowIndex === -1) return responseJSON({ result: 'error', message: 'Data ID tidak ditemukan.' });
+
+    // A..Q baris itu: C=userId(2) E=tipe(4) I=tglMulai(8) J=tglSelesai(9)
+    // M=status(12) N=approver(13) O=waktu approval(14) Q=alasan(16)
+    const row = sheet.getRange(rowIndex, 1, 1, 17).getValues()[0];
+    const statusLama = String(row[12] || 'Pending').trim() || 'Pending';
+    const isBatal = statusLama === 'Approved' && newStatus === 'Rejected';
+
+    if (statusLama === newStatus) {
+      return responseJSON({ result: 'error', message: 'Status sudah ' + newStatus + '.' });
+    }
+    if (statusLama !== 'Pending' && !isBatal) {
+      return responseJSON({ result: 'error', message: 'Perubahan ' + statusLama + ' → ' + newStatus + ' tidak diizinkan.' });
+    }
+    if (newStatus === 'Rejected' && !keterangan) {
+      return responseJSON({ result: 'error', message: isBatal ? 'Keterangan pembatalan wajib diisi.' : 'Alasan penolakan wajib diisi.' });
+    }
+
+    const formattedTime = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+    let alasanSimpan = keterangan || '-';
+    if (isBatal) {
+      const approverLama = String(row[13] || '-');
+      alasanSimpan = '[Batal Approval] ' + keterangan + ' (sebelumnya Approved oleh ' + approverLama + ')';
+    }
+
+    // M, N, O sekaligus, lalu Q.
+    sheet.getRange(rowIndex, 13, 1, 3).setValues([[newStatus, approverName, formattedTime]]);
+    sheet.getRange(rowIndex, 17).setValue(alasanSimpan);
+
+    // Approval yang dibatalkan: bersihkan simbol yang dulu ditulis
+    // syncToExternalPayroll di sheet payroll eksternal.
+    let infoPayroll = '';
+    if (isBatal) {
+      try {
+        const jml = batalkanSyncExternalPayroll(
+          String(row[2]).trim(),
+          row[8] && row[8] !== '-' ? row[8] : row[1],
+          row[9] && row[9] !== '-' ? row[9] : (row[8] && row[8] !== '-' ? row[8] : row[1]),
+          String(row[4]).trim()
+        );
+        infoPayroll = jml > 0 ? ` ${jml} sel di payroll eksternal dikosongkan.` : '';
+      } catch (errSync) {
+        console.error('Gagal membatalkan sync payroll: ' + errSync);
+        infoPayroll = ' (Payroll eksternal gagal dibersihkan — cek manual.)';
+      }
+    }
+
+    // Status berubah tanpa menambah baris → kunci cache rekap tidak berubah
+    // sendiri, jadi naikkan versinya supaya rekap langsung ikut.
+    if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_();
+
+    return responseJSON({
+      result: 'success',
+      message: (isBatal ? 'Approval dibatalkan, status menjadi Rejected.' : `Status berhasil diubah menjadi ${newStatus}.`) + infoPayroll,
+      status: newStatus,
+      approver: approverName,
+      approvalTime: formattedTime,
+      alasan: alasanSimpan
+    });
+  } finally {
+    lock.releaseLock();
   }
+}
 
-  if (rowIndex === -1) {
-    return responseJSON({ result: 'error', message: 'Data ID tidak ditemukan.' });
-  }
+/**
+ * Kebalikan syncToExternalPayroll: kosongkan sel simbol untuk userId pada
+ * rentang tanggal, TAPI hanya bila isinya masih simbol tipe pengajuan itu
+ * (mis. 'C' untuk Cuti) — nilai lain yang sudah diubah orang tidak disentuh.
+ * @return {number} jumlah sel yang dikosongkan
+ */
+function batalkanSyncExternalPayroll(userId, startDate, endDate, tipeAbsen) {
+  const symbol = getSymbolFromType(tipeAbsen);
+  if (!symbol) return 0;
+  const awal = new Date(startDate); awal.setHours(0, 0, 0, 0);
+  const akhir = new Date(endDate); akhir.setHours(23, 59, 59, 999);
+  if (isNaN(awal.getTime()) || isNaN(akhir.getTime())) return 0;
+  let jumlah = 0;
 
-  // --- UPDATE KOLOM DI SHEET ---
-  // Sesuaikan nomor kolom dengan layout sheet Anda:
-  // Kolom A=1, B=2, ... M=13, N=14, O=15
-  
-  // 1. Update Status (Kolom M / ke-13)
-  sheet.getRange(rowIndex, 13).setValue(newStatus);
-  
-  // 2. Update Approver (Kolom N / ke-14)
-  sheet.getRange(rowIndex, 14).setValue(approverName);
-  
-  // 3. Update Waktu Approval (Kolom O / ke-15)
-  // Format waktu agar rapi di sheet
-  const formattedTime = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
-  sheet.getRange(rowIndex, 15).setValue(formattedTime);
+  EXTERNAL_TARGETS.forEach(target => {
+    let ss;
+    try { ss = SpreadsheetApp.openById(target.id); } catch (e) {
+      console.error(`[BATAL SYNC] Tidak bisa membuka ${target.id}`); return;
+    }
+    target.sheets.forEach(sheetName => {
+      const sh = ss.getSheetByName(sheetName);
+      if (!sh) return;
+      const values = sh.getDataRange().getValues();
+      if (values.length < 2) return;
+      const headers = values[0].map(h => String(h).toUpperCase().trim());
+      const idxID = headers.indexOf(COL_HEADER_ID.toUpperCase().trim());
+      const idxDate = headers.indexOf(COL_HEADER_DATE.toUpperCase().trim());
+      const idxSymbol = headers.indexOf(COL_HEADER_SYMBOL.toUpperCase().trim());
+      if (idxID === -1 || idxDate === -1 || idxSymbol === -1) return;
 
-  return responseJSON({ result: 'success', message: `Status berhasil diubah menjadi ${newStatus}` });
+      for (let i = 1; i < values.length; i++) {
+        if (String(values[i][idxID]).trim() !== String(userId).trim()) continue;
+        if (String(values[i][idxSymbol]).trim().toUpperCase() !== String(symbol).toUpperCase()) continue;
+        const d = values[i][idxDate] instanceof Date ? values[i][idxDate] : new Date(values[i][idxDate]);
+        if (isNaN(d.getTime()) || d < awal || d > akhir) continue;
+        sh.getRange(i + 1, idxSymbol + 1).setValue('');
+        jumlah++;
+      }
+    });
+  });
+  console.log(`[BATAL SYNC] ${userId} ${tipeAbsen} (${symbol}): ${jumlah} sel dikosongkan`);
+  return jumlah;
 }
 
 // ==========================================

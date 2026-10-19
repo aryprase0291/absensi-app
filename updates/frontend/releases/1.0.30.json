@@ -1,0 +1,10 @@
+{
+  "version": "1.0.30",
+  "releasedAt": "2026-10-19",
+  "required": true,
+  "notes": [
+    "Laporan & Cetak Data: tombol Edit di kolom ACTION untuk baris Approved — admin/HRD bisa membatalkan approval menjadi Rejected dengan keterangan wajib.",
+    "Kolom KETERANGAN baru (alasan approve/tolak/pembatalan) di tabel, Excel, dan PDF.",
+    "Tombol Approve/Reject di laporan memakai jendela keterangan, bukan dialog konfirmasi."
+  ]
+}

@@ -1,7 +1,18 @@
 {
   "frontend": {
-    "currentVersion": "1.0.29",
+    "currentVersion": "1.0.30",
     "history": [
+      {
+        "file": "1.0.30.json",
+        "version": "1.0.30",
+        "releasedAt": "2026-10-19",
+        "required": true,
+        "notes": [
+          "Laporan & Cetak Data: tombol Edit di kolom ACTION untuk baris Approved — admin/HRD bisa membatalkan approval menjadi Rejected dengan keterangan wajib.",
+          "Kolom KETERANGAN baru (alasan approve/tolak/pembatalan) di tabel, Excel, dan PDF.",
+          "Tombol Approve/Reject di laporan memakai jendela keterangan, bukan dialog konfirmasi."
+        ]
+      },
       {
         "file": "1.0.29.json",
         "version": "1.0.29",
@@ -185,8 +196,18 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.29",
+    "currentVersion": "1.0.30",
     "history": [
+      {
+        "file": "1.0.30.json",
+        "version": "1.0.30",
+        "releasedAt": "2026-10-19",
+        "required": true,
+        "notes": [
+          "update_status_absen: menerima keterangan (kolom Q), memvalidasi transisi Pending→Approved/Rejected dan Approved→Rejected (pembatalan).",
+          "Pembatalan approval mengosongkan simbol pengajuan di sheet payroll eksternal (hanya sel yang masih berisi simbol tsb) dan menyegarkan cache rekap."
+        ]
+      },
       {
         "file": "1.0.29.json",
         "version": "1.0.29",
