@@ -6474,7 +6474,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       onClick={enabled && !loading ? onClick : undefined}
       disabled={!enabled || loading}
       aria-disabled={!enabled}
-      className={`w-6 h-6 shrink-0 flex items-center justify-center rounded border transition-colors ${
+      className={`w-6 h-6 shrink-0 flex items-center justify-center rounded-full border transition-colors ${
         enabled ? ACT_TONE[tone] : 'bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed'
       } ${loading ? 'opacity-60' : ''}`}
       title={enabled ? title : (offTitle || title)}
@@ -6548,7 +6548,12 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                       dateRef = getAcaraDateSource(item);
                   }
                   const itemDate = new Date(dateRef).setHours(0, 0, 0, 0);
-                  const matchDate = (!start && !end) || (itemDate >= start && itemDate <= end);
+                  const inRange = (t) => !isNaN(t) && (!start || t >= start) && (!end || t <= end);
+                  // Laporan Absensi: tampil juga bila TANGGAL INPUT ada di periode,
+                  // supaya pengajuan untuk tanggal mendatang (cuti 24 Okt diajukan
+                  // 19 Okt) sudah muncul di tanggal pengajuannya.
+                  const inputDate = reportCategory === 'RunningShift' ? NaN : new Date(item.waktu).setHours(0, 0, 0, 0);
+                  const matchDate = (!start && !end) || inRange(itemDate) || inRange(inputDate);
                   let matchStatus = true; let matchForm = true;
                   if (reportCategory === 'General') {
                      matchStatus = (reportStatusFilter === 'All' || item.status === reportStatusFilter);
@@ -6739,7 +6744,12 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
       const itemEnd = new Date(item.tglSelesai && item.tglSelesai !== '-' ? item.tglSelesai : item.waktu).setHours(23, 59, 59, 999);
       const start = filterStart ? new Date(filterStart).setHours(0, 0, 0, 0) : null;
       const end = filterEnd ? new Date(filterEnd).setHours(23, 59, 59, 999) : null;
-      const matchesDate = (!start && !end) || (!isNaN(itemStart) && !isNaN(itemEnd) && itemEnd >= (start || -Infinity) && itemStart <= (end || Infinity));
+      const itemInput = new Date(item.waktu).setHours(0, 0, 0, 0);
+      // Tampil bila tanggal acara beririsan dengan filter ATAU tanggal input
+      // ada di filter (pengajuan untuk tanggal mendatang tetap terlihat).
+      const matchesDate = (!start && !end)
+        || (!isNaN(itemStart) && !isNaN(itemEnd) && itemEnd >= (start || -Infinity) && itemStart <= (end || Infinity))
+        || (!isNaN(itemInput) && itemInput >= (start || -Infinity) && itemInput <= (end || Infinity));
       return matchesDate && (filterType === 'All' || item.tipe === filterType) && (filterStatus === 'All' || item.status === filterStatus);
     });
   };

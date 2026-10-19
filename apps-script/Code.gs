@@ -4189,7 +4189,14 @@ function handleGetHistory(data) {
 
       const tanggalMulai = formatDateYMD_Strict(rowsAbsen[i][8] && rowsAbsen[i][8] !== '-' ? rowsAbsen[i][8] : rowsAbsen[i][1]);
       const tanggalSelesai = formatDateYMD_Strict(rowsAbsen[i][9] && rowsAbsen[i][9] !== '-' ? rowsAbsen[i][9] : rowsAbsen[i][1]);
-      if (!tanggalMulai || !tanggalSelesai || tanggalSelesai < periodeFilter.mulai || tanggalMulai > periodeFilter.selesai) continue;
+      // Tampil bila TANGGAL ACARA beririsan dengan periode, ATAU TANGGAL
+      // INPUT (kolom B) jatuh di periode. Yang kedua membuat pengajuan untuk
+      // tanggal mendatang (mis. cuti 24 Okt yang diajukan 19 Okt) sudah
+      // terlihat di periode/hari pengajuannya, tidak menunggu tanggal acara.
+      const tanggalInput = formatDateYMD_Strict(rowsAbsen[i][1]);
+      const acaraMasuk = !!(tanggalMulai && tanggalSelesai && tanggalSelesai >= periodeFilter.mulai && tanggalMulai <= periodeFilter.selesai);
+      const inputMasuk = !!(tanggalInput && tanggalInput >= periodeFilter.mulai && tanggalInput <= periodeFilter.selesai);
+      if (!acaraMasuk && !inputMasuk) continue;
 
       history.push({
         uuid: rowsAbsen[i][0],
