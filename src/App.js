@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Send, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
+import { Send, Mail, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
   Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp, Menu, ArrowUp } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION, TIMEOUT_LABEL, BOARD_ABSENSI_URL } from './config/constants';
 import { loginLewatSupabase } from './utils/loginSupabase';
@@ -6431,6 +6431,33 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
     }
   };
 
+  // --- KIRIM ULANG EMAIL APPROVAL (Laporan & Cetak Data, Pending saja) ---
+  const [resendingUuid, setResendingUuid] = useState(null);
+  const handleResendPengajuan = async (item) => {
+    if (!item || !item.uuid || resendingUuid) return;
+    if (!window.confirm(
+      `Kirim ulang email approval ke atasan?\n\n` +
+      `Nama    : ${item.nama}\n` +
+      `Form    : ${item.tipe}\n` +
+      `Periode : ${item.col_periode}`
+    )) return;
+    setResendingUuid(item.uuid);
+    try {
+      const res = await fetchApi(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'request_approval_email', uuid: item.uuid, scriptUrl: SCRIPT_URL })
+      });
+      const data = await res.json();
+      if (data.result === 'success') alert('Terkirim! ' + data.message);
+      else alert('Gagal kirim ulang: ' + data.message);
+    } catch (e) {
+      console.error(e);
+      alert('Terjadi kesalahan koneksi.');
+    } finally {
+      setResendingUuid(null);
+    }
+  };
+
   // --- REPORT PROCESSING LOGIC ---
   const processReportData = () => {
       try {
@@ -6911,46 +6938,62 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                                                 {/* [NEW] TOMBOL ACTION APPROVE/REJECT */}
                                                 {canViewAll && (
                                                     <td className={`px-2 py-1.5 text-center border border-gray-300 align-top ${isReportDuplicate(item) ? 'bg-orange-50' : ''}`}>
+                                                        {/* Slot tetap: [kiri 52px: ✓✗ / Edit / kosong] [24px: kirim ulang] [24px: hapus]
+                                                            supaya ikon lurus satu kolom di semua baris. */}
                                                         <div className="flex flex-col items-center gap-1">
-                                                        <div className="flex gap-1 justify-center items-center">
-                                                        {item.status === 'Pending' ? (
-                                                            <div className="flex gap-1 justify-center">
-                                                                <button
-                                                                    onClick={() => openStatusEdit(item, 'approve')}
-                                                                    className="p-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded border border-emerald-300 transition-colors"
-                                                                    title="Approve"
-                                                                >
-                                                                    <Check className="w-3 h-3" />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => openStatusEdit(item, 'reject')}
-                                                                    className="p-1 bg-red-100 hover:bg-red-200 text-red-700 rounded border border-red-300 transition-colors"
-                                                                    title="Reject"
-                                                                >
-                                                                    <X className="w-3 h-3" />
-                                                                </button>
+                                                        <div className="flex gap-1 items-center justify-center">
+                                                            <div className="w-[52px] h-6 flex items-center justify-center shrink-0">
+                                                                {item.status === 'Pending' ? (
+                                                                    <div className="flex gap-1">
+                                                                        <button
+                                                                            onClick={() => openStatusEdit(item, 'approve')}
+                                                                            className="w-6 h-6 flex items-center justify-center bg-emerald-100 hover:bg-emerald-200 text-emerald-700 rounded border border-emerald-300 transition-colors"
+                                                                            title="Approve"
+                                                                        >
+                                                                            <Check className="w-3 h-3" />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => openStatusEdit(item, 'reject')}
+                                                                            className="w-6 h-6 flex items-center justify-center bg-red-100 hover:bg-red-200 text-red-700 rounded border border-red-300 transition-colors"
+                                                                            title="Reject"
+                                                                        >
+                                                                            <X className="w-3 h-3" />
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (item.status === 'Approved' || (item.status === 'Verified' && TIPE_DL_ONLINE.includes(item.tipe))) ? (
+                                                                    <button
+                                                                        onClick={() => openStatusEdit(item, 'cancel')}
+                                                                        className="w-[52px] h-6 inline-flex items-center justify-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-300 transition-colors text-[10px] font-bold"
+                                                                        title="Edit / batalkan approval"
+                                                                    >
+                                                                        <Edit className="w-3 h-3" /> Edit
+                                                                    </button>
+                                                                ) : (
+                                                                    <span className="text-[9px] text-gray-400 font-medium">-</span>
+                                                                )}
                                                             </div>
-                                                        ) : (item.status === 'Approved' || (item.status === 'Verified' && TIPE_DL_ONLINE.includes(item.tipe))) ? (
-                                                            <button
-                                                                onClick={() => openStatusEdit(item, 'cancel')}
-                                                                className="inline-flex items-center gap-1 px-1.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-300 transition-colors text-[10px] font-bold"
-                                                                title="Edit / batalkan approval"
-                                                            >
-                                                                <Edit className="w-3 h-3" /> Edit
-                                                            </button>
-                                                        ) : (userRole === 'admin' ? null : (
-                                                            <span className="text-[9px] text-gray-400 font-medium">-</span>
-                                                        ))}
-                                                        {userRole === 'admin' && (
-                                                            <button
-                                                                onClick={() => handleDeletePengajuan(item)}
-                                                                disabled={deletingUuid === item.uuid}
-                                                                className="p-1 bg-white hover:bg-red-50 text-red-600 rounded border border-red-300 transition-colors disabled:opacity-50"
-                                                                title="Hapus pengajuan"
-                                                            >
-                                                                {deletingUuid === item.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                                                            </button>
-                                                        )}
+                                                            <div className="w-6 h-6 shrink-0 flex items-center justify-center">
+                                                                {item.status === 'Pending' && (
+                                                                    <button
+                                                                        onClick={() => handleResendPengajuan(item)}
+                                                                        disabled={resendingUuid === item.uuid}
+                                                                        className="w-6 h-6 flex items-center justify-center bg-blue-50 hover:bg-blue-100 text-blue-600 rounded border border-blue-300 transition-colors disabled:opacity-50"
+                                                                        title="Kirim ulang email approval"
+                                                                    >
+                                                                        {resendingUuid === item.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            {userRole === 'admin' && (
+                                                                <button
+                                                                    onClick={() => handleDeletePengajuan(item)}
+                                                                    disabled={deletingUuid === item.uuid}
+                                                                    className="w-6 h-6 shrink-0 flex items-center justify-center bg-white hover:bg-red-50 text-red-600 rounded border border-red-300 transition-colors disabled:opacity-50"
+                                                                    title="Hapus pengajuan"
+                                                                >
+                                                                    {deletingUuid === item.uuid ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                                                </button>
+                                                            )}
                                                         </div>
                                                         {isReportDuplicate(item) && (
                                                             <span className="text-[9px] font-bold text-orange-700 bg-orange-100 border border-orange-300 rounded px-1 leading-tight" title="Ada pengajuan lain dengan karyawan, form & periode yang sama">Duplikat</span>
