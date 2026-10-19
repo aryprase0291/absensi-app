@@ -809,7 +809,7 @@ function kirimRequestApproval(uuid, namaKaryawan, tipe, periode, keterangan, sis
         const hari = durasi || 1; 
         rowDurasi = `
         <tr style="border-bottom: 1px solid #f1f5f9;">
-            <td style="padding: 10px 0; color: #64748b;">Waktu</td>
+            <td width="110" style="padding: 10px 8px 10px 0; color: #64748b; width: 110px; vertical-align: top;">Waktu</td>
             <td style="padding: 10px 0; font-weight: bold; color: #2563eb;">${hari} Hari</td>
         </tr>`;
     }
@@ -819,8 +819,8 @@ function kirimRequestApproval(uuid, namaKaryawan, tipe, periode, keterangan, sis
     if (tipe === 'Cuti') {
        rowSisaCuti = `
        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #fffbeb;">
-            <td style="padding: 10px; color: #b45309; font-weight: bold;">Sisa Cuti</td>
-            <td style="padding: 10px; font-weight: 800; color: #b45309;">${sisaCuti} Hari</td>
+            <td width="110" style="padding: 10px 8px 10px 10px; color: #b45309; font-weight: bold; width: 110px; vertical-align: top; white-space: nowrap;">Sisa Cuti</td>
+            <td style="padding: 10px 10px 10px 0; font-weight: 800; color: #b45309;">${sisaCuti} Hari</td>
        </tr>`;
     }
 
@@ -829,7 +829,7 @@ function kirimRequestApproval(uuid, namaKaryawan, tipe, periode, keterangan, sis
     if (jamMulai && jamMulai !== '-' && jamSelesai && jamSelesai !== '-') {
         rowJam = `
         <tr style="border-bottom: 1px solid #f1f5f9;">
-            <td style="padding: 10px 0; color: #64748b;">Jam</td>
+            <td width="110" style="padding: 10px 8px 10px 0; color: #64748b; width: 110px; vertical-align: top;">Jam</td>
             <td style="padding: 10px 0; font-weight: bold;">${jamMulai} - ${jamSelesai}</td>
         </tr>`;
     }
@@ -847,7 +847,7 @@ function kirimRequestApproval(uuid, namaKaryawan, tipe, periode, keterangan, sis
     if (buktiHtml.length > 0) {
         rowBukti = `
         <tr style="border-bottom: 1px solid #f1f5f9;">
-            <td style="padding: 10px 0; color: #64748b;">Lampiran</td>
+            <td width="110" style="padding: 10px 8px 10px 0; color: #64748b; width: 110px; vertical-align: top;">Lampiran</td>
             <td style="padding: 10px 0;">${buktiHtml.join('&nbsp;&nbsp;')}</td>
         </tr>`;
     }
@@ -859,27 +859,33 @@ function kirimRequestApproval(uuid, namaKaryawan, tipe, periode, keterangan, sis
           <p style="color: #bfdbfe; margin: 5px 0 0; font-size: 14px;">e-Form Online Notification</p>
         </div>
   
-        <div style="padding: 30px;">
+        <div style="padding: 20px;">
           <p>Yth. Bpk/Ibu Pimpinan,</p>
           <p>Mohon tinjau permohonan Approval berikut:</p>
           <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 10px 0; color: #64748b;">Nama</td><td style="padding: 10px 0; font-weight: bold;">${namaKaryawan}</td></tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 10px 0; color: #64748b;">Form</td><td style="padding: 10px 0; font-weight: bold; color: #2563eb;">${tipe}</td></tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 10px 0; color: #64748b;">Periode</td><td style="padding: 10px 0; font-weight: bold;">${periode}</td></tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;"><td width="110" style="padding: 10px 8px 10px 0; color: #64748b; width: 110px; vertical-align: top;">Nama</td><td style="padding: 10px 0; font-weight: bold;">${namaKaryawan}</td></tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;"><td width="110" style="padding: 10px 8px 10px 0; color: #64748b; width: 110px; vertical-align: top;">Form</td><td style="padding: 10px 0; font-weight: bold; color: #2563eb;">${tipe}</td></tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;"><td width="110" style="padding: 10px 8px 10px 0; color: #64748b; width: 110px; vertical-align: top;">Periode</td><td style="padding: 10px 0; font-weight: bold;">${periode}</td></tr>
             
             ${rowJam}
             ${rowDurasi}
             ${rowBukti}
             
-            <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 10px 0; color: #64748b;">Keterangan</td><td style="padding: 10px 0; font-style: italic;">"${keterangan}"</td></tr>
+            <tr style="border-bottom: 1px solid #f1f5f9;"><td width="110" style="padding: 10px 8px 10px 0; color: #64748b; width: 110px; vertical-align: top;">Keterangan</td><td style="padding: 10px 0; font-style: italic;">"${keterangan}"</td></tr>
             
             ${rowSisaCuti}
 
           </table>
-          <div style="text-align: center; margin-top: 30px;">
-            <a href="${approveLink}" style="background-color: #10b981; color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px;">✅ APPROVE</a>
-            <a href="${rejectLink}" style="background-color: #ef4444; color: white; padding: 12px 25px; text-decoration: none; border-radius: 6px; font-weight: bold;">❎ REJECT</a>
-          </div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 24px; border-collapse: separate;">
+              <tr>
+                <td width="50%" style="padding-right: 6px;">
+                  <a href="${approveLink}" style="display: block; background-color: #10b981; color: #ffffff; padding: 14px 8px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; text-align: center; white-space: nowrap;">✅ APPROVE</a>
+                </td>
+                <td width="50%" style="padding-left: 6px;">
+                  <a href="${rejectLink}" style="display: block; background-color: #ef4444; color: #ffffff; padding: 14px 8px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; text-align: center; white-space: nowrap;">❌ REJECT</a>
+                </td>
+              </tr>
+            </table>
         </div>
         <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 11px; color: #cbd5e1;">&copy; e-Form Online | by : IT SUPPORT</div>
       </div>
@@ -958,10 +964,16 @@ function handleRequestApprovalEmail(data) {
             <li><b>Keterangan:</b> ${rowData[6]}</li> 
             <li><b>Tanggal:</b> ${formatDate(rowData[1])}</li>
           </ul>
-          <div style="margin-top: 20px;">
-            <a href="${approvalLink}" style="background:green; color:white; padding:10px 20px; text-decoration:none; margin-right:10px; border-radius:5px;">APPROVE</a>
-            <a href="${rejectLink}" style="background:red; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;">REJECT</a>
-          </div>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 20px; border-collapse: separate;">
+            <tr>
+              <td width="50%" style="padding-right: 6px;">
+                <a href="${approvalLink}" style="display: block; background-color: #10b981; color: #ffffff; padding: 14px 8px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; text-align: center; white-space: nowrap;">✅ APPROVE</a>
+              </td>
+              <td width="50%" style="padding-left: 6px;">
+                <a href="${rejectLink}" style="display: block; background-color: #ef4444; color: #ffffff; padding: 14px 8px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 15px; text-align: center; white-space: nowrap;">❌ REJECT</a>
+              </td>
+            </tr>
+          </table>
         </div>
       `;
 
