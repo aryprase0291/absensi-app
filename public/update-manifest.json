@@ -1,7 +1,18 @@
 {
   "frontend": {
-    "currentVersion": "1.0.31",
+    "currentVersion": "1.0.32",
     "history": [
+      {
+        "file": "1.0.32.json",
+        "version": "1.0.32",
+        "releasedAt": "2026-10-21",
+        "required": true,
+        "notes": [
+          "Pengajuan e-Form (Ijin, Sakit, Cuti, Cuti EO, Standby, Off, Tukar Shift, Lembur) tidak bisa lagi untuk tanggal di periode yang sudah ditutup. Contoh: mulai 21 Okt 2026, tanggal 20 Okt 2026 ke bawah (periode 21 Sep–20 Okt) terkunci.",
+          "Kalender pilih tanggal menandai tanggal periode lalu sebagai terkunci dan tidak bisa mundur ke bulan sebelum periode berjalan.",
+          "Lapor HRD: tanggal koreksi (tunggal, rentang, maupun beberapa tanggal) juga hanya bisa dipilih dari periode berjalan."
+        ]
+      },
       {
         "file": "1.0.31.json",
         "version": "1.0.31",
@@ -208,8 +219,20 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.31",
+    "currentVersion": "1.0.32",
     "history": [
+      {
+        "file": "1.0.32.json",
+        "version": "1.0.32",
+        "releasedAt": "2026-10-21",
+        "required": true,
+        "notes": [
+          "AbsencePeriod.gs: fungsi baru cekKunciPeriodeLalu_ / periodeBerjalanUntukKunci_. Batas = tanggal mulai periode AKTIF yang memuat hari ini, atau siklus 21–20 bila tidak ada.",
+          "handleAbsen & handleEditAbsen menolak tglMulai/tglSelesai di periode yang sudah ditutup (DL dilewati karena tanggalnya selalu hari ini).",
+          "send_remark menolak tglKoreksi yang memuat tanggal di periode yang sudah ditutup.",
+          "Urutan deploy: tempel AbsencePeriod.gs dan Code.gs bersamaan; bundle frontend boleh menyusul (server tetap menjaga)."
+        ]
+      },
       {
         "file": "1.0.31.json",
         "version": "1.0.31",

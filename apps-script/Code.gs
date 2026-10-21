@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.31";
+const APP_VERSION = "1.0.32";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -382,6 +382,15 @@ function handleGetLogLogin(data) {
 }
 
 function handleAbsen(data) {
+  // KUNCI PERIODE LALU (Okt 2026, lihat AbsencePeriod.gs). Dicek paling
+  // awal: murah, dan pengajuan yang toh akan ditolak tidak perlu melewati
+  // gerbang GPS/wajah atau mengunggah foto ke Drive. DL dilewati karena
+  // tanggalnya selalu diganti hari ini di bawah.
+  if (TIPE_DL_ONLINE.indexOf(data.tipe) === -1 && typeof cekKunciPeriodeLalu_ === 'function') {
+    const pesanKunci = cekKunciPeriodeLalu_([data.tglMulai, data.tglSelesai], data.tipe);
+    if (pesanKunci) return responseJSON({ result: 'error', message: pesanKunci });
+  }
+
   // Geofence hanya berlaku untuk absen online Hadir/Pulang dan dikontrol
   // per karyawan. Validasi dilakukan di server agar koordinat tidak dapat
   // dilewati hanya dengan memodifikasi request dari browser.
@@ -1025,7 +1034,14 @@ function handleSendRemark(data) {
   const timeStamp = Utilities.formatDate(now, Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm:ss");
   
   // [UBAH] Ambil tglKoreksi dari React
-  const tglKoreksi = data.tglKoreksi || '-'; 
+  const tglKoreksi = data.tglKoreksi || '-';
+
+  // KUNCI PERIODE LALU (lihat AbsencePeriod.gs). tglKoreksi bisa berupa
+  // satu tanggal, "a s/d b", atau "a, b, c" — semua tanggalnya diperiksa.
+  if (typeof cekKunciPeriodeLalu_ === 'function') {
+    const pesanKunci = cekKunciPeriodeLalu_(_semuaYmdDalamTeks_(tglKoreksi), 'Lapor HRD');
+    if (pesanKunci) return responseJSON({ result: 'error', message: pesanKunci });
+  }
 
   // Lupa pengajuan DL: foto bukti dinas + keterangan wajib.
   if (String(data.kategori || '').trim() === KATEGORI_REMARK_LUPA_DL) {
@@ -2776,6 +2792,14 @@ function handleEditAbsen(data) {
 
     const status = ketemu.isi[12];
     if (status === 'Approved' || status === 'Rejected') return responseJSON({ result: 'error', message: 'Data sudah diproses pimpinan.' });
+
+    // KUNCI PERIODE LALU: edit tidak boleh memindahkan tanggal ke periode
+    // yang sudah ditutup (lihat AbsencePeriod.gs). DL tanggalnya tidak
+    // ikut ditulis di bawah, jadi tidak perlu dicek.
+    if (TIPE_DL_ONLINE.indexOf(String(ketemu.isi[4] || '').trim()) === -1 && typeof cekKunciPeriodeLalu_ === 'function') {
+      const pesanKunci = cekKunciPeriodeLalu_([data.tglMulai, data.tglSelesai], String(ketemu.isi[4] || ''));
+      if (pesanKunci) return responseJSON({ result: 'error', message: pesanKunci });
+    }
 
     // Kolom I sampai L ditulis sekaligus. Dulu empat setValue terpisah —
     // empat round trip ke Sheets untuk satu penyuntingan.

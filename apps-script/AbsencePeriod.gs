@@ -213,6 +213,88 @@ function periodeKuotaUntukTanggal_(tanggalYmd) {
   return cariPeriodeAktifUntukTanggal_(tanggalYmd) || getPeriodeAbsenAktif_();
 }
 
+// =================================================================
+// KUNCI PENGAJUAN PERIODE LALU (Okt 2026)
+// =================================================================
+//
+// Begitu periode berganti, periode sebelumnya dianggap TUTUP: e-Form
+// (Ijin, Sakit, Cuti, Cuti EO, Standby, Off, Tukar Shift, Lembur, ...)
+// maupun Lapor HRD tidak boleh lagi diajukan untuk tanggal di periode itu.
+// Contoh: periode 21 Sep–20 Okt 2026; pada 21 Okt 2026 tanggal 20 Okt
+// ke bawah sudah terkunci.
+//
+// Patokannya periode yang BERJALAN HARI INI, bukan periode yang dipilih
+// karyawan di dashboard: pilihan dashboard hanya untuk melihat angka.
+//   1. periode AKTIF yang memuat hari ini, kalau ada;
+//   2. kalau tidak ada, siklus standar 21 s/d 20 yang memuat hari ini.
+// Sengaja TIDAK jatuh ke "periode aktif terbaru" seperti
+// getPeriodeAbsenAktif_(): kalau admin lupa membuat periode bulan ini,
+// periode terakhir yang sudah lewat akan membuat batas mundur ke belakang
+// dan kunci ini diam-diam tidak bekerja.
+//
+// Logika yang sama ada di src/utils/kunciPeriode.js (frontend) — ubah
+// keduanya bersamaan.
+
+/** Periode yang berjalan hari ini, dipakai sebagai batas kunci. */
+function periodeBerjalanUntukKunci_() {
+  return cariPeriodeAktifUntukTanggal_(_periodeHariIni_())
+    || _periodeLengkap_(_periodeDefaultBerjalan_());
+}
+
+/**
+ * Normalisasi satu teks tanggal ke yyyy-MM-dd.
+ * Menerima yyyy-MM-dd, dd-MM-yyyy, dd/MM/yyyy, atau objek Date.
+ * @return {string} '' bila tidak dikenali.
+ */
+function _ymdKunci_(v) {
+  if (v === null || v === undefined || v === '' || v === '-') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) return m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+  return '';
+}
+
+/** Semua tanggal yang tersebut dalam teks ("a", "a s/d b", "a, b, c"). */
+function _semuaYmdDalamTeks_(teks) {
+  const hasil = [];
+  const s = String(teks || '');
+  const re = /\d{4}-\d{2}-\d{2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/g;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    const ymd = _ymdKunci_(m[0]);
+    if (ymd) hasil.push(ymd);
+  }
+  return hasil;
+}
+
+/**
+ * Memeriksa apakah ada tanggal pengajuan yang jatuh di periode lalu.
+ *
+ * @param {Array} daftarTanggal tanggal mentah (string / Date) yang diajukan.
+ * @param {string} jenis label untuk pesan, mis. 'Ijin' atau 'Lapor HRD'.
+ * @return {string} pesan error, atau '' bila lolos.
+ */
+function cekKunciPeriodeLalu_(daftarTanggal, jenis) {
+  const ymd = (daftarTanggal || []).map(_ymdKunci_).filter(Boolean).sort();
+  if (!ymd.length) return '';
+
+  const berjalan = periodeBerjalanUntukKunci_();
+  if (ymd[0] >= berjalan.mulai) return '';
+
+  const tz = Session.getScriptTimeZone();
+  const tampil = function (s) {
+    return Utilities.formatDate(new Date(s + 'T00:00:00Z'), tz, 'dd MMM yyyy');
+  };
+  return 'GAGAL: Periode untuk tanggal ' + tampil(ymd[0]) + ' sudah ditutup. ' +
+    (jenis ? jenis + ' ' : '') + 'hanya bisa diajukan mulai tanggal ' +
+    tampil(berjalan.mulai) + ' (periode berjalan ' + _labelPeriodeAbsen_(berjalan) + ').';
+}
+
 /** Satu periode berdasarkan id, termasuk yang NONAKTIF (untuk histori). */
 function getPeriodeById_(id) {
   if (!id) return null;

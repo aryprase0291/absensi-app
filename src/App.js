@@ -27,6 +27,7 @@ import { muatPengenalWajah } from './utils/faceApiLoader';
 import { bukaKameraDepan, hentikanStream } from './utils/kameraDepan';
 import { ambilVersiFrontendServer, bandingkanVersi, pantauPembaruan } from './utils/pembaruan';
 import { infoPerangkat } from './utils/perangkat';
+import { batasPengajuanMundur, bacaPeriodeAktifTersimpan, pesanKunciPeriode, tampilYmd } from './utils/kunciPeriode';
 
 // ============================================================
 // HELPER API — token login + penanganan respons HTML dari Google
@@ -1159,6 +1160,10 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalN
     if (!bootAwal) return;
     const aktif = Array.isArray(bootAwal.periodsAktif) ? bootAwal.periodsAktif : [];
     if (aktif.length) setPeriodeOpsi(aktif);
+    // Disimpan juga untuk kunci periode lalu di form & Lapor HRD.
+    if (aktif.length) {
+      try { sessionStorage.setItem('app_periods_awal', JSON.stringify({ periodsAktif: aktif, periodeDefault: bootAwal.periodeDefault || null })); } catch (e) { /* abaikan */ }
+    }
 
     // Periode yang BENAR-BENAR dipakai server saat menghitung stats di
     // respons ini. Pemilih disamakan dengan itu, bukan dengan pilihan
@@ -1192,6 +1197,7 @@ function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalN
         if (batal || d.result !== 'success') return;
         const aktif = Array.isArray(d.periodsAktif) ? d.periodsAktif : (d.period ? [d.period] : []);
         setPeriodeOpsi(aktif);
+        try { sessionStorage.setItem('app_periods_awal', JSON.stringify({ periodsAktif: aktif, periodeDefault: d.periodeDefault || null })); } catch (e) { /* abaikan */ }
         const idDefault = (d.periodeDefault && d.periodeDefault.id) || (aktif.length ? aktif[0].id : '');
         if (idDefault) { lewatiRefetchPeriodeAwal.current = true; setPeriodeIdPilih(idDefault); }
       } catch (e) { /* pemilih periode tidak muncul; dashboard tetap jalan */ }
@@ -3351,6 +3357,9 @@ function RemarkScreen({ user, setView }) {
     const [tglKoreksi, setTglKoreksi] = useState(laporanAwal.tgl || '');
     const [modeTanggalKoreksi, setModeTanggalKoreksi] = useState('single');
     const [tglKoreksiSelesai, setTglKoreksiSelesai] = useState('');
+    // KUNCI PERIODE LALU (Okt 2026): Lapor HRD tidak bisa untuk tanggal di
+    // periode yang sudah ditutup. Server tetap memeriksa ulang.
+    const batasTanggalLapor = batasPengajuanMundur(bacaPeriodeAktifTersimpan(), tglLokal());
     const [tanggalPilihan, setTanggalPilihan] = useState([]);
     const [tanggalUntukDitambah, setTanggalUntukDitambah] = useState('');
     const [kategori, setKategori] = useState(laporanAwal.kategori || 'Koreksi Absensi');
@@ -3441,6 +3450,8 @@ function RemarkScreen({ user, setView }) {
 
     const tambahTanggalPilihan = () => {
         if (!tanggalUntukDitambah) return;
+        const pesanKunci = pesanKunciPeriode([tanggalUntukDitambah], batasTanggalLapor);
+        if (pesanKunci) { alert(pesanKunci); return; }
         setTanggalPilihan((sebelumnya) => [...new Set([...sebelumnya, tanggalUntukDitambah])].sort());
         setTanggalUntukDitambah('');
     };
@@ -3525,6 +3536,10 @@ function RemarkScreen({ user, setView }) {
         if (hasilTanggal.error || !hasilTanggal.value) {
             alert(hasilTanggal.error || 'Pilih tanggal koreksi terlebih dahulu.');
             return;
+        }
+        {
+            const pesanKunci = pesanKunciPeriode(String(hasilTanggal.value).match(/\d{4}-\d{2}-\d{2}/g) || [], batasTanggalLapor);
+            if (pesanKunci) { alert(pesanKunci); return; }
         }
         if (isLupaDl) {
             if (!file || !String(file).startsWith('data:image/')) {
@@ -4049,7 +4064,7 @@ function RemarkScreen({ user, setView }) {
                             {modeTanggalKoreksi === 'single' && (
                                 <div className="relative">
                                     <CalendarDays className="pointer-events-none absolute left-4 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-slate-400" strokeWidth={1.8}/>
-                                    <input type="date" required className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-3 text-[15px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
+                                    <input type="date" required min={batasTanggalLapor || undefined} className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-3 text-[15px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
                                 </div>
                             )}
 
@@ -4057,11 +4072,11 @@ function RemarkScreen({ user, setView }) {
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     <div>
                                         <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal mulai</label>
-                                        <input type="date" required className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
+                                        <input type="date" required min={batasTanggalLapor || undefined} className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksi} onChange={e => setTglKoreksi(e.target.value)} />
                                     </div>
                                     <div>
                                         <label className="mb-1.5 block text-[11px] font-medium text-slate-500">Tanggal selesai</label>
-                                        <input type="date" required min={tglKoreksi || undefined} className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksiSelesai} onChange={e => setTglKoreksiSelesai(e.target.value)} />
+                                        <input type="date" required min={tglKoreksi || batasTanggalLapor || undefined} className="min-h-[52px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tglKoreksiSelesai} onChange={e => setTglKoreksiSelesai(e.target.value)} />
                                     </div>
                                 </div>
                             )}
@@ -4069,7 +4084,7 @@ function RemarkScreen({ user, setView }) {
                             {modeTanggalKoreksi === 'multiple' && (
                                 <div className="space-y-3">
                                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                                        <input type="date" className="min-h-[52px] min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tanggalUntukDitambah} onChange={e => setTanggalUntukDitambah(e.target.value)} />
+                                        <input type="date" min={batasTanggalLapor || undefined} className="min-h-[52px] min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[15px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10" value={tanggalUntukDitambah} onChange={e => setTanggalUntukDitambah(e.target.value)} />
                                         <button type="button" onClick={tambahTanggalPilihan} disabled={!tanggalUntukDitambah} className="min-h-[52px] rounded-xl bg-slate-900 px-4 text-[13px] font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">Tambah</button>
                                     </div>
                                     {tanggalPilihan.length > 0 ? (
@@ -4315,7 +4330,7 @@ function RemarkScreen({ user, setView }) {
 }
 
 // --- KOMPONEN KALENDER RANGE PICKER (UPDATED: HIGHLIGHT TODAY) ---
-const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd }) => {
+const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd, minDate }) => {
   const [viewDate, setViewDate] = useState(new Date());
   const [tempStart, setTempStart] = useState(initialStart);
   const [tempEnd, setTempEnd] = useState(initialEnd);
@@ -4356,7 +4371,13 @@ const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd }) 
            year === today.getFullYear();
   };
 
+  // KUNCI PERIODE LALU: tanggal sebelum minDate tidak bisa dipilih.
+  const terkunci = (day) => !!minDate && `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` < minDate;
+  const bulanMin = minDate ? minDate.slice(0, 7) : '';
+  const bisaMundurBulan = !bulanMin || `${year}-${String(month + 1).padStart(2, '0')}` > bulanMin;
+
   const handleDayClick = (day) => {
+    if (terkunci(day)) return;
     const selectedStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     
     if (!tempStart || (tempStart && tempEnd)) {
@@ -4377,6 +4398,10 @@ const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd }) 
   const getDayClass = (day) => {
     const currentStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const todayStatus = isToday(day);
+
+    if (terkunci(day)) {
+        return "text-slate-300 line-through cursor-not-allowed rounded-full";
+    }
 
     // 1. Jika Tanggal Start / End (Selected)
     if (currentStr === tempStart || currentStr === tempEnd) {
@@ -4410,7 +4435,7 @@ const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd }) 
             <button onClick={onClose} className="hover:bg-white/20 p-1 rounded-full transition"><X className="w-5 h-5"/></button>
           </div>
           <div className="flex justify-between items-center bg-blue-700/50 p-1 rounded-lg">
-            <button onClick={handlePrevMonth} className="p-1 hover:bg-white/20 rounded"><ChevronDown className="w-5 h-5 rotate-90"/></button>
+            <button onClick={handlePrevMonth} disabled={!bisaMundurBulan} className="p-1 hover:bg-white/20 rounded disabled:opacity-30 disabled:cursor-not-allowed"><ChevronDown className="w-5 h-5 rotate-90"/></button>
             <span className="font-bold text-sm tracking-wide">{monthNames[month]} {year}</span>
             <button onClick={handleNextMonth} className="p-1 hover:bg-white/20 rounded"><ChevronDown className="w-5 h-5 -rotate-90"/></button>
           </div>
@@ -4430,6 +4455,7 @@ const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd }) 
               return (
                 <button
                   key={day}
+                  disabled={terkunci(day)}
                   onClick={() => handleDayClick(day)}
                   className={`h-9 w-9 mx-auto flex items-center justify-center text-xs transition-all ${getDayClass(day)}`}
                 >
@@ -4449,6 +4475,11 @@ const DateRangeModal = ({ isOpen, onClose, onApply, initialStart, initialEnd }) 
             <div className="flex items-center gap-1 text-slate-500">
                 <span className="w-2 h-2 rounded-full bg-blue-600"></span> Dipilih
             </div>
+            {minDate && (
+              <div className="flex items-center gap-1 text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-slate-200"></span> Sebelum {tampilYmd(minDate)}: periode ditutup
+              </div>
+            )}
           </div>
           <button 
             disabled={!tempStart}
@@ -4650,6 +4681,9 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   const isUploadAllowed = UPLOAD_ALLOWED_TYPES.includes(type);
   const isDlOnline = TIPE_DL_ONLINE.includes(type);
   const isIntervalType = !['Hadir', 'Pulang'].includes(type) && !isDlOnline;
+  // KUNCI PERIODE LALU (Okt 2026): tanggal di periode yang sudah ditutup
+  // tidak bisa dipilih. '' = daftar periode belum diketahui -> server yang menilai.
+  const batasTanggalForm = batasPengajuanMundur(bacaPeriodeAktifTersimpan(), tglLokal());
   const isShiftWorker = user.role === 'karyawan_shift'; 
   const isClockIn = type === 'Hadir';
   // DUA ATURAN YANG BERBEDA, SENGAJA DIPISAH.
@@ -5086,6 +5120,8 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
     }
     if (isIntervalType) {
         if (!intervalData.tglMulai || !intervalData.tglSelesai) { alert('Pilih Tanggal!'); return; }
+        const pesanKunci = pesanKunciPeriode([intervalData.tglMulai, intervalData.tglSelesai], batasTanggalForm);
+        if (pesanKunci) { alert(pesanKunci); return; }
         // Validasi Jam hanya jika useTime aktif
         if (useTime && (!intervalData.jamMulai || !intervalData.jamSelesai)) { alert('Jam Mulai dan Selesai wajib diisi!'); return; }
     }
@@ -5375,6 +5411,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
                 onApply={handleCalendarApply}
                 initialStart={intervalData.tglMulai}
                 initialEnd={intervalData.tglSelesai}
+                minDate={batasTanggalForm}
               />
 
               {useTime && (
