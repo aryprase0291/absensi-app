@@ -36,6 +36,18 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
   const [galat, setGalat] = useState('');
   const [cari, setCari] = useState('');
   const [grup, setGrup] = useState('');
+  // Layar HP: hanya kolom NAMA yang dibekukan (kolom kecil di kirinya ikut
+  // bergeser), supaya kolom tanggal tetap kebagian ruang.
+  const [hp, setHp] = useState(() => {
+    try { return window.matchMedia('(max-width: 639px)').matches; } catch (e) { return false; }
+  });
+  useEffect(() => {
+    let mq;
+    try { mq = window.matchMedia('(max-width: 639px)'); } catch (e) { return undefined; }
+    const ubah = () => setHp(mq.matches);
+    if (mq.addEventListener) mq.addEventListener('change', ubah); else mq.addListener(ubah);
+    return () => { if (mq.removeEventListener) mq.removeEventListener('change', ubah); else mq.removeListener(ubah); };
+  }, []);
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat('');
@@ -65,12 +77,17 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
     const judulInfo = jenis.map((j, i) => (j === 'info' ? String(hari[i] || label[i] || tanggal[i] || '').trim() : ''));
     let idxNama = judulInfo.findIndex(t => t.toUpperCase() === 'NAMA');
     if (idxNama < 0) idxNama = Math.min(2, n - 1);
-    const lebar = data.kolom.map(k => Math.max(22, Number(k.lebar) || 60));
+    // Di HP kolom info yang sempit (grup, no, id) dilebarkan sedikit supaya
+    // judul + tombol urut + kotak cari tidak terpotong jadi satu huruf.
+    const lebar = data.kolom.map((k, i) => {
+      const w = Math.max(22, Number(k.lebar) || 60);
+      return hp && jenis[i] === 'info' ? Math.max(w, 54) : w;
+    });
     const kiri = [];
     let x = 0;
     for (let i = 0; i < n; i++) { kiri.push(x); x += lebar[i]; }
     return { n, jenis, judulInfo, idxBeku: idxNama, lebar, kiri, total: x };
-  }, [data]);
+  }, [data, hp]);
 
   const daftarGrup = useMemo(() => {
     if (!data) return [];
@@ -116,8 +133,9 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
   const barisAkhir = urutKolom.adaFilter ? urutKolom.rows : barisTampil;
 
   const palet = (data && data.palet) || ['#ffffff', '#000000'];
-  const beku = (i, z, extra = {}) => (susunan && i <= susunan.idxBeku
-    ? { position: 'sticky', left: susunan.kiri[i], zIndex: z, ...(i === susunan.idxBeku ? { boxShadow: '3px 0 5px -2px rgba(15,23,42,0.25)' } : {}), ...extra }
+  const dibekukan = (i) => susunan && (hp ? i === susunan.idxBeku : i <= susunan.idxBeku);
+  const beku = (i, z, extra = {}) => (dibekukan(i)
+    ? { position: 'sticky', left: hp ? 0 : susunan.kiri[i], zIndex: z, ...(i === susunan.idxBeku ? { boxShadow: '3px 0 5px -2px rgba(15,23,42,0.25)' } : {}), ...extra }
     : extra);
 
   // Kepala 3 baris: tanggal / nama hari / ABSEN-TELAT. Kolom info memakai rowSpan 3.
@@ -131,7 +149,7 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
       if (jenis[i] === 'info') {
         r1.push(
           <th key={`i${i}`} rowSpan={3} className={thDasar}
-              style={{ ...top, ...beku(i, 40, { top: 0, position: 'sticky' }), zIndex: i <= susunan.idxBeku ? 40 : 30, height: TINGGI_KEPALA * 3, verticalAlign: 'middle' }}>
+              style={{ ...top, ...beku(i, 40, { top: 0, position: 'sticky' }), zIndex: dibekukan(i) ? 40 : 30, height: TINGGI_KEPALA * 3, verticalAlign: 'middle' }}>
             <IsiKepala kolom={kolomUrut.find(k => k.key === 'c' + i) || { key: 'c' + i, label: judulInfo[i], aksi: false }}
                        state={urutKolom} align={i === susunan.idxBeku ? 'left' : 'center'} />
           </th>
@@ -164,55 +182,47 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
   return (
     <div className="space-y-4 w-full">
       <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col">
-        <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="px-3 py-3 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <Mail className="w-5 h-5 text-blue-600 shrink-0" />
-              <h2 className="text-base sm:text-lg font-black text-slate-800 tracking-tight truncate">
+            <div className="flex items-start gap-2">
+              <Mail className="w-4 h-4 sm:w-5 sm:h-5 mt-0.5 text-blue-600 shrink-0" />
+              <h2 className="text-[13px] sm:text-lg font-black text-slate-800 tracking-tight leading-snug line-clamp-2 sm:truncate">
                 {(data && data.judul) || 'ABSENSI KARYAWAN'}
               </h2>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 pl-6 sm:pl-7">
               {data
-                ? <>Dari <span className="font-semibold text-slate-700">{data.namaFile}</span> / {data.sheet} · {barisAkhir.filter(b => !b.pisah).length} baris · dibaca {new Date(data.dibaca).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</>
-                : 'Sheet ABSENSI-email dari file DB_ABSEN (tab Sinkron GSheet).'}
+                ? <>Dari <span className="font-semibold text-slate-700">{data.namaFile}</span> · {barisAkhir.filter(b => !b.pisah).length} baris · dibaca {new Date(data.dibaca).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</>
+                : 'Dari file DB_ABSEN (tab Sinkron GSheet).'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input value={cari} onChange={e => setCari(e.target.value)} placeholder="Cari nama / payroll…"
-                     className="pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs w-48 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+                     className="pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs w-full sm:w-48 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
             </div>
             {daftarGrup.length > 1 && (
               <select value={grup} onChange={e => setGrup(e.target.value)}
-                      className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white">
+                      className="flex-1 sm:flex-none min-w-0 px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white">
                 <option value="">Semua grup</option>
                 {daftarGrup.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             )}
             <TombolResetKolom state={urutKolom} />
-            <button onClick={muat} disabled={memuat}
-                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-60">
-              {memuat ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />} Muat ulang
+            <button onClick={muat} disabled={memuat} title="Muat ulang"
+                    className="px-2.5 sm:px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-60">
+              {memuat ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
+              <span className="hidden sm:inline">Muat ulang</span>
             </button>
             {data && data.url && (
               <a href={data.url} target="_blank" rel="noreferrer"
                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5">
-                <ExternalLink className="w-4 h-4" /> Buka di GSheet
+                <ExternalLink className="w-4 h-4" /> <span className="sm:hidden">GSheet</span><span className="hidden sm:inline">Buka di GSheet</span>
               </a>
             )}
           </div>
         </div>
-
-        {data && data.legenda && data.legenda.length > 0 && (
-          <div className="px-4 sm:px-5 py-2.5 border-b border-slate-100 flex flex-wrap gap-1.5">
-            {data.legenda.map((l, i) => (
-              <span key={i} className="px-2 py-0.5 rounded-md text-[10.5px] font-bold border border-black/10"
-                    style={{ background: palet[l.b], color: palet[l.f] }}>{l.teks}</span>
-            ))}
-          </div>
-        )}
 
         {galat ? (
           <div className="p-6 text-sm text-rose-700 flex items-start gap-2">
@@ -226,10 +236,10 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
           </div>
         ) : !data ? (
           <div className="p-10 text-center text-slate-400 text-sm">
-            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" /> Membaca sheet ABSENSI-email… (±5–10 detik)
+            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" /> Membaca data absensi… (±5–10 detik)
           </div>
         ) : (
-          <div className="overflow-auto isolate w-full max-h-[calc(100vh-180px)] min-h-[420px]">
+          <div className="overflow-auto isolate w-full max-h-[calc(100vh-180px)] min-h-[320px] sm:min-h-[420px]">
             <table className="border-collapse text-[11px]" style={{ tableLayout: 'fixed', width: susunan.total }}>
               <colgroup>
                 {susunan.lebar.map((w, i) => <col key={i} style={{ width: w }} />)}

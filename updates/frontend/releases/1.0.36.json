@@ -1,0 +1,8 @@
+{
+  "version": "1.0.36",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "ABSEN-EMAIL: legenda warna & nama sheet dihapus; tampilan HP lebih rapi (judul 2 baris, cari selebar layar, tombol ringkas, kolom kecil dilebarkan, di HP hanya kolom NAMA yang dibekukan).", "Rekapitulasi: Menampilkan data cukup menulis periode bila periode dipilih; tab aktif otomatis terlihat di bar tab HP."
+  ]
+}

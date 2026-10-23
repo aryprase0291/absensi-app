@@ -349,7 +349,15 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     try { sessionStorage.setItem('rekap_tab', activeTab); } catch (e) { /* abaikan */ }
   }, [activeTab]);
   // Mode layar penuh: tabel aktif menutupi seluruh layar (Esc untuk keluar).
-  const [layarPenuh, setLayarPenuh] = useState(false); // 'tabel' | 'koreksi' | 'dashboard' | 'board'
+  const [layarPenuh, setLayarPenuh] = useState(false);
+  // Tab aktif selalu terlihat di bar tab yang bisa digeser (layar HP).
+  const barTabRef = useRef(null);
+  useEffect(() => {
+    const bar = barTabRef.current;
+    if (!bar) return;
+    const aktif = bar.querySelector('button.bg-blue-600');
+    if (aktif && aktif.scrollIntoView) aktif.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }, [activeTab]); // 'tabel' | 'koreksi' | 'dashboard' | 'board'
   const [loading, setLoading] = useState(false);
   const [rawRecords, setRawRecords] = useState([]);
   const [dashboardData, setDashboardData] = useState([]);
@@ -1759,7 +1767,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         </div>
 
         {/* SUB NAVIGATION TABS */}
-        <div className="w-full px-3 sm:px-4 lg:px-5 mt-2 flex gap-1 border-t border-slate-800/80 pt-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div ref={barTabRef} className="w-full px-3 sm:px-4 lg:px-5 mt-2 flex gap-1 border-t border-slate-800/80 pt-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             onClick={() => setActiveTab('dashboard')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
@@ -1943,10 +1951,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
               </button>
             )}
             <div className="col-span-2 sm:ml-auto text-[10.5px] sm:text-[11px] font-semibold text-slate-500 sm:bg-slate-50 sm:px-3 sm:py-1.5 sm:rounded-xl sm:border sm:border-slate-200">
-              Menampilkan data: <span className="text-slate-800">{labelRentangAktif}</span>
-              {periodeTerpilih && (
-                <span className="text-blue-700"> · periode {tglPendek(periodeTerpilih.mulai)} – {tglPendek(periodeTerpilih.selesai)}</span>
-              )}
+              Menampilkan data:{' '}
+              {periodeTerpilih
+                ? <span className="text-blue-700">periode {tglPendek(periodeTerpilih.mulai)} – {tglPendek(periodeTerpilih.selesai)}</span>
+                : <span className="text-slate-800">{labelRentangAktif}</span>}
             </div>
           </div>
         </div>

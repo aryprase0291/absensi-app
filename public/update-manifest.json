@@ -1,7 +1,17 @@
 {
   "frontend": {
-    "currentVersion": "1.0.35",
+    "currentVersion": "1.0.36",
     "history": [
+      {
+        "file": "1.0.36.json",
+        "version": "1.0.36",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "ABSEN-EMAIL: legenda warna & nama sheet dihapus; tampilan HP lebih rapi (judul 2 baris, cari selebar layar, tombol ringkas, kolom kecil dilebarkan, di HP hanya kolom NAMA yang dibekukan).",
+          "Rekapitulasi: Menampilkan data cukup menulis periode bila periode dipilih; tab aktif otomatis terlihat di bar tab HP."
+        ]
+      },
       {
         "file": "1.0.35.json",
         "version": "1.0.35",
@@ -248,8 +258,17 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.35",
+    "currentVersion": "1.0.36",
     "history": [
+      {
+        "file": "1.0.36.json",
+        "version": "1.0.36",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Tidak ada perubahan logika backend; menyamakan nomor versi dengan frontend 1.0.36."
+        ]
+      },
       {
         "file": "1.0.35.json",
         "version": "1.0.35",
