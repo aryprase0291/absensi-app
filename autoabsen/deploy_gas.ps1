@@ -285,11 +285,11 @@ try {
         $tt = BacaJsonFile $fT
         Remove-Item $fT -Force -ErrorAction SilentlyContinue
         try {
-            $t = FormPost 'https://oauth2.googleapis.com/token' @{ code = [string]$tt['code']; client_id = [string]$tt['client_id']; client_secret = [string]$tt['client_secret']; redirect_uri = [string]$tt['redirect_uri']; grant_type = 'authorization_code'; code_verifier = [string]$tt['code_verifier'] }
+            $tok = FormPost 'https://oauth2.googleapis.com/token' @{ code = [string]$tt['code']; client_id = [string]$tt['client_id']; client_secret = [string]$tt['client_secret']; redirect_uri = [string]$tt['redirect_uri']; grant_type = 'authorization_code'; code_verifier = [string]$tt['code_verifier'] }
         } catch { throw ('Penukaran kode izin Google gagal: ' + (PesanGalat $_) + '. Kode berlaku beberapa menit saja — ulangi setup.') }
-        if (-not $t['refresh_token']) { throw 'Google tidak memberi refresh_token.' }
-        SimpanDpapi $FileRahasia (JsonTulis @{ client_id = [string]$tt['client_id']; client_secret = [string]$tt['client_secret']; refresh_token = [string]$t['refresh_token'] })
-        $Global:DG_Token = [string]$t['access_token']
+        if (-not $tok['refresh_token']) { throw 'Google tidak memberi refresh_token.' }
+        SimpanDpapi $FileRahasia (JsonTulis @{ client_id = [string]$tt['client_id']; client_secret = [string]$tt['client_secret']; refresh_token = [string]$tok['refresh_token'] })
+        $Global:DG_Token = [string]$tok['access_token']
         $c = KonfigDeploy
         $isi = GasApi 'Get' ("projects/{0}/content" -f $c.scriptId)
         $dep = GasApi 'Get' ("projects/{0}/deployments/{1}" -f $c.scriptId, $c.deploymentId)

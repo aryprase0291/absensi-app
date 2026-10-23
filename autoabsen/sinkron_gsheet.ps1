@@ -45,9 +45,9 @@ function Lapor([string]$teks) {
 # (mis. disalin dari jarak jauh) -> dienkripsi DPAPI lalu file polosnya dihapus.
 $FileTitipan = Join-Path $AA_Dasar 'sinkron_gsheet_kunci.txt'
 if (-not $Kunci -and (Test-Path $FileTitipan)) {
-    $t = ([IO.File]::ReadAllText($FileTitipan)).Trim()
-    if ($t -match '^[0-9a-fA-F]{32,128}$') {
-        SimpanDpapi $FileKunci $t
+    $isiTitipan = ([IO.File]::ReadAllText($FileTitipan)).Trim()
+    if ($isiTitipan -match '^[0-9a-fA-F]{32,128}$') {
+        SimpanDpapi $FileKunci $isiTitipan
         Catat $T 'kunci dari titipan disimpan (DPAPI)' | Out-Null
     } else { Catat $T 'titipan kunci tidak valid, diabaikan' | Out-Null }
     Remove-Item $FileTitipan -Force -ErrorAction SilentlyContinue
