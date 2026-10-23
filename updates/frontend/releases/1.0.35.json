@@ -1,0 +1,8 @@
+{
+  "version": "1.0.35",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Rekapitulasi (Admin) tampilan HP lebih ringkas: header satu baris (tombol Excel pendek), tab berlabel singkat, filter periode dengan tanggal Dari/Sampai berdampingan, kartu angka 3 kolom, judul tabel + tombol Excel sebaris. Tampilan desktop tidak berubah."
+  ]
+}

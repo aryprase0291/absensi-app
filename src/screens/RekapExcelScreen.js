@@ -1716,23 +1716,24 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       
       {/* TOP HEADER - FULL WIDTH */}
       <header className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white border-b border-slate-800 py-2 sm:py-2.5 shadow-xl sticky top-0 z-30 w-full">
-        <div className="w-full px-3 sm:px-4 lg:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
+        <div className="w-full px-3 sm:px-4 lg:px-5 flex flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 shrink-0">
               <FileSpreadsheet className="w-[18px] h-[18px]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[9px] leading-none font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-1.5 py-0.5 rounded-full border border-cyan-400/20">Admin Area</span>
-                <span className="text-[9px] leading-none text-slate-400 font-mono">DATABASE ABSENSI</span>
+                <span className="hidden sm:inline text-[9px] leading-none text-slate-400 font-mono">DATABASE ABSENSI</span>
               </div>
-              <h1 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight mt-0.5">
-                Rekapitulasi, Koreksi & Export Excel
+              <h1 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight mt-0.5 truncate">
+                <span className="sm:hidden">Rekap Absensi</span>
+                <span className="hidden sm:inline">Rekapitulasi, Koreksi & Export Excel</span>
               </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={() => muatUlang()}
               disabled={loading}
@@ -1749,7 +1750,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
               title="Download Excel Semua Sheet (DASHBOARD, KOREKSI, DB_FIX)"
             >
               <Download className="w-4 h-4" />
-              <span>Export Full Excel (.xlsx)</span>
+              <span className="sm:hidden">Excel</span>
+              <span className="hidden sm:inline">Export Full Excel (.xlsx)</span>
             </button>
 
             <BackButton onClick={() => setView('dashboard')} />
@@ -1757,29 +1759,31 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         </div>
 
         {/* SUB NAVIGATION TABS */}
-        <div className="w-full px-3 sm:px-4 lg:px-5 mt-2 flex gap-1 border-t border-slate-800/80 pt-2 overflow-x-auto">
+        <div className="w-full px-3 sm:px-4 lg:px-5 mt-2 flex gap-1 border-t border-slate-800/80 pt-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'dashboard'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <PieChart className="w-4 h-4" />
-            <span>Dashboard Rekapitulasi</span>
+            <span className="sm:hidden">Dashboard</span>
+            <span className="hidden sm:inline">Dashboard Rekapitulasi</span>
           </button>
 
           <button
             onClick={() => setActiveTab('koreksi')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'koreksi'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Edit3 className="w-4 h-4" />
-            <span>Koreksi Data Absensi</span>
+            <span className="sm:hidden">Koreksi</span>
+            <span className="hidden sm:inline">Koreksi Data Absensi</span>
             {koreksiList.length > 0 && (
               <span className="bg-amber-400 text-slate-950 text-[10px] px-1.5 py-0.5 rounded-full font-black ml-1">
                 {koreksiList.length}
@@ -1789,50 +1793,54 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('board')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'board'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <CalendarDays className="w-4 h-4" />
-            <span>Board Absensi Harian</span>
+            <span className="sm:hidden">Board</span>
+            <span className="hidden sm:inline">Board Absensi Harian</span>
           </button>
 
           <button
             onClick={() => setActiveTab('tabel')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'tabel'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Layers className="w-4 h-4" />
-            <span>Tabel Data (DB_FIX)</span>
+            <span className="sm:hidden">Tabel Data</span>
+            <span className="hidden sm:inline">Tabel Data (DB_FIX)</span>
           </button>
 
           <button
             onClick={() => setActiveTab('gsheet')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'gsheet'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <UploadCloud className="w-4 h-4" />
-            <span>Sinkron GSheet</span>
+            <span className="sm:hidden">GSheet</span>
+            <span className="hidden sm:inline">Sinkron GSheet</span>
           </button>
 
           <button
             onClick={() => setActiveTab('absenemail')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'absenemail'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Mail className="w-4 h-4" />
-            <span>ABSEN-EMAIL</span>
+            <span className="sm:hidden">Email</span>
+            <span className="hidden sm:inline">ABSEN-EMAIL</span>
           </button>
         </div>
       </header>
@@ -1874,9 +1882,9 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         )}
 
         {/* FILTER PERIODE — kotak pencarian pindah ke atas kepala tiap tabel */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col gap-3 w-full">
-          <div className="flex flex-wrap items-end gap-2.5 w-full">
-            <div>
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col gap-3 w-full">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-2.5 w-full">
+            <div className="col-span-2 sm:col-span-1">
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                 Periode Aktif
               </label>
@@ -1885,7 +1893,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 <select
                   value={periodeTerpilih ? periodeTerpilih.id : (pilihHariIni ? '__HARIINI__' : '__MANUAL__')}
                   onChange={e => pilihPeriode(e.target.value)}
-                  className="bg-transparent text-xs font-bold text-blue-800 outline-none cursor-pointer min-w-[220px]"
+                  className="bg-transparent text-xs font-bold text-blue-800 outline-none cursor-pointer w-full sm:w-auto sm:min-w-[220px]"
                 >
                   <option value="__HARIINI__">Hari ini ({tglPendek(hariIni)})</option>
                   {periodeList.map(p => (
@@ -1899,29 +1907,29 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Periode Mulai
+                <span className="sm:hidden">Dari</span><span className="hidden sm:inline">Periode Mulai</span>
               </label>
-              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                <PieChart className="w-3.5 h-3.5 text-slate-400" />
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200">
+                <PieChart className="hidden sm:block w-3.5 h-3.5 text-slate-400" />
                 <input
                   type="date"
                   value={filterTglMulai}
                   onChange={e => setFilterTglMulai(e.target.value)}
-                  className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer w-[140px]"
+                  className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer w-full sm:w-[140px] min-w-0"
                 />
               </div>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                Sampai Dengan
+                <span className="sm:hidden">Sampai</span><span className="hidden sm:inline">Sampai Dengan</span>
               </label>
-              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-                <Sparkles className="w-3.5 h-3.5 text-slate-400" />
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200">
+                <Sparkles className="hidden sm:block w-3.5 h-3.5 text-slate-400" />
                 <input
                   type="date"
                   value={filterTglSelesai}
                   onChange={e => setFilterTglSelesai(e.target.value)}
-                  className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer w-[140px]"
+                  className="bg-transparent text-xs font-semibold text-slate-700 outline-none cursor-pointer w-full sm:w-[140px] min-w-0"
                 />
               </div>
             </div>
@@ -1929,12 +1937,12 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
               <button
                 onClick={() => pilihPeriode(periodeBawaan.id)}
                 title="Kembali ke periode yang sedang berjalan, sampai hari ini"
-                className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-[11px] font-bold flex items-center gap-1.5 transition"
+                className="col-span-2 sm:col-span-1 justify-self-start px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 text-[11px] font-bold flex items-center gap-1.5 transition"
               >
                 <X className="w-3.5 h-3.5" /> Reset ke Periode Aktif
               </button>
             )}
-            <div className="ml-auto text-[11px] font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+            <div className="col-span-2 sm:ml-auto text-[10.5px] sm:text-[11px] font-semibold text-slate-500 sm:bg-slate-50 sm:px-3 sm:py-1.5 sm:rounded-xl sm:border sm:border-slate-200">
               Menampilkan data: <span className="text-slate-800">{labelRentangAktif}</span>
               {periodeTerpilih && (
                 <span className="text-blue-700"> · periode {tglPendek(periodeTerpilih.mulai)} – {tglPendek(periodeTerpilih.selesai)}</span>
@@ -1948,58 +1956,59 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
           <div className="space-y-5 w-full">
             
             {/* KPI METRIC CARDS */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 w-full">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Pegawai</p>
-                <p className="text-2xl font-black text-slate-900 mt-1">{metrics.karyawan}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Pegawai terdata</p>
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-4 w-full">
+              <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
+                <p className="text-[9.5px] sm:text-[11px] font-semibold text-slate-400 uppercase tracking-wide sm:tracking-wider truncate">Total Pegawai</p>
+                <p className="text-lg sm:text-2xl font-black text-slate-900 mt-0.5 sm:mt-1 leading-tight">{metrics.karyawan}</p>
+                <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Pegawai terdata</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-                <p className="text-[11px] font-semibold text-teal-600 uppercase tracking-wider">Cuti Diambil</p>
-                <p className="text-2xl font-black text-teal-600 mt-1">{metrics.cuti}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Hari cuti</p>
+              <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
+                <p className="text-[9.5px] sm:text-[11px] font-semibold text-teal-600 uppercase tracking-wide sm:tracking-wider truncate">Cuti Diambil</p>
+                <p className="text-lg sm:text-2xl font-black text-teal-600 mt-0.5 sm:mt-1 leading-tight">{metrics.cuti}</p>
+                <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Hari cuti</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-                <p className="text-[11px] font-semibold text-fuchsia-600 uppercase tracking-wider">Sakit</p>
-                <p className="text-2xl font-black text-fuchsia-600 mt-1">{metrics.sakit}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Hari sakit</p>
+              <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
+                <p className="text-[9.5px] sm:text-[11px] font-semibold text-fuchsia-600 uppercase tracking-wide sm:tracking-wider truncate">Sakit</p>
+                <p className="text-lg sm:text-2xl font-black text-fuchsia-600 mt-0.5 sm:mt-1 leading-tight">{metrics.sakit}</p>
+                <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Hari sakit</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-                <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider">Ijin</p>
-                <p className="text-2xl font-black text-blue-600 mt-1">{metrics.ijin}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Hari izin</p>
+              <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
+                <p className="text-[9.5px] sm:text-[11px] font-semibold text-blue-600 uppercase tracking-wide sm:tracking-wider truncate">Ijin</p>
+                <p className="text-lg sm:text-2xl font-black text-blue-600 mt-0.5 sm:mt-1 leading-tight">{metrics.ijin}</p>
+                <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Hari izin</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-                <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">Alpa</p>
-                <p className="text-2xl font-black text-rose-600 mt-1">{metrics.alpa}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Tanpa ket.</p>
+              <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
+                <p className="text-[9.5px] sm:text-[11px] font-semibold text-rose-600 uppercase tracking-wide sm:tracking-wider truncate">Alpa</p>
+                <p className="text-lg sm:text-2xl font-black text-rose-600 mt-0.5 sm:mt-1 leading-tight">{metrics.alpa}</p>
+                <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Tanpa ket.</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
-                <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-wider">Terlambat</p>
-                <p className="text-2xl font-black text-amber-600 mt-1">{metrics.telat}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Total telat</p>
+              <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
+                <p className="text-[9.5px] sm:text-[11px] font-semibold text-amber-600 uppercase tracking-wide sm:tracking-wider truncate">Terlambat</p>
+                <p className="text-lg sm:text-2xl font-black text-amber-600 mt-0.5 sm:mt-1 leading-tight">{metrics.telat}</p>
+                <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Total telat</p>
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm col-span-2 sm:col-span-2 lg:col-span-1">
-                <p className="text-[11px] font-semibold text-orange-600 uppercase tracking-wider">Koreksi Aktif</p>
-                <p className="text-2xl font-black text-orange-600 mt-1">{metrics.koreksiCount}</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Data override</p>
+              <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm col-span-3 sm:col-span-2 lg:col-span-1 flex items-center justify-between sm:block">
+                <p className="text-[9.5px] sm:text-[11px] font-semibold text-orange-600 uppercase tracking-wide sm:tracking-wider truncate">Koreksi Aktif</p>
+                <p className="text-lg sm:text-2xl font-black text-orange-600 mt-0.5 sm:mt-1 leading-tight">{metrics.koreksiCount}</p>
+                <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Data override</p>
               </div>
             </div>
 
             {/* REKAP TABLE */}
             <div className={kelasKartu}>
-              <div className="px-4 py-2.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50">
-                <div>
-                  <h2 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
-                    Tabel Rekapitulasi Absensi Pegawai (DASHBOARD)
+              <div className="px-3 sm:px-4 py-2.5 border-b border-slate-100 flex flex-row items-start sm:items-center justify-between gap-2 bg-slate-50/50">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm sm:text-lg font-black text-slate-800 tracking-tight">
+                    <span className="sm:hidden">Rekap per Pegawai</span>
+                    <span className="hidden sm:inline">Tabel Rekapitulasi Absensi Pegawai (DASHBOARD)</span>
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="hidden sm:block text-xs text-slate-400 mt-0.5">
                     Data agregasi terhitung otomatis setelah digabungkan dengan data koreksi. Klik <strong>View</strong> untuk membuka rincian & capture gambar.
                   </p>
                   <label className="mt-2 inline-flex items-center gap-2 text-[11px] font-semibold text-slate-600 cursor-pointer select-none">
@@ -2019,10 +2028,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 </div>
                 <button
                   onClick={() => exportToExcel('dashboard')}
-                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition active:scale-95 shrink-0"
+                  className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1.5 sm:gap-2 shadow-md transition active:scale-95 shrink-0"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Download Excel Dashboard</span>
+                  <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="sm:hidden">Excel</span>
+                  <span className="hidden sm:inline">Download Excel Dashboard</span>
                 </button>
               </div>
 
