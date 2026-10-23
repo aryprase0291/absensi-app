@@ -10,8 +10,66 @@
 // set_sinkron_gsheet, sinkron_gsheet — admin saja).
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  UploadCloud, Link2, Save, Loader2, CheckCircle2, AlertTriangle, Clock, ExternalLink
+  UploadCloud, Link2, Save, Loader2, CheckCircle2, AlertTriangle, Clock, ExternalLink, History
 } from 'lucide-react';
+
+const ASAL_LABEL = {
+  manual: { teks: 'Manual', kelas: 'bg-blue-50 text-blue-700 border-blue-200' },
+  otomatis: { teks: 'Otomatis', kelas: 'bg-slate-100 text-slate-600 border-slate-200' },
+  telegram: { teks: 'Telegram', kelas: 'bg-sky-50 text-sky-700 border-sky-200' }
+};
+
+const fmtDetik = (d) => {
+  const n = Number(d) || 0;
+  if (n >= 60) return `${Math.floor(n / 60)} mnt ${Math.round(n % 60)} dtk`;
+  return `${String(Math.round(n * 10) / 10).replace('.', ',')} dtk`;
+};
+
+/** RIWAYAT SINKRON — terbaru paling atas. */
+function RiwayatSinkron({ log }) {
+  const daftar = (Array.isArray(log) ? log : [])
+    .filter(x => x && x.w)
+    .slice()
+    .sort((a, b) => String(b.w).localeCompare(String(a.w)));
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-600">
+      <div className="flex items-center justify-between mb-2">
+        <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+          <History className="w-4 h-4 text-slate-500" /> Riwayat sinkron
+        </div>
+        <span className="text-[10.5px] text-slate-400">{daftar.length ? `${daftar.length} terakhir · terbaru di atas` : ''}</span>
+      </div>
+      {daftar.length === 0 ? (
+        <div className="text-slate-400 py-2">Belum ada riwayat. Riwayat mulai tercatat sejak pembaruan ini.</div>
+      ) : (
+        <div className="max-h-[300px] overflow-y-auto -mx-1 px-1 divide-y divide-slate-100">
+          {daftar.map((x, i) => {
+            const asal = ASAL_LABEL[x.a] || ASAL_LABEL.manual;
+            const oleh = x.o || (x.a === 'otomatis' ? 'Sistem' : '-');
+            return (
+              <div key={x.w + i} className="py-1.5 flex items-start gap-2">
+                {x.ok
+                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                    <span className="font-semibold text-slate-800 tabular-nums">{fmtWaktu(x.w)}</span>
+                    <span className={`px-1.5 py-px rounded border text-[10px] font-bold ${asal.kelas}`}>{asal.teks}</span>
+                    <span className="text-slate-700 truncate" title={oleh}>oleh <b>{oleh}</b></span>
+                  </div>
+                  <div className={x.ok ? 'text-slate-500' : 'text-rose-700'}>
+                    {x.ok ? `${Number(x.n || 0).toLocaleString('id-ID')} baris · ${fmtDetik(x.d)}` : `Gagal · ${fmtDetik(x.d)}`}
+                    {x.k ? <span className={x.ok ? 'text-amber-700' : ''}> — {x.k}</span> : null}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const fmtWaktu = (iso) => {
   if (!iso) return '-';
@@ -58,7 +116,7 @@ export function StatusSinkronGsheet({ status, antri, ringkas = false }) {
 }
 
 /** Tombol ringkas di kepala Tabel Data. */
-export function TombolSinkronGsheet({ doApiCall, onBukaSetelan }) {
+export function TombolSinkronGsheet({ doApiCall, onBukaSetelan, user }) {
   const [info, setInfo] = useState(null);
   const [jalan, setJalan] = useState(false);
   const [galat, setGalat] = useState('');
@@ -77,7 +135,7 @@ export function TombolSinkronGsheet({ doApiCall, onBukaSetelan }) {
     if (!info || !info.setelan || !info.setelan.id) { if (onBukaSetelan) onBukaSetelan(); return; }
     setJalan(true); setGalat('');
     try {
-      const res = await doApiCall('sinkron_gsheet');
+      const res = await doApiCall('sinkron_gsheet', { adminNama: (user && user.nama) || '' });
       if (!res || res.result !== 'success') setGalat(pesanGagalServer(res, 'Sinkron gagal.'));
     } catch (e) {
       setGalat('Sinkron gagal: koneksi terputus.');
@@ -109,7 +167,7 @@ export function TombolSinkronGsheet({ doApiCall, onBukaSetelan }) {
 }
 
 /** Isi tab "Sinkron GSheet". */
-export default function SinkronGsheetPanel({ doApiCall, kelasKartu }) {
+export default function SinkronGsheetPanel({ doApiCall, kelasKartu, user }) {
   const [info, setInfo] = useState(null);
   const [memuat, setMemuat] = useState(true);
   const [form, setForm] = useState({ link: '', sheet: '', periode: '', otomatis: true });
@@ -172,7 +230,7 @@ export default function SinkronGsheetPanel({ doApiCall, kelasKartu }) {
   const sinkronSekarang = async () => {
     setJalan(true); setPesan(null);
     try {
-      const res = await doApiCall('sinkron_gsheet');
+      const res = await doApiCall('sinkron_gsheet', { adminNama: (user && user.nama) || '' });
       setPesan(res && res.result === 'success'
         ? { ok: true, teks: res.message }
         : { ok: false, teks: pesanGagalServer(res, 'Sinkron gagal.') });
@@ -204,7 +262,7 @@ export default function SinkronGsheetPanel({ doApiCall, kelasKartu }) {
             <h2 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">Sinkron Tabel Data ke GSheet DB ABSEN</h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Isi Tabel Data (DB_FIX) — mesin, absen online, dan koreksi — ditulis ke sheet tujuan. Otomatis berjalan ±2 menit setelah impor atau koreksi, atau klik "Sinkron sekarang".
+            Isi Tabel Data (DB_FIX) — mesin, absen online, dan koreksi — ditulis ke sheet tujuan. Otomatis berjalan ±1 menit setelah impor atau koreksi, atau klik "Sinkron sekarang".
           </p>
         </div>
 
@@ -282,6 +340,7 @@ export default function SinkronGsheetPanel({ doApiCall, kelasKartu }) {
               )}
             </div>
 
+            <div className="space-y-3 min-w-0">
             <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 text-xs text-slate-600 space-y-2">
               <div className="font-bold text-slate-800 text-sm">Status</div>
               <div><span className="text-slate-400">Tujuan:</span> {setelan.namaFile ? <b>{setelan.namaFile}</b> : '-'} {setelan.sheet ? `/ ${setelan.sheet}` : ''}</div>
@@ -291,6 +350,8 @@ export default function SinkronGsheetPanel({ doApiCall, kelasKartu }) {
               <div className="pt-2 border-t border-slate-200 text-slate-500 leading-relaxed">
                 Kolom dicocokkan dari nama header baris 1 (ID, NO AKUN, PAYROLL, NAMA, TANGGAL, … WAKTU SCAN). Isi lama di bawah header diganti isi periode; kolom ID tetap rumus <span className="font-mono">=PAYROLL&amp;TANGGAL</span>. Setelah itu "Sinkron Absensi" di file tujuan (ABSENSI → ABSENSI-email) ikut dijalankan otomatis.
               </div>
+            </div>
+            <RiwayatSinkron log={info && info.log} />
             </div>
           </div>
         )}

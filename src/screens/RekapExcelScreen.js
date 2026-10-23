@@ -2352,7 +2352,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-start gap-2 shrink-0">
-                  {isAdmin && <TombolSinkronGsheet doApiCall={doApiCall} onBukaSetelan={() => setActiveTab('gsheet')} />}
+                  {isAdmin && <TombolSinkronGsheet doApiCall={doApiCall} user={user} onBukaSetelan={() => setActiveTab('gsheet')} />}
                   <button
                     onClick={() => exportToExcel('tabel')}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition active:scale-95 shrink-0"
@@ -2529,7 +2529,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         )}
 
         {activeTab === 'gsheet' && (
-          <SinkronGsheetPanel doApiCall={doApiCall} kelasKartu="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col" />
+          <SinkronGsheetPanel doApiCall={doApiCall} user={user} kelasKartu="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col" />
         )}
 
         {activeTab === 'koreksi' && (

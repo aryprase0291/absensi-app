@@ -9,8 +9,26 @@
 // (handleGetAbsensiEmail di apps-script/SinkronGsheet.gs).
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, RefreshCcw, ExternalLink, Search, AlertTriangle, Mail } from 'lucide-react';
+import { useUrutCari, IsiKepala, TombolResetKolom } from '../components/KolomTabel';
 
 const TINGGI_KEPALA = 26; // px per baris kepala (3 baris)
+
+// Nilai sel untuk diurutkan: angka ("25", "-1", "25.000") jadi angka,
+// tanggal ("14-Aug-06", "1-Jun-12") jadi angka yyyymmdd, sisanya teks.
+const BULAN = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, mei: 5, jun: 6, jul: 7, aug: 8, agu: 8, agt: 8,
+  sep: 9, oct: 10, okt: 10, nov: 11, dec: 12, des: 12 };
+const nilaiSel = (t) => {
+  const s = String(t == null ? '' : t).trim();
+  if (!s) return '';
+  const angka = s.replace(/\./g, '').replace(',', '.');
+  if (/^-?\d+(\.\d+)?$/.test(angka)) return Number(angka);
+  const m = s.match(/^(\d{1,2})[-\s/]([A-Za-z]{3})[a-z]*[-\s/](\d{2,4})$/);
+  if (m && BULAN[m[2].toLowerCase()]) {
+    let y = Number(m[3]); if (y < 100) y += y > 50 ? 1900 : 2000;
+    return y * 10000 + BULAN[m[2].toLowerCase()] * 100 + Number(m[1]);
+  }
+  return s;
+};
 
 export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
   const [data, setData] = useState(null);
@@ -76,6 +94,27 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
     });
   }, [data, susunan, cari, grup]);
 
+  // URUT & CARI PER KOLOM (23 Okt 2026) — untuk kolom info (grup s/d hari
+  // kerja), sama seperti tabel lain di layar Rekap. Saat dipakai, baris
+  // pemisah antar grup disembunyikan karena urutannya tidak lagi per grup.
+  const kolomUrut = useMemo(() => {
+    if (!data || !susunan) return [];
+    const out = [];
+    susunan.jenis.forEach((j, i) => {
+      if (j !== 'info') return;
+      out.push({
+        key: 'c' + i,
+        label: susunan.judulInfo[i] || (i === 0 ? 'Grup' : ((data.kolom[i] && data.kolom[i].huruf) || '')),
+        nilai: b => nilaiSel(b.t[i]),
+        teks: b => String(b.t[i] == null ? '' : b.t[i])
+      });
+    });
+    return out;
+  }, [data, susunan]);
+  const barisData = useMemo(() => barisTampil.filter(b => !b.pisah), [barisTampil]);
+  const urutKolom = useUrutCari(barisData, kolomUrut);
+  const barisAkhir = urutKolom.adaFilter ? urutKolom.rows : barisTampil;
+
   const palet = (data && data.palet) || ['#ffffff', '#000000'];
   const beku = (i, z, extra = {}) => (susunan && i <= susunan.idxBeku
     ? { position: 'sticky', left: susunan.kiri[i], zIndex: z, ...(i === susunan.idxBeku ? { boxShadow: '3px 0 5px -2px rgba(15,23,42,0.25)' } : {}), ...extra }
@@ -92,8 +131,9 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
       if (jenis[i] === 'info') {
         r1.push(
           <th key={`i${i}`} rowSpan={3} className={thDasar}
-              style={{ ...top, ...beku(i, 40, { top: 0, position: 'sticky' }), zIndex: i <= susunan.idxBeku ? 40 : 30, height: TINGGI_KEPALA * 3 }}>
-            {judulInfo[i]}
+              style={{ ...top, ...beku(i, 40, { top: 0, position: 'sticky' }), zIndex: i <= susunan.idxBeku ? 40 : 30, height: TINGGI_KEPALA * 3, verticalAlign: 'middle' }}>
+            <IsiKepala kolom={kolomUrut.find(k => k.key === 'c' + i) || { key: 'c' + i, label: judulInfo[i], aksi: false }}
+                       state={urutKolom} align={i === susunan.idxBeku ? 'left' : 'center'} />
           </th>
         );
         continue;
@@ -134,7 +174,7 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               {data
-                ? <>Dari <span className="font-semibold text-slate-700">{data.namaFile}</span> / {data.sheet} · {barisTampil.filter(b => !b.pisah).length} baris · dibaca {new Date(data.dibaca).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</>
+                ? <>Dari <span className="font-semibold text-slate-700">{data.namaFile}</span> / {data.sheet} · {barisAkhir.filter(b => !b.pisah).length} baris · dibaca {new Date(data.dibaca).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</>
                 : 'Sheet ABSENSI-email dari file DB_ABSEN (tab Sinkron GSheet).'}
             </p>
           </div>
@@ -151,6 +191,7 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
                 {daftarGrup.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             )}
+            <TombolResetKolom state={urutKolom} />
             <button onClick={muat} disabled={memuat}
                     className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 disabled:opacity-60">
               {memuat ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />} Muat ulang
@@ -188,14 +229,14 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
             <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-500" /> Membaca sheet ABSENSI-email… (±5–10 detik)
           </div>
         ) : (
-          <div className="overflow-auto w-full max-h-[calc(100vh-230px)] min-h-[420px]">
+          <div className="overflow-auto isolate w-full max-h-[calc(100vh-180px)] min-h-[420px]">
             <table className="border-collapse text-[11px]" style={{ tableLayout: 'fixed', width: susunan.total }}>
               <colgroup>
                 {susunan.lebar.map((w, i) => <col key={i} style={{ width: w }} />)}
               </colgroup>
               {kepala()}
               <tbody>
-                {barisTampil.map((b, k) => (
+                {barisAkhir.map((b, k) => (
                   b.pisah ? (
                     <tr key={`p${k}`}><td colSpan={susunan.n} className="h-3 bg-slate-50 border-y border-slate-200" /></tr>
                   ) : (

@@ -40,6 +40,8 @@ const SG_PROP_CFG = 'SINKRON_GSHEET_CFG';
 const SG_PROP_STATUS = 'SINKRON_GSHEET_STATUS';
 const SG_PROP_ANTRI = 'SINKRON_GSHEET_ANTRI';
 const SG_PROP_GESER = 'SINKRON_GSHEET_GESER';
+const SG_PROP_LOG = 'SINKRON_GSHEET_LOG';   // riwayat sinkron, terbaru di depan
+const SG_LOG_MAKS = 30;
 const SG_FUNGSI_TRIGGER = 'SINKRON_GSHEET_JALAN';
 const SG_SHEET_BAWAAN = 'db1-absen';
 const SG_JEDA_MS = 60 * 1000;       // tunggu 1 menit sesudah perubahan terakhir (dulu 2 menit)
@@ -89,6 +91,40 @@ function _sgBacaStatus_() { return _sgBacaJson_(SG_PROP_STATUS); }
 
 function _sgSimpanStatus_(st) {
   try { _sgProps_().setProperty(SG_PROP_STATUS, JSON.stringify(st)); } catch (e) { /* abaikan */ }
+  _sgTambahLog_(st);
+}
+
+/**
+ * RIWAYAT SINKRON (23 Okt 2026): satu entri ringkas per sinkron, terbaru di
+ * depan, paling banyak SG_LOG_MAKS. Disimpan di satu Script Property, jadi
+ * dijaga di bawah batas 9 KB per nilai (entri lama dibuang lebih dulu).
+ */
+function _sgTambahLog_(st) {
+  try {
+    const sa = st.sinkronAbsensi || {};
+    const ket = st.ok
+      ? (sa.dilewati ? 'ABSENSI-email dilewati: ' + sa.dilewati : '')
+      : String(st.pesan || '');
+    const entri = {
+      w: st.waktu, ok: !!st.ok, a: st.asal || '', o: String(st.oleh || '').slice(0, 60),
+      n: Number(st.baris || 0), d: Number(st.durasiDetik || 0),
+      p: st.dari && st.sampai ? st.dari + '|' + st.sampai : '',
+      k: ket.slice(0, 160)
+    };
+    const log = (_sgBacaJson_(SG_PROP_LOG) || []).filter(function (x) { return x && x.w; });
+    log.unshift(entri);
+    while (log.length > SG_LOG_MAKS) log.pop();
+    let teks = JSON.stringify(log);
+    while (teks.length > 8500 && log.length > 1) { log.pop(); teks = JSON.stringify(log); }
+    _sgProps_().setProperty(SG_PROP_LOG, teks);
+  } catch (e) { /* riwayat boleh gagal, sinkron tidak */ }
+}
+
+/** Nama yang tercatat untuk sinkron manual: nama dari layar + ID akun dari token. */
+function _sgOleh_(data) {
+  const nama = String((data && (data.adminNama || data.nama)) || '').trim().slice(0, 50);
+  const id = String((data && data.userId) || '').trim();
+  return nama ? nama + (id ? ' (' + id + ')' : '') : id;
 }
 
 /** ID spreadsheet dari link lengkap atau ID polos. */
@@ -145,6 +181,7 @@ function handleGetSinkronGsheet(data) {
       otomatis: cfg.otomatis !== false
     },
     status: _sgBacaStatus_(),
+    log: _sgBacaJson_(SG_PROP_LOG) || [],
     antri: antri,
     periodeBawaan: _sgPeriodeBawaan_(),
     periodeAktif: _rekapDaftarPeriode_()
@@ -183,7 +220,7 @@ function handleSetSinkronGsheet(data) {
     link: link, id: id, namaFile: ss.getName(), sheet: sheet,
     dari: dari, sampai: sampai,
     otomatis: !(data && (data.otomatis === false || data.otomatis === 'false' || data.otomatis === '0')),
-    diubahOleh: String((data && (data.adminNama || data.nama)) || ''),
+    diubahOleh: _sgOleh_(data),
     diubahPada: new Date().toISOString()
   };
   _sgProps_().setProperty(SG_PROP_CFG, JSON.stringify(cfg));
@@ -193,7 +230,7 @@ function handleSetSinkronGsheet(data) {
 /** Aksi `sinkron_gsheet`: jalankan sekarang. */
 function handleSinkronGsheet(data) {
   try {
-    const st = _sgJalankan_('manual', String((data && (data.adminNama || data.nama)) || ''));
+    const st = _sgJalankan_('manual', _sgOleh_(data));
     return responseJSON({ result: 'success', status: st, message: st.pesan });
   } catch (e) {
     return responseJSON({ result: 'error', message: e.message, status: _sgBacaStatus_() });
