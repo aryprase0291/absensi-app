@@ -528,6 +528,13 @@ try {
         KirimTelegram ("💾 <b>Backup database terjadwal aktif</b>`n" + (TeksBackup) + "`n`nUbah lewat /backup.")
     }
 } catch { Catat $T ('Pasang jadwal backup gagal: ' + $_.Exception.Message) | Out-Null }
+# Titipan izin deploy (setup jarak jauh) -> tukar & simpan DPAPI, lapor ke grup
+try {
+    if (Test-Path (Join-Path $AA_Dasar 'deploy_gas_titipan.json')) {
+        Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$(Join-Path $AA_Dasar 'deploy_gas.ps1')`"",'-Aksi','titipan','-Chat',(KonfigTelegram).Grup)
+        Catat $T 'Titipan izin deploy diproses' | Out-Null
+    }
+} catch { Catat $T ('Titipan deploy gagal: ' + $_.Exception.Message) | Out-Null }
 # Bila file script diperbarui, bot keluar sendiri; Task Scheduler (tiap 10 menit) menyalakan versi baru.
 $versiFile = @($PSCommandPath, (Join-Path $AA_Dasar 'umum.ps1')) | ForEach-Object { (Get-Item $_).LastWriteTimeUtc.Ticks }
 $off = 0; if (Test-Path $FileOffset) { $off = [int64](Get-Content $FileOffset -Raw) }

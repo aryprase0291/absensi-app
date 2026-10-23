@@ -29,7 +29,7 @@
 #    powershell -ExecutionPolicy Bypass -File D:\AutoAbsen\deploy_gas.ps1 -Setel
 # =====================================================================
 param(
-    [ValidateSet('cek', 'jalan', 'simpan', 'balik', 'status', 'nama')][string]$Aksi = 'cek',
+    [ValidateSet('cek', 'jalan', 'simpan', 'balik', 'status', 'nama', 'titipan')][string]$Aksi = 'cek',
     [string]$Id = '',
     [switch]$Paksa,
     [switch]$Setel,
@@ -274,6 +274,29 @@ function Daftar([string[]]$x, [int]$maks = 12) {
 $kunciDeploy = $null
 try {
     if ($Setel) { SetelOAuth; exit 0 }
+
+    # Titipan sekali pakai (setup jarak jauh): deploy_gas_titipan.json berisi
+    # { client_id, client_secret, code, code_verifier, redirect_uri } dari
+    # persetujuan OAuth di browser. Ditukar ke refresh token di PC ini, disimpan
+    # DPAPI, lalu file titipan dihapus. Dijalankan bot saat menyala.
+    if ($Aksi -eq 'titipan') {
+        $fT = Join-Path $AA_Dasar 'deploy_gas_titipan.json'
+        if (-not (Test-Path $fT)) { exit 0 }
+        $tt = BacaJsonFile $fT
+        Remove-Item $fT -Force -ErrorAction SilentlyContinue
+        try {
+            $t = FormPost 'https://oauth2.googleapis.com/token' @{ code = [string]$tt['code']; client_id = [string]$tt['client_id']; client_secret = [string]$tt['client_secret']; redirect_uri = [string]$tt['redirect_uri']; grant_type = 'authorization_code'; code_verifier = [string]$tt['code_verifier'] }
+        } catch { throw ('Penukaran kode izin Google gagal: ' + (PesanGalat $_) + '. Kode berlaku beberapa menit saja — ulangi setup.') }
+        if (-not $t['refresh_token']) { throw 'Google tidak memberi refresh_token.' }
+        SimpanDpapi $FileRahasia (JsonTulis @{ client_id = [string]$tt['client_id']; client_secret = [string]$tt['client_secret']; refresh_token = [string]$t['refresh_token'] })
+        $Global:DG_Token = [string]$t['access_token']
+        $c = KonfigDeploy
+        $isi = GasApi 'Get' ("projects/{0}/content" -f $c.scriptId)
+        $dep = GasApi 'Get' ("projects/{0}/deployments/{1}" -f $c.scriptId, $c.deploymentId)
+        Lapor ("✅ <b>Izin deploy Apps Script tersimpan</b> (DPAPI) di PC ini.`nProject berisi {0} file · produksi versi {1}.`nCoba: /deploy" -f @(Ambil $isi 'files' @()).Count, (Ambil (Ambil $dep 'deploymentConfig' @{}) 'versionNumber' '?'))
+        Catat $T 'izin dari titipan disimpan' | Out-Null
+        exit 0
+    }
 
     $c = KonfigDeploy
     if ($Aksi -eq 'nama') {
