@@ -380,9 +380,9 @@ const TombolKembaliKeAtas = () => {
       if (target && target.scrollTop > 0) target.scrollTo({ top: 0, behavior: 'smooth' });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }}
-      className="fixed bottom-5 right-4 z-[200] inline-flex h-11 items-center gap-1.5 rounded-full bg-slate-900 px-4 text-[11px] font-bold text-white shadow-lg shadow-slate-900/30 transition hover:bg-blue-600 active:scale-95 sm:bottom-6 sm:right-6"
-      aria-label="Kembali ke atas">
-      <ArrowUp className="h-4 w-4" strokeWidth={2.5} /> Kembali ke atas
+      className="fixed bottom-5 right-4 z-[200] inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg shadow-slate-900/30 transition hover:bg-blue-600 active:scale-95 sm:bottom-6 sm:right-6"
+      title="Kembali ke atas" aria-label="Kembali ke atas">
+      <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
     </button>
   );
 };
@@ -392,9 +392,26 @@ const TombolKembaliKeAtas = () => {
     // Dibungkus <ImportJobProvider> di bawah (lihat AppAbsensi). Provider itu
     // yang memegang job import dbabsen, supaya loop pengirimannya tidak ikut
     // mati saat admin meninggalkan layar Import.
+// Menu yang boleh dibuka ulang setelah refresh. 'form' sengaja tidak ikut:
+// isinya bergantung pada data yang sedang diedit, yang hilang saat refresh.
+const VIEW_BISA_DIPULIHKAN = ['dashboard', 'history', 'db_absen', 'admin', 'approval', 'ganti_password',
+  'remark', 'input_shift', 'analysis', 'rekap_admin', 'gps_audit', 'gps_dashboard', 'log_login', 'dashboard_kerani'];
+const viewTersimpan = () => {
+  try {
+    const v = sessionStorage.getItem('app_view');
+    return VIEW_BISA_DIPULIHKAN.includes(v) ? v : 'dashboard';
+  } catch (e) { return 'dashboard'; }
+};
+
 function AppAbsensiInner() {
   const [user, setUser] = useState(null);
   const [view, setView] = useState('login'); 
+  // Menu yang sedang dibuka diingat (sessionStorage, per tab browser), jadi
+  // refresh halaman membuka menu yang sama — bukan kembali ke dashboard.
+  useEffect(() => {
+    if (!user || !view || view === 'login') return;
+    try { sessionStorage.setItem('app_view', view); } catch (e) { /* abaikan */ }
+  }, [user, view]);
   const [masterData, setMasterData] = useState({ menus: [], roles: [], divisions: [], shifts: [], sheetImport: [] });
   const [editItem, setEditItem] = useState(null);
   const [approvalNotice, setApprovalNotice] = useState(null);
@@ -520,7 +537,7 @@ useEffect(() => {
   if (u) { 
     setUser(JSON.parse(u)); 
     if (m) setMasterData(JSON.parse(m)); 
-    setView('dashboard'); 
+    setView(viewTersimpan()); 
   } 
   // Pengisian dashboard ditangani efek `buka_aplikasi` di bawah, yang
   // berjalan untuk kedua jalur — sesi dipulihkan MAUPUN login baru.
@@ -651,6 +668,8 @@ const handleLogout = useCallback(() => {
   // UBAH: localStorage menjadi sessionStorage
   sessionStorage.removeItem('app_user'); 
   sessionStorage.removeItem('app_master_data');
+  sessionStorage.removeItem('app_view');
+  sessionStorage.removeItem('rekap_tab');
   sessionStorage.removeItem('announcement_shown');
   // Statistik milik user sebelumnya — kalau tidak dibuang, user berikutnya
   // yang login di HP yang sama akan melihat angka orang lain sekejap.

@@ -340,7 +340,14 @@ const gayaFreeze = (i, extra) => (i < DBFIX_JUMLAH_FREEZE
   : undefined);
 
 export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard' }) {
-  const [activeTab, setActiveTab] = useState(initialTab);
+  // Tab yang sedang dibuka diingat di sessionStorage, jadi refresh halaman
+  // kembali ke tab yang sama (bukan selalu ke Dashboard).
+  const [activeTab, setActiveTab] = useState(() => {
+    try { return sessionStorage.getItem('rekap_tab') || initialTab; } catch (e) { return initialTab; }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem('rekap_tab', activeTab); } catch (e) { /* abaikan */ }
+  }, [activeTab]);
   // Mode layar penuh: tabel aktif menutupi seluruh layar (Esc untuk keluar).
   const [layarPenuh, setLayarPenuh] = useState(false); // 'tabel' | 'koreksi' | 'dashboard' | 'board'
   const [loading, setLoading] = useState(false);
@@ -1688,8 +1695,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     ? 'fixed inset-0 z-40 bg-white flex flex-col overflow-hidden'
     : 'bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col';
   const kelasGulir = layarPenuh
-    ? 'overflow-auto w-full flex-1 min-h-0'
-    : 'overflow-auto w-full max-h-[calc(100vh-200px)] min-h-[420px]';
+    ? 'overflow-auto isolate w-full flex-1 min-h-0'
+    : 'overflow-auto isolate w-full max-h-[calc(100vh-150px)] min-h-[420px]';
 
   return (
     <div className="min-h-screen bg-slate-100 pb-20 font-sans w-full">
@@ -1708,18 +1715,18 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       )}
       
       {/* TOP HEADER - FULL WIDTH */}
-      <header className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white border-b border-slate-800 p-4 sm:p-5 shadow-xl sticky top-0 z-30 w-full">
-        <div className="w-full px-3 sm:px-6 lg:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 shrink-0">
-              <FileSpreadsheet className="w-6 h-6" />
+      <header className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white border-b border-slate-800 py-2 sm:py-2.5 shadow-xl sticky top-0 z-30 w-full">
+        <div className="w-full px-3 sm:px-4 lg:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 shrink-0">
+              <FileSpreadsheet className="w-[18px] h-[18px]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-2 py-0.5 rounded-full border border-cyan-400/20">Admin Area</span>
-                <span className="text-[10px] text-slate-400 font-mono">DATABASE ABSENSI</span>
+                <span className="text-[9px] leading-none font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-1.5 py-0.5 rounded-full border border-cyan-400/20">Admin Area</span>
+                <span className="text-[9px] leading-none text-slate-400 font-mono">DATABASE ABSENSI</span>
               </div>
-              <h1 className="text-lg sm:text-xl font-black tracking-tight text-white mt-0.5">
+              <h1 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight mt-0.5">
                 Rekapitulasi, Koreksi & Export Excel
               </h1>
             </div>
@@ -1729,7 +1736,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <button
               onClick={() => muatUlang()}
               disabled={loading}
-              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-xs font-bold text-white flex items-center gap-2 transition active:scale-95 disabled:opacity-50"
+              className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-[11px] font-bold text-white flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
               title="Refresh data dari server"
             >
               <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -1738,7 +1745,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
             <button
               onClick={() => exportToExcel('all')}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-2 shadow-lg shadow-emerald-900/30 transition active:scale-95"
+              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] font-bold text-white flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 transition active:scale-95"
               title="Download Excel Semua Sheet (DASHBOARD, KOREKSI, DB_FIX)"
             >
               <Download className="w-4 h-4" />
@@ -1750,10 +1757,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         </div>
 
         {/* SUB NAVIGATION TABS */}
-        <div className="w-full px-3 sm:px-6 lg:px-8 mt-4 flex gap-2 border-t border-slate-800/80 pt-3.5 overflow-x-auto">
+        <div className="w-full px-3 sm:px-4 lg:px-5 mt-2 flex gap-1 border-t border-slate-800/80 pt-2 overflow-x-auto">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
               activeTab === 'dashboard'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1765,7 +1772,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('koreksi')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
               activeTab === 'koreksi'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1782,7 +1789,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('board')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
               activeTab === 'board'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1794,7 +1801,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('tabel')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
               activeTab === 'tabel'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1806,7 +1813,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('gsheet')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
               activeTab === 'gsheet'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1818,7 +1825,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('absenemail')}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap ${
               activeTab === 'absenemail'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1987,7 +1994,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
             {/* REKAP TABLE */}
             <div className={kelasKartu}>
-              <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+              <div className="px-4 py-2.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50">
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
                     Tabel Rekapitulasi Absensi Pegawai (DASHBOARD)
@@ -2019,7 +2026,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 </button>
               </div>
 
-              <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-white flex flex-col gap-2">
+              <div className="px-4 py-2 border-b border-slate-100 bg-white flex flex-col gap-1.5">
                 {barPencarian}
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutDashboard} /></div>
               </div>
@@ -2031,7 +2038,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   <thead>
                     <tr className="text-slate-600 font-bold text-[10px] whitespace-nowrap">
                       {KOLOM_DASHBOARD.map(k => (
-                        <th key={k.key} className={`px-2 py-2.5 border-r border-slate-200/50 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
+                        <th key={k.key} className={`px-1.5 py-1.5 border-r border-slate-200/50 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutDashboard} align={k.align} />
                         </th>
                       ))}
@@ -2136,7 +2143,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
           <div className="space-y-4 w-full">
             <div className={kelasKartu}>
 
-              <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="px-4 py-2.5 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-2">
                 <div className="min-w-0">
                   <h2 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2">
                     <CalendarDays className="w-4 h-4 text-blue-600 shrink-0" />
@@ -2193,7 +2200,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   digulir — pengganti freeze pane, yang tidak bisa ditulis ke
                   berkas xlsx oleh pustaka edisi komunitas. */}
               <div className={layarPenuh ? 'p-3 flex-1 min-h-0 flex flex-col' : 'p-4 sm:p-5'}>
-                <div className={`overflow-auto border border-slate-200 rounded-xl ${layarPenuh ? 'flex-1 min-h-0' : 'max-h-[calc(100vh-200px)] min-h-[420px]'}`}>
+                <div className={`overflow-auto isolate border border-slate-200 rounded-xl ${layarPenuh ? 'flex-1 min-h-0' : 'max-h-[calc(100vh-150px)] min-h-[420px]'}`}>
                   <table className="text-left border-collapse min-w-max text-[11px]">
                     <thead>
                       <tr className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
@@ -2332,7 +2339,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         {activeTab === 'tabel' && (
           <div className="space-y-4 w-full">
             <div className={kelasKartu}>
-              <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+              <div className="px-4 py-2.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -2356,7 +2363,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 </div>
               </div>
 
-              <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-white flex flex-col gap-2">
+              <div className="px-4 py-2 border-b border-slate-100 bg-white flex flex-col gap-1.5">
                 {barPencarian}
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutTabel} /></div>
               </div>
@@ -2368,7 +2375,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   <thead>
                     <tr className="text-slate-700 font-bold text-[10.5px] whitespace-nowrap">
                       {KOLOM_TABEL.map((k, i) => (
-                        <th key={k.key} style={gayaFreeze(i, { zIndex: 30 })} className={`px-2 py-2.5 border-r border-emerald-200/50 bg-emerald-50 ${TH_STICKY} ${k.kelas || ''}`}>
+                        <th key={k.key} style={gayaFreeze(i, { zIndex: 30 })} className={`px-1.5 py-1.5 border-r border-emerald-200/50 bg-emerald-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutTabel} align={k.align} />
                         </th>
                       ))}
@@ -2528,7 +2535,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         {activeTab === 'koreksi' && (
           <div className="space-y-4 w-full">
             <div className={kelasKartu}>
-              <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+              <div className="px-4 py-2.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50">
                 <div>
                   <h2 className="text-base sm:text-lg font-black text-slate-800 tracking-tight">
                     Daftar Koreksi Data Absensi (Override)
@@ -2569,7 +2576,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 </div>
               </div>
 
-              <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-white flex flex-col gap-2">
+              <div className="px-4 py-2 border-b border-slate-100 bg-white flex flex-col gap-1.5">
                 {barPencarian}
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutKoreksi} /></div>
               </div>
@@ -2581,7 +2588,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   <thead>
                     <tr className="text-slate-600 font-bold text-[10px] whitespace-nowrap">
                       {KOLOM_KOREKSI.map(k => (
-                        <th key={k.key} className={`px-2 py-2.5 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
+                        <th key={k.key} className={`px-1.5 py-1.5 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutKoreksi} align={k.align} />
                         </th>
                       ))}

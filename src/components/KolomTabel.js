@@ -101,7 +101,7 @@ export function IsiKepala({ kolom, state, align = 'left' }) {
   const nilaiCari = cari[kolom.key] || '';
 
   return (
-    <div className="flex flex-col gap-1.5 min-w-0">
+    <div className="flex flex-col gap-1 min-w-0">
       <button
         type="button"
         onClick={() => toggleUrut(kolom.key)}
@@ -117,7 +117,7 @@ export function IsiKepala({ kolom, state, align = 'left' }) {
           value={nilaiCari}
           onChange={e => setCariKolom(kolom.key, e.target.value)}
           placeholder="Cari…"
-          className={`w-full min-w-0 pl-1.5 ${nilaiCari ? 'pr-5' : 'pr-1.5'} py-1 text-[10px] font-medium normal-case tracking-normal text-slate-700 rounded-md border outline-none transition ${
+          className={`w-full min-w-0 pl-1.5 ${nilaiCari ? 'pr-5' : 'pr-1.5'} py-0.5 text-[10px] font-medium normal-case tracking-normal text-slate-700 rounded-md border outline-none transition ${
             nilaiCari ? 'border-blue-400 bg-blue-50/60' : 'border-slate-200 bg-white/80 focus:border-blue-400'
           }`}
         />
