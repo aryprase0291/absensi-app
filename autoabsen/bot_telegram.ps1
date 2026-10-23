@@ -810,6 +810,21 @@ while ($true) {
                         if ($k.Admin -notcontains $uid) { Balas $chat '⛔ /deploy hanya untuk admin bot.'; break }
                         $kata = @($argStr -split '\s+' | Where-Object { $_ })
                         $sub = if ($kata.Count) { $kata[0].ToLower() } else { '' }
+                        if ($sub -eq 'izin') {
+                            # setup jarak jauh: alamat 127.0.0.1/?code=... dari browser setelah klik Izinkan
+                            try { [void](TelegramApi 'deleteMessage' @{ chat_id = $chat; message_id = $m.message_id }) } catch {}
+                            if ($m.chat.type -ne 'private') { Balas $chat '⛔ Kirim <code>/deploy izin &lt;alamat&gt;</code> lewat <b>chat pribadi</b> dengan bot. Pesan Anda sudah dihapus.'; break }
+                            $fK = Join-Path $AA_Dasar 'deploy_gas_klien.json'
+                            if (-not (Test-Path $fK)) { Balas $chat '⚠️ deploy_gas_klien.json belum ada di PC. Pakai deploy_gas.ps1 -Setel.'; break }
+                            if ($argStr -notmatch '[?&]code=([^&\s]+)') { Balas $chat 'ℹ️ Tempel alamat lengkap dari address bar, contoh: <code>/deploy izin http://127.0.0.1:8765/?iss=...&amp;code=4/0A...&amp;scope=...</code>'; break }
+                            $kodeIzin = [Uri]::UnescapeDataString($Matches[1])
+                            $kl = Get-Content $fK -Raw | ConvertFrom-Json
+                            @{ client_id = $kl.client_id; client_secret = $kl.client_secret; code_verifier = $kl.code_verifier; redirect_uri = $kl.redirect_uri; code = $kodeIzin } |
+                                ConvertTo-Json | Set-Content -Path (Join-Path $AA_Dasar 'deploy_gas_titipan.json') -Encoding UTF8
+                            Balas $chat '⏳ Kode izin diterima (pesan Anda sudah dihapus). Menukar ke Google…'
+                            JalankanLatar 'deploy_gas.ps1' $chat $nama @('-Aksi','titipan')
+                            break
+                        }
                         if ($sub -eq 'status') { JalankanLatar 'deploy_gas.ps1' $chat $nama @('-Aksi','status'); break }
                         if ($sub -eq 'nama') { JalankanLatar 'deploy_gas.ps1' $chat $nama @('-Aksi','nama','-Nilai',("`"" + ((@($kata | Select-Object -Skip 1)) -join ' ') + "`"")); break }
                         if ($sub -in @('balik','rollback')) {
