@@ -5,10 +5,11 @@ import {
   Building, RefreshCcw, Check, X, Loader2,
   ShieldAlert, Layers, PieChart, Sparkles, Tag, AlertTriangle,
   Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, UploadCloud
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
+import SinkronGsheetPanel, { TombolSinkronGsheet } from './SinkronGsheetPanel';
 import { useUrutCari, IsiKepala, TombolResetKolom, tooltipSelTerpotong } from '../components/KolomTabel';
 import {
   susunBoard, boardKeSheet, labelTanggalPendek,
@@ -1784,6 +1785,18 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <Layers className="w-4 h-4" />
             <span>Tabel Data (DB_FIX)</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('gsheet')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+              activeTab === 'gsheet'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <UploadCloud className="w-4 h-4" />
+            <span>Sinkron GSheet</span>
+          </button>
         </div>
       </header>
 
@@ -2301,13 +2314,16 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                     Struktur 19 kolom sesuai Google Spreadsheet <span className="font-mono font-semibold text-slate-700">DB_FIX</span>, digabung dengan absen online (kolom SUMBER). Menampilkan {barisTabel.length} baris.
                   </p>
                 </div>
-                <button
-                  onClick={() => exportToExcel('tabel')}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition active:scale-95 shrink-0"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Download Excel DB_FIX (.xlsx)</span>
-                </button>
+                <div className="flex flex-col sm:flex-row sm:items-start gap-2 shrink-0">
+                  {isAdmin && <TombolSinkronGsheet doApiCall={doApiCall} onBukaSetelan={() => setActiveTab('gsheet')} />}
+                  <button
+                    onClick={() => exportToExcel('tabel')}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition active:scale-95 shrink-0"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download Excel DB_FIX (.xlsx)</span>
+                  </button>
+                </div>
               </div>
 
               <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-white flex flex-col gap-2">
@@ -2471,6 +2487,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         )}
 
         {/* TAB 3: KOREKSI DATA ABSENSI */}
+        {activeTab === 'gsheet' && (
+          <SinkronGsheetPanel doApiCall={doApiCall} kelasKartu="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col" />
+        )}
+
         {activeTab === 'koreksi' && (
           <div className="space-y-4 w-full">
             <div className={kelasKartu}>

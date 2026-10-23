@@ -345,6 +345,10 @@ function handleGetLogLogin(data) {
     if (action === 'save_koreksi') return handleSaveKoreksi(data);
     if (action === 'delete_koreksi') return handleDeleteKoreksi(data);
     if (action === 'get_rekap_admin') return handleGetRekapAdmin(data);
+    // --- SINKRON TABEL DATA -> GSHEET DB ABSEN (lihat SinkronGsheet.gs) ---
+    if (action === 'get_sinkron_gsheet') return handleGetSinkronGsheet(data);
+    if (action === 'set_sinkron_gsheet') return handleSetSinkronGsheet(data);
+    if (action === 'sinkron_gsheet') return handleSinkronGsheet(data);
 
     // --- FITUR ABSENSI UTAMA ---
     if (action === 'absen') return handleAbsen(data);
@@ -6147,6 +6151,10 @@ function rekapCacheBatalkan_() {
   } catch (e) {
     console.warn('REKAP_VERSI gagal dinaikkan: ' + e.message);
   }
+  // Data rekap berubah -> jadwalkan sinkron Tabel Data ke GSheet DB ABSEN
+  // (SinkronGsheet.gs). Tidak pernah melempar; kalau berkasnya belum
+  // dipasang, dilewati saja.
+  if (typeof sinkronGsheetJadwalkan_ === 'function') sinkronGsheetJadwalkan_();
 }
 
 function _rekapCacheAmbil_(kunci) {

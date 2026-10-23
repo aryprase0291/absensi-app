@@ -275,6 +275,10 @@ const ACTION_ROLES = {
   'save_koreksi': ['admin'],
   'delete_koreksi': ['admin'],
   'get_rekap_admin': ['admin'],
+  // Sinkron Tabel Data ke GSheet DB ABSEN (SinkronGsheet.gs)
+  'get_sinkron_gsheet': ['admin'],
+  'set_sinkron_gsheet': ['admin'],
+  'sinkron_gsheet': ['admin'],
 
   // --- PENGUNCIAN PERANGKAT (Devices.gs) — ADMIN SAJA ---
   // Daftar perangkat memuat pasangan siapa-memakai-HP-mana untuk seluruh
