@@ -354,8 +354,12 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const [filterDept, setFilterDept] = useState('ALL');
   const [filterSimbol, setFilterSimbol] = useState('ALL');
   const [filterSumber, setFilterSumber] = useState('ALL'); // 'ALL' | 'mesin' | 'online'
-  const [filterTglMulai, setFilterTglMulai] = useState('');
-  const [filterTglSelesai, setFilterTglSelesai] = useState('');
+  // BAWAAN HARI INI (23 Okt 2026). Layar dibuka hanya dengan data hari
+  // ini — ringan dan cepat. Admin lalu memilih periode / rentang sendiri.
+  // Pilihan "Semua data (tanpa batas)" dihapus: menarik seluruh riwayat
+  // berbulan-bulan membuat layar "Memuat..." bermenit-menit.
+  const [filterTglMulai, setFilterTglMulai] = useState(() => hariIniYMD());
+  const [filterTglSelesai, setFilterTglSelesai] = useState(() => hariIniYMD());
   // Daftar periode aktif dari server (Panel Admin > Periode Absensi),
   // terbaru dulu. Dikirim bersama jawaban get_rekap_admin.
   const [periodeList, setPeriodeList] = useState([]);
@@ -449,7 +453,9 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // dari "sengaja dikosongkan" — dua keadaan yang sama-sama berupa string
   // kosong, tapi artinya berlawanan. Belum diisi = server pakai periode
   // aktif; sengaja dikosongkan = admin memang minta seluruh periode.
-  const rentangSudahDiisi = useRef(false);
+  // Rentang sudah terisi sejak awal (hari ini), jadi jawaban server tidak
+  // lagi menimpa kotak tanggal dengan periode aktif.
+  const rentangSudahDiisi = useRef(true);
   // Rentang yang permintaannya terakhir dikirim. Dipakai supaya
   // pengisian otomatis dari jawaban server tidak memicu permintaan kedua
   // untuk rentang yang datanya baru saja diterima.
@@ -529,7 +535,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     // diam = tabel TIDAK diganti spinner; data lama tetap tampil sampai
     // jawaban baru datang (dipakai setelah simpan/hapus koreksi).
     const diam   = !!(opsi && opsi.diam);
-    const semua  = (!dari && !sampai && rentangSudahDiisi.current) ? '1' : '';
+    // Tidak pernah lagi meminta seluruh riwayat (lihat BAWAAN HARI INI).
+    const semua  = '';
 
     const nomor = ++permintaanKe.current;
     setServerError(null);
@@ -671,6 +678,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // satu permintaan per ketikan.
   useEffect(() => {
     if (!isAdmin) return undefined;
+    // Dua tanggal dikosongkan -> kembali ke hari ini (bukan seluruh riwayat).
+    if (!filterTglMulai && !filterTglSelesai) {
+      const hi = hariIniYMD();
+      setFilterTglMulai(hi);
+      setFilterTglSelesai(hi);
+      return undefined;
+    }
     const kunci = (filterTglMulai || '') + '|' + (filterTglSelesai || '');
     // Rentang ini sudah diminta — termasuk saat kotak tanggal barusan
     // diisi otomatis dari jawaban server.
@@ -700,9 +714,9 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, [periodeList, hariIni]);
 
   const pilihPeriode = useCallback((nilai) => {
-    if (nilai === '__SEMUA__') {
-      setFilterTglMulai('');
-      setFilterTglSelesai('');
+    if (nilai === '__HARIINI__') {
+      setFilterTglMulai(hariIni);
+      setFilterTglSelesai(hariIni);
       return;
     }
     const p = periodeList.find(x => x.id === nilai);
@@ -712,9 +726,12 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     setFilterTglSelesai(r.sampai);
   }, [periodeList, hariIni]);
 
-  const labelRentangAktif = (filterTglMulai || filterTglSelesai)
-    ? (tglPendek(filterTglMulai) || 'awal') + ' s/d ' + (tglPendek(filterTglSelesai) || 'akhir')
-    : 'Semua data';
+  const pilihHariIni = !periodeTerpilih && filterTglMulai === hariIni && filterTglSelesai === hariIni;
+  const labelRentangAktif = pilihHariIni
+    ? 'Hari ini, ' + tglPendek(hariIni)
+    : (filterTglMulai && filterTglMulai === filterTglSelesai)
+      ? tglPendek(filterTglMulai)
+      : (tglPendek(filterTglMulai) || 'awal') + ' s/d ' + (tglPendek(filterTglSelesai) || 'akhir');
 
   const muatSemuaKoreksi = useCallback(async () => {
     setMemuatSemuaKoreksi(true);
@@ -1859,17 +1876,17 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
               <div className="flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
                 <CalendarDays className="w-3.5 h-3.5 text-blue-500" />
                 <select
-                  value={periodeTerpilih ? periodeTerpilih.id : ((filterTglMulai || filterTglSelesai) ? '__MANUAL__' : '__SEMUA__')}
+                  value={periodeTerpilih ? periodeTerpilih.id : (pilihHariIni ? '__HARIINI__' : '__MANUAL__')}
                   onChange={e => pilihPeriode(e.target.value)}
                   className="bg-transparent text-xs font-bold text-blue-800 outline-none cursor-pointer min-w-[220px]"
                 >
+                  <option value="__HARIINI__">Hari ini ({tglPendek(hariIni)})</option>
                   {periodeList.map(p => (
                     <option key={p.id} value={p.id}>
                       {tglPendek(p.mulai)} – {tglPendek(p.selesai)}{periodeBerjalan(p, hariIni) ? ' (berjalan)' : ''}
                     </option>
                   ))}
                   <option value="__MANUAL__" disabled>Rentang manual</option>
-                  <option value="__SEMUA__">Semua data (tanpa batas)</option>
                 </select>
               </div>
             </div>
