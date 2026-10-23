@@ -328,6 +328,15 @@ const lebarTotal = (kolom) => kolom.reduce((n, k) => n + (k.lebar || 80), 0);
 // Kepala tabel yang menempel di atas saat tabel digulir.
 const TH_STICKY = 'sticky top-0 z-10 align-top shadow-[inset_0_-1px_0_rgb(226,232,240)]';
 
+// Tabel DB_FIX: kolom No Akun s/d Tanggal dibekukan (freeze) saat tabel
+// digulir ke samping. Posisi "left" tiap kolom diukur dari lebar kolom
+// sebenarnya (tabel bisa melebar ikut layar) lewat CSS variable --fzN.
+const DBFIX_JUMLAH_FREEZE = 4;
+const gayaFreeze = (i, extra) => (i < DBFIX_JUMLAH_FREEZE
+  ? { position: 'sticky', left: `var(--fz${i}, 0px)`, ...extra,
+      ...(i === DBFIX_JUMLAH_FREEZE - 1 ? { boxShadow: '4px 0 6px -3px rgba(15,23,42,0.18)' } : {}) }
+  : undefined);
+
 export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   // Mode layar penuh: tabel aktif menutupi seluruh layar (Esc untuk keluar).
@@ -898,6 +907,25 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, [filteredDashboard, tampilSemuaPegawai]);
   const urutDashboard = useUrutCari(dashboardAdaPengajuan, KOLOM_DASHBOARD);
   const urutTabel = useUrutCari(filteredRecords, KOLOM_TABEL);
+
+  // Ukur posisi kiri kolom-kolom freeze tabel DB_FIX (ikut berubah saat layar/lebar tabel berubah).
+  const pengamatFreezeRef = useRef(null);
+  const refTabelDbFix = useCallback((el) => {
+    if (pengamatFreezeRef.current) { pengamatFreezeRef.current.disconnect(); pengamatFreezeRef.current = null; }
+    if (!el) return;
+    const ukur = () => {
+      const ths = el.querySelectorAll('thead tr:first-child > th');
+      for (let i = 0; i < DBFIX_JUMLAH_FREEZE && i < ths.length; i++) {
+        el.style.setProperty(`--fz${i}`, `${ths[i].offsetLeft}px`);
+      }
+    };
+    ukur();
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(ukur);
+      ro.observe(el);
+      pengamatFreezeRef.current = ro;
+    }
+  }, []);
   const urutKoreksi = useUrutCari(filteredKoreksi, KOLOM_KOREKSI);
   const barisTabel = urutTabel.rows;
   useEffect(() => { setCurrentPage(1); }, [urutTabel.urut, urutTabel.cari]);
@@ -2281,14 +2309,14 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutTabel} /></div>
               </div>
               <div className={kelasGulir}>
-                <table onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(KOLOM_TABEL) }}>
+                <table ref={refTabelDbFix} onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(KOLOM_TABEL) }}>
                   <colgroup>
                     {KOLOM_TABEL.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
                   </colgroup>
                   <thead>
                     <tr className="text-slate-700 font-bold text-[10.5px] whitespace-nowrap">
-                      {KOLOM_TABEL.map(k => (
-                        <th key={k.key} className={`px-2 py-2.5 border-r border-emerald-200/50 bg-emerald-50 ${TH_STICKY} ${k.kelas || ''}`}>
+                      {KOLOM_TABEL.map((k, i) => (
+                        <th key={k.key} style={gayaFreeze(i, { zIndex: 30 })} className={`px-2 py-2.5 border-r border-emerald-200/50 bg-emerald-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutTabel} align={k.align} />
                         </th>
                       ))}
@@ -2313,12 +2341,14 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                         const opt = OPSI_SIMBOL_KOREKSI.find(o => o.kode === r.id2);
                         const hasTelat = Boolean(r.telat && r.telat !== '-' && r.telat !== '00:00' && r.telat !== '0');
                         const nominalDenda = hitungDendaTelat(r.telat, r.nominal);
+                        // Latar sel freeze harus pekat supaya kolom lain tidak tembus saat digulir.
+                        const bgFz = `${r.isKoreksi ? 'bg-amber-50' : 'bg-white'} group-hover:bg-blue-50`;
                         return (
-                          <tr key={idx} className={`hover:bg-blue-50/40 transition-colors whitespace-nowrap text-[12px] ${r.isKoreksi ? 'bg-amber-50/30' : ''}`}>
-                            <td className="px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{r.noAkun || '-'}</td>
-                            <td className="px-2 py-2.5 text-center font-mono font-bold text-slate-800 border-r border-slate-100">{r.payroll || '-'}</td>
-                            <td className="px-2 py-2.5 font-bold text-slate-900 border-r border-slate-100">{r.nama || '-'}</td>
-                            <td className="px-2 py-2.5 text-center font-mono text-slate-700 border-r border-slate-100">{formatDateOnly(r.tanggal || r.tanggalYMD)}</td>
+                          <tr key={idx} className={`group hover:bg-blue-50/40 transition-colors whitespace-nowrap text-[12px] ${r.isKoreksi ? 'bg-amber-50/30' : ''}`}>
+                            <td style={gayaFreeze(0, { zIndex: 10 })} className={`px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100 ${bgFz}`}>{r.noAkun || '-'}</td>
+                            <td style={gayaFreeze(1, { zIndex: 10 })} className={`px-2 py-2.5 text-center font-mono font-bold text-slate-800 border-r border-slate-100 ${bgFz}`}>{r.payroll || '-'}</td>
+                            <td style={gayaFreeze(2, { zIndex: 10 })} className={`px-2 py-2.5 font-bold text-slate-900 border-r border-slate-100 ${bgFz}`}>{r.nama || '-'}</td>
+                            <td style={gayaFreeze(3, { zIndex: 10 })} className={`px-2 py-2.5 text-center font-mono text-slate-700 border-r border-slate-100 ${bgFz}`}>{formatDateOnly(r.tanggal || r.tanggalYMD)}</td>
                             <td className="px-2 py-2.5 text-slate-700 font-mono border-r border-slate-100">{r.jamKerja || '-'}</td>
                             <td className="px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.mTugas) || '-'}</td>
                             <td className="px-2 py-2.5 text-center font-mono text-slate-600 border-r border-slate-100">{formatTimeValue(r.aTugas) || '-'}</td>
