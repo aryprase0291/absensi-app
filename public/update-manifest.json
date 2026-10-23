@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.34",
+    "currentVersion": "1.0.35",
     "history": [
+      {
+        "file": "1.0.35.json",
+        "version": "1.0.35",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Rekapitulasi (Admin) tampilan HP lebih ringkas: header satu baris (tombol Excel pendek), tab berlabel singkat, filter periode dengan tanggal Dari/Sampai berdampingan, kartu angka 3 kolom, judul tabel + tombol Excel sebaris. Tampilan desktop tidak berubah."
+        ]
+      },
       {
         "file": "1.0.34.json",
         "version": "1.0.34",
@@ -239,8 +248,17 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.34",
+    "currentVersion": "1.0.35",
     "history": [
+      {
+        "file": "1.0.35.json",
+        "version": "1.0.35",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Tidak ada perubahan logika backend; hanya menyamakan nomor versi dengan frontend 1.0.35 (tampilan mobile Rekapitulasi). APP_VERSION & UpdateManifest.gs ikut naik."
+        ]
+      },
       {
         "file": "1.0.34.json",
         "version": "1.0.34",
