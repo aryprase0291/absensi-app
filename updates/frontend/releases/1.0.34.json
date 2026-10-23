@@ -1,0 +1,8 @@
+{
+  "version": "1.0.34",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Respon Laporan Masuk: tombol hapus (ikon tempat sampah) di kolom Action untuk Admin & HRD, juga di tampilan kartu. Ada konfirmasi sebelum menghapus."
+  ]
+}

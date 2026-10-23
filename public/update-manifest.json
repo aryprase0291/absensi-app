@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.33",
+    "currentVersion": "1.0.34",
     "history": [
+      {
+        "file": "1.0.34.json",
+        "version": "1.0.34",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Respon Laporan Masuk: tombol hapus (ikon tempat sampah) di kolom Action untuk Admin & HRD, juga di tampilan kartu. Ada konfirmasi sebelum menghapus."
+        ]
+      },
       {
         "file": "1.0.33.json",
         "version": "1.0.33",
@@ -230,8 +239,19 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.33",
+    "currentVersion": "1.0.34",
     "history": [
+      {
+        "file": "1.0.34.json",
+        "version": "1.0.34",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Action baru delete_remark (khusus admin & HRD, dijaga ACTION_ROLES dan roleRequester dari token): menghapus satu baris sheet Remarks lewat kolom A di bawah ScriptLock, isi baris dicatat di log eksekusi.",
+          "Potongan kuota yang dibuat dari laporan itu (baris Absensi) TIDAK ikut dihapus.",
+          "Urutan deploy: Kode (Code.gs) + Auth.gs bersamaan, lalu frontend."
+        ]
+      },
       {
         "file": "1.0.33.json",
         "version": "1.0.33",

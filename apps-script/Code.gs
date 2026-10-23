@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.33";
+const APP_VERSION = "1.0.34";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -376,6 +376,7 @@ function handleGetLogLogin(data) {
     if (action === 'send_remark') return handleSendRemark(data);
     if (action === 'get_remarks') return handleGetRemarks(data);
     if (action === 'update_remark_status') return handleUpdateRemarkStatus(data);
+    if (action === 'delete_remark') return handleDeleteRemark(data);
 
     // --- FITUR SHIFT SCHEDULE (UPDATE LENGKAP) ---
     if (action === 'submit_shift_schedule') return handleSubmitShiftSchedule(data); // Input Baru
@@ -1566,6 +1567,51 @@ function handleUpdateRemarkStatus(data) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
+
+// HAPUS LAPORAN (Lapor HRD) — khusus admin & HRD (24 Okt 2026).
+// Dijaga dua lapis: ACTION_ROLES di Auth.gs, dan roleRequester (diisi dari
+// token) di sini. Baris dicari lewat kolom A saja, di bawah ScriptLock.
+// Potongan kuota yang dulu dibuat dari laporan ini (baris di sheet Absensi,
+// kolom POTONG_UUID) TIDAK ikut dihapus — itu catatan absensi tersendiri;
+// batalkan lewat Laporan & Cetak Data bila perlu.
+function handleDeleteRemark(data) {
+  const role = String(data.roleRequester || '').toLowerCase();
+  if (role !== 'admin' && role !== 'hrd') {
+    return responseJSON({ result: 'error', message: 'Akses ditolak. Hanya Admin & HRD yang boleh menghapus laporan.' });
+  }
+  const uuid = String(data.uuid || '').trim();
+  if (!uuid) return responseJSON({ result: 'error', message: 'ID laporan kosong.' });
+  const sheet = SS.getSheetByName(SHEET_REMARKS);
+  if (!sheet) return responseJSON({ result: 'error', message: 'Sheet Remarks tidak ditemukan.' });
+
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch (e) {
+    return responseJSON({ result: 'error', message: 'Server sibuk, coba lagi sebentar.' });
+  }
+  try {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return responseJSON({ result: 'error', message: 'Laporan tidak ditemukan.' });
+    const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    let rowIndex = -1;
+    for (let i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]) === uuid) { rowIndex = i + 2; break; }
+    }
+    if (rowIndex === -1) return responseJSON({ result: 'error', message: 'Laporan tidak ditemukan (mungkin sudah dihapus).' });
+
+    const lebar = Math.min(sheet.getLastColumn(), REMARKS_COL_POTONG_STATUS);
+    const row = sheet.getRange(rowIndex, 1, 1, lebar).getValues()[0];
+    // Jejak audit di log eksekusi Apps Script.
+    console.log('HAPUS LAPORAN oleh ' + (data.approverName || role) + ': ' + JSON.stringify(row));
+    sheet.deleteRow(rowIndex);
+
+    const uuidPotong = String(row[REMARKS_COL_POTONG_UUID - 1] || '').trim();
+    let pesan = 'Laporan ' + (row[3] || '') + ' berhasil dihapus.';
+    if (uuidPotong) pesan += ' Potongan kuota yang dulu dibuat dari laporan ini tetap ada di data absensi.';
+    return responseJSON({ result: 'success', message: pesan });
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 // ==========================================
 // 4. FITUR GET DB ABSEN

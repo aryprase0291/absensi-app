@@ -3619,6 +3619,29 @@ function RemarkScreen({ user, setView }) {
 
     const remarkIsLupaDl = (item) => String(item?.kategori || '').trim() === KATEGORI_LUPA_DL;
 
+    // HAPUS LAPORAN — khusus admin & HRD (server juga memeriksa).
+    const [remarkDeleting, setRemarkDeleting] = useState('');
+    const handleDeleteRemark = async (item) => {
+        if (!isHRDOrAdmin || !item || !item.uuid || remarkDeleting) return;
+        let pesan = `Hapus laporan ${item.nama || ''} (${item.kategori || '-'})?\n\n"${String(item.pesan || '').slice(0, 120)}"\n\nTindakan ini tidak bisa dibatalkan.`;
+        if (item.potongKuota && item.potongKuota !== 'none') {
+            pesan += '\n\nCatatan: potongan kuota dari laporan ini TIDAK ikut terhapus (tetap ada di data absensi).';
+        }
+        if (!window.confirm(pesan)) return;
+        try {
+            setRemarkDeleting(item.uuid);
+            const res = await fetchApi(SCRIPT_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'delete_remark', uuid: item.uuid, approverName: user.nama })
+            }).then(r => r.json());
+            if (res.result === 'success') {
+                setRemarks(prev => prev.filter(r => r.uuid !== item.uuid));
+                setRefreshTrigger(prev => prev + 1);
+            } else alert(res.message || 'Gagal menghapus laporan.');
+        } catch (e) { alert('Gagal menghapus laporan (koneksi).'); }
+        finally { setRemarkDeleting(''); }
+    };
+
     const openMarkDoneDialog = (item) => {
         setRemarkDoneItem(item);
         if (remarkIsLupaDl(item)) {
@@ -4205,7 +4228,7 @@ function RemarkScreen({ user, setView }) {
                             <thead className="sticky top-0 z-10 bg-gray-100 text-gray-700 font-normal uppercase border-b-2 border-gray-300 shadow-sm">
                                 <tr>
                                     <th className="p-2 border border-gray-300 text-center w-10 align-top font-bold bg-gray-100">No</th>
-                                    <th className="p-2 border border-gray-300 text-center w-20 align-top font-bold bg-gray-100">Action</th>
+                                    <th className="p-2 border border-gray-300 text-center w-24 align-top font-bold bg-gray-100">Action</th>
                                     
                                     <ReportFilterHeader label="Waktu Lapor" field="waktu" width="w-24" />
                                     <ReportFilterHeader label="Tgl Koreksi" field="tglKoreksi" width="w-24" />
@@ -4240,11 +4263,16 @@ function RemarkScreen({ user, setView }) {
                                             <td className="p-2 border border-gray-200 text-center font-medium bg-gray-50/50">{idx + 1}</td>
                                             
                                             <td className="p-2 border border-gray-200 text-center">
-                                                {item.status === 'Open' ? (
-                                                    <button onClick={() => openMarkDoneDialog(item)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm flex items-center justify-center gap-1 w-full transition active:scale-95">
-                                                        <Check className="w-3 h-3"/> Done
+                                                <div className="flex items-center justify-center gap-1">
+                                                    {item.status === 'Open' ? (
+                                                        <button onClick={() => openMarkDoneDialog(item)} className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm flex items-center justify-center gap-1 flex-1 transition active:scale-95">
+                                                            <Check className="w-3 h-3"/> Done
+                                                        </button>
+                                                    ) : <span className="text-green-600 font-bold flex-1">✔</span>}
+                                                    <button onClick={() => handleDeleteRemark(item)} disabled={!!remarkDeleting} title="Hapus laporan" className="shrink-0 rounded p-1 text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-40 transition active:scale-95">
+                                                        {remarkDeleting === item.uuid ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Trash2 className="w-3.5 h-3.5"/>}
                                                     </button>
-                                                ) : <span className="text-green-600 font-bold">✔</span>}
+                                                </div>
                                             </td>
 
                                             <td className="p-2 border border-gray-200 text-center font-mono text-[10px] text-gray-500">{formatDateDisplay(item.waktu)}</td>
@@ -4349,10 +4377,17 @@ function RemarkScreen({ user, setView }) {
                                     <a href={item.lampiran} target="_blank" rel="noreferrer" className="text-xs text-blue-600 font-bold underline flex items-center gap-1"><FileIcon className="w-3 h-3"/> Lampiran </a>
                                 ) : <span className="text-[10px] text-gray-400">Tidak ada lampiran</span>}
 
-                                {isHRDOrAdmin && item.status === 'Open' && (
-                                    <button onClick={() => openMarkDoneDialog(item)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-700">
-                                        <Check className="w-3 h-3"/> Mark Done & Reply
-                                    </button>
+                                {isHRDOrAdmin && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => handleDeleteRemark(item)} disabled={!!remarkDeleting} className="flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-40">
+                                            {remarkDeleting === item.uuid ? <Loader2 className="w-3 h-3 animate-spin"/> : <Trash2 className="w-3 h-3"/>} Hapus
+                                        </button>
+                                        {item.status === 'Open' && (
+                                            <button onClick={() => openMarkDoneDialog(item)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-green-700">
+                                                <Check className="w-3 h-3"/> Mark Done & Reply
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </div>

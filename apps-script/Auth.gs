@@ -242,6 +242,7 @@ const ACTION_ROLES = {
   'get_geofence_config': ['admin', 'hrd'],
   'tambah_announcement': ['admin', 'hrd'],
   'update_remark_status': ['admin', 'hrd'],
+  'delete_remark': ['admin', 'hrd'],
   'update_status_absen': ['admin', 'hrd'],
   'get_analysis_data': ['admin', 'hrd'],
   // Panel Monitoring Integritas GPS (AntiFakeGps.gs).

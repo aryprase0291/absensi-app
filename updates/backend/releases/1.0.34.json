@@ -1,0 +1,10 @@
+{
+  "version": "1.0.34",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Action baru delete_remark (khusus admin & HRD, dijaga ACTION_ROLES dan roleRequester dari token): menghapus satu baris sheet Remarks lewat kolom A di bawah ScriptLock, isi baris dicatat di log eksekusi.",
+    "Potongan kuota yang dibuat dari laporan itu (baris Absensi) TIDAK ikut dihapus.",
+    "Urutan deploy: Kode (Code.gs) + Auth.gs bersamaan, lalu frontend."
+  ]
+}
