@@ -64,3 +64,23 @@ DB_ABSEN. Kalau script di file DB_ABSEN diubah, samakan juga di sini.
 File tanpa sheet `ABSENSI`/`ABSENSI-email` → langkah 2 dilewati (dicatat di status).
 Kalau langkah 2 gagal, status menampilkan "… TETAPI Sinkron Absensi gagal: …"
 (db1-absen tetap sudah tertulis).
+
+## Lebih cepat (23 Okt 2026, sore)
+
+- Data rekap diambil dari simpanan berversi (tidak lagi `segarkan=1`).
+  Simpanan otomatis kadaluarsa saat ada impor/koreksi, jadi tetap terbaru.
+- Sinkron Absensi: zona waktu, pemisah rumus, dan format tanggal dibaca/ditulis
+  sekali, bukan per sel header.
+- Otomatis menunggu **1 menit** setelah perubahan terakhir (dulu 2 menit).
+- Status menampilkan rincian waktu, mis.
+  `(14,2 dtk: data 3,1 · db1-absen 6,8 · ABSENSI-email 4,0)` — untuk melihat
+  tahap mana yang paling lama.
+
+## Dari Telegram (bot AutoAbsen)
+
+1. Apps Script project `absen`: jalankan **`SINKRON_BOT_KUNCI_BUAT`** sekali →
+   salin kunci dari Log. Deploy ulang (Versi baru).
+2. Pasang `scripts/autoabsen/SinkronGsheet.ps1` di `D:\AutoAbsen` — langkahnya
+   ada di kepala file. Isi kunci + chat id grup yang boleh.
+3. Di grup: `/sinkron` (jalankan) atau `/sinkronstatus` (lihat terakhir).
+   Di layar Rekap tercatat sebagai `telegram, Telegram · <nama>`.

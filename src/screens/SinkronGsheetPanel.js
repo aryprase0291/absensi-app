@@ -45,7 +45,7 @@ export function StatusSinkronGsheet({ status, antri, ringkas = false }) {
         <span className={status.ok ? 'text-slate-600' : 'text-rose-700'}>
           {ringkas
             ? (status.ok ? `Sinkron ${fmtWaktu(status.waktu)} · ${status.baris} baris` : `Gagal ${fmtWaktu(status.waktu)}: ${status.pesan}`)
-            : `${fmtWaktu(status.waktu)} (${status.asal === 'otomatis' ? 'otomatis' : 'manual'}${status.oleh ? ', ' + status.oleh : ''}) — ${status.pesan}`}
+            : `${fmtWaktu(status.waktu)} (${status.asal === 'otomatis' || status.asal === 'telegram' ? status.asal : 'manual'}${status.oleh ? ', ' + status.oleh : ''}) — ${status.pesan}`}
         </span>
       )}
       {antri && (

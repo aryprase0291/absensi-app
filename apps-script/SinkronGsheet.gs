@@ -42,8 +42,8 @@ const SG_PROP_ANTRI = 'SINKRON_GSHEET_ANTRI';
 const SG_PROP_GESER = 'SINKRON_GSHEET_GESER';
 const SG_FUNGSI_TRIGGER = 'SINKRON_GSHEET_JALAN';
 const SG_SHEET_BAWAAN = 'db1-absen';
-const SG_JEDA_MS = 2 * 60 * 1000;   // tunggu 2 menit sesudah perubahan terakhir
-const SG_MAKS_GESER = 10;           // jadwal digeser paling banyak 10x (~20 menit)
+const SG_JEDA_MS = 60 * 1000;       // tunggu 1 menit sesudah perubahan terakhir (dulu 2 menit)
+const SG_MAKS_GESER = 15;           // jadwal digeser paling banyak 15x (~15 menit)
 
 // Nama header (huruf besar, tanpa spasi/tanda baca) -> field rawRecords
 const SG_KOLOM = {
@@ -231,13 +231,13 @@ function _sgHapusTrigger_() {
   } catch (e) { /* abaikan */ }
 }
 
-/** Fungsi trigger. Kalau masih ada perubahan baru (<1,5 menit), geser jadwal. */
+/** Fungsi trigger. Kalau masih ada perubahan baru (<45 detik), geser jadwal. */
 function SINKRON_GSHEET_JALAN() {
   _sgHapusTrigger_();
   const props = _sgProps_();
   const antri = Date.parse(props.getProperty(SG_PROP_ANTRI) || '') || 0;
   const geser = Number(props.getProperty(SG_PROP_GESER) || 0);
-  if (antri && Date.now() - antri < 90 * 1000 && geser < SG_MAKS_GESER) {
+  if (antri && Date.now() - antri < 45 * 1000 && geser < SG_MAKS_GESER) {
     props.setProperty(SG_PROP_GESER, String(geser + 1));
     ScriptApp.newTrigger(SG_FUNGSI_TRIGGER).timeBased().after(SG_JEDA_MS).create();
     return;
@@ -275,9 +275,15 @@ function _sgJalankan_(asal, oleh) {
     waktu: new Date().toISOString(), ok: false, asal: asal, oleh: oleh || '',
     dari: dari, sampai: sampai, namaFile: cfg.namaFile || '', sheet: cfg.sheet, baris: 0, pesan: ''
   };
+  const tahap = {};
   try {
     if (!dari || !sampai) throw new Error('Periode tidak diketahui.');
-    const jawab = JSON.parse(handleGetRekapAdmin({ dari: dari, sampai: sampai, segarkan: '1' }).getContent());
+    // Tanpa segarkan=1: simpanan rekap berversi (REKAP_VERSI naik setiap
+    // impor/koreksi), jadi isinya selalu terbaru. Kalau masih ada, tahap
+    // ini selesai dalam hitungan detik, bukan menghitung ulang dari nol.
+    let t0 = Date.now();
+    const jawab = JSON.parse(handleGetRekapAdmin({ dari: dari, sampai: sampai }).getContent());
+    tahap.data = Date.now() - t0;
     if (!jawab || jawab.result !== 'success') throw new Error('Data rekap gagal dibaca: ' + ((jawab && jawab.message) || 'tanpa pesan'));
     const rec = (jawab.rawRecords || []).filter(function (r) { return r.tanggalYMD >= dari && r.tanggalYMD <= sampai; });
     rec.sort(function (a, b) {
@@ -287,14 +293,18 @@ function _sgJalankan_(asal, oleh) {
         String(a.payroll || '').localeCompare(String(b.payroll || '')) ||
         String(a.tanggalYMD).localeCompare(String(b.tanggalYMD));
     });
+    t0 = Date.now();
     const hasil = _sgTulis_(cfg, rec);
+    tahap.db1 = Date.now() - t0;
     st.baris = rec.length;
     st.namaFile = hasil.namaFile;
     st.pesan = rec.length + ' baris periode ' + dari + ' s/d ' + sampai + ' tertulis ke "' + hasil.namaFile + '" / ' + cfg.sheet + '.';
     // Lanjut: "Sinkron Absensi" di file tujuan (ABSENSI -> ABSENSI-email),
     // supaya ABSENSI-email & tab ABSEN-EMAIL langsung ikut data terbaru.
     try {
+      t0 = Date.now();
       const pa = _sgPindahAbsensi_(hasil.ss);
+      tahap.absensi = Date.now() - t0;
       st.sinkronAbsensi = pa;
       st.pesan += pa.dilewati ? ' Sinkron Absensi dilewati: ' + pa.dilewati : ' Sinkron Absensi: ' + pa.pesan;
     } catch (e2) {
@@ -307,6 +317,12 @@ function _sgJalankan_(asal, oleh) {
     throw e;
   } finally {
     st.durasiDetik = Math.round((Date.now() - mulai) / 100) / 10;
+    const dtk = function (ms) { return (Math.round(ms / 100) / 10).toString().replace('.', ','); };
+    st.tahap = tahap;
+    if (st.ok) {
+      st.pesan += ' (' + dtk(Date.now() - mulai) + ' dtk: data ' + dtk(tahap.data || 0) +
+        ' · db1-absen ' + dtk(tahap.db1 || 0) + ' · ABSENSI-email ' + dtk(tahap.absensi || 0) + ')';
+    }
     _sgSimpanStatus_(st);
     kunci.releaseLock();
   }
@@ -407,15 +423,20 @@ function _saLastDataRow_(src) {
   return SA_FIRST_ROW;
 }
 
+// Zona waktu & pemisah rumus dibaca SEKALI per jalan (dulu dibaca ulang
+// di setiap sel header — puluhan panggilan ke server Sheets).
+let _saTz_ = null, _saPemisah_ = null;
 function _saFmtTgl_(ss, v) {
-  const tz = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Jakarta';
-  return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : String(v).trim();
+  if (_saTz_ === null) _saTz_ = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Jakarta';
+  return v instanceof Date ? Utilities.formatDate(v, _saTz_, 'yyyy-MM-dd') : String(v).trim();
 }
 
 function _saRumus_(ss, dst, f) {
-  const contoh = dst.getRange('B2').getFormula();
-  const pemisah = (/;/.test(contoh) || /^(in|id)/i.test(ss.getSpreadsheetLocale() || '')) ? ';' : ',';
-  return pemisah === ';' ? f.replace(/,/g, ';') : f;
+  if (_saPemisah_ === null) {
+    const contoh = dst.getRange('B2').getFormula();
+    _saPemisah_ = (/;/.test(contoh) || /^(in|id)/i.test(ss.getSpreadsheetLocale() || '')) ? ';' : ',';
+  }
+  return _saPemisah_ === ';' ? f.replace(/,/g, ';') : f;
 }
 
 function _saPeriodeDari_(sheet, firstCol) {
@@ -445,7 +466,7 @@ function _saSiapkanPeriode_(ss, src, dst) {
   if (!p) throw new Error('Tanggal pertama di ABSENSI (sel ' + src.getRange(SA_HEADER_DATE_ROW, firstSrcCol).getA1Notation() + ') kosong / bukan tanggal.');
   const lama = _saPeriodeDari_(dst, SA_DATE_START);
   const kolomAkhir = SA_DATE_START + (p.jumlahHari - 1) * 2;
-  const rumusJudul = _saRumus_(ss, dst, '="ABSENSI KARYAWAN PERIODE "&UPPER(TEXT(L3,"DD MMM"))&" - "&UPPER(TEXT(' + dst.getRange(SA_HEADER_DATE_ROW, kolomAkhir).getA1Notation() + ',"DD MMM YYYY"))');
+  const rumusJudul = _saRumus_(ss, dst, '="ABSENSI KARYAWAN PERIODE "&UPPER(TEXT(L3,"DD MMM"))&" - "&UPPER(TEXT(' + _sgHurufKolom_(kolomAkhir) + SA_HEADER_DATE_ROW + ',"DD MMM YYYY"))');
   const judulPas = dst.getRange('B2').getFormula().replace(/\s/g, '') === rumusJudul.replace(/\s/g, '');
   if (lama && lama.kunci === p.kunci && judulPas) return p;
 
@@ -466,11 +487,14 @@ function _saSiapkanPeriode_(ss, src, dst) {
   for (let i = 0; i < SA_N_DAYS; i++) {
     const k = i * 2;
     tgl[k] = i < p.jumlahHari ? sTgl[k] : '';
-    const a1 = dst.getRange(SA_HEADER_DATE_ROW, SA_DATE_START + k).getA1Notation();
+    const a1 = _sgHurufKolom_(SA_DATE_START + k) + SA_HEADER_DATE_ROW;
     hari[k] = _saRumus_(ss, dst, '=IF(' + a1 + '="","",TEXT(' + a1 + ',"DDD"))');
   }
   rgTgl.setValues([tgl]);
-  for (let i = 0; i < p.jumlahHari; i++) dst.getRange(SA_HEADER_DATE_ROW, SA_DATE_START + i * 2).setNumberFormat('dd-mm-yyyy');
+  // Format tanggal sekaligus satu panggilan (dulu satu per kolom).
+  const fmt = rgTgl.getNumberFormats()[0];
+  for (let i = 0; i < p.jumlahHari; i++) fmt[i * 2] = 'dd-mm-yyyy';
+  rgTgl.setNumberFormats([fmt]);
   rgHari.setFormulas([hari]);
   dst.getRange('B2').setFormula(rumusJudul);
   SpreadsheetApp.flush();
@@ -492,6 +516,7 @@ function _sgPindahAbsensi_(ss) {
   const dst = ss.getSheetByName(SA_DST);
   if (!src || !dst) return { ok: true, dilewati: 'sheet "' + (!src ? SA_SRC : SA_DST) + '" tidak ada.' };
 
+  _saTz_ = null; _saPemisah_ = null;
   SpreadsheetApp.flush(); // pastikan rumus ABSENSI sudah membaca db1-absen terbaru
   const startRow = SA_FIRST_ROW;
   const endRow = _saLastDataRow_(src);
@@ -642,4 +667,53 @@ function handleGetAbsensiEmail(data) {
     baris: baris,
     dibaca: new Date().toISOString()
   });
+}
+
+// ================================================================
+// SINKRON DARI TELEGRAM (23 Okt 2026)
+//
+// Bot AutoAbsen memanggil aksi `sinkron_gsheet_bot` (tanpa login) dengan
+// kunci rahasia sendiri. Kunci disimpan di Script Property
+// SINKRON_BOT_KEY — buat dengan SINKRON_BOT_KUNCI_BUAT() dari editor,
+// salin hasil Log ke config bot. Ganti kunci = jalankan lagi fungsinya.
+//
+//   { action:'sinkron_gsheet_bot', kunci:'...', perintah:'sinkron'|'status', oleh:'nama TG' }
+// ================================================================
+const SG_PROP_BOT_KEY = 'SINKRON_BOT_KEY';
+
+function SINKRON_BOT_KUNCI_BUAT() {
+  const k = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  _sgProps_().setProperty(SG_PROP_BOT_KEY, k);
+  Logger.log('Kunci bot sinkron (salin ke config AutoAbsen): ' + k);
+  Logger.log('URL web app: ' + ScriptApp.getService().getUrl());
+}
+
+function _sgRingkasStatus_(st) {
+  if (!st) return 'Belum pernah sinkron.';
+  const w = Utilities.formatDate(new Date(st.waktu), 'Asia/Jakarta', 'dd/MM/yyyy HH:mm');
+  return (st.ok ? '✅ ' : '❌ ') + w + ' WIB (' + st.asal + (st.oleh ? ', ' + st.oleh : '') + ')\n' + st.pesan;
+}
+
+function handleSinkronGsheetBot(data) {
+  const kunciSah = _sgProps_().getProperty(SG_PROP_BOT_KEY) || '';
+  const kunci = String((data && data.kunci) || '');
+  if (!kunciSah || !kunci || !_timingSafeEqual(kunci, kunciSah)) {
+    return responseJSON({ result: 'error', message: 'Kunci bot tidak sah.' });
+  }
+  const perintah = String((data && data.perintah) || 'sinkron').toLowerCase();
+  if (perintah === 'status') {
+    const cfg = _sgBacaCfg_() || {};
+    return responseJSON({
+      result: 'success',
+      message: '📄 Tujuan: ' + (cfg.namaFile || '-') + ' / ' + (cfg.sheet || SG_SHEET_BAWAAN) +
+        '\n⏱ Otomatis: ' + (cfg.otomatis === false ? 'mati' : 'aktif') + '\n\nTerakhir:\n' + _sgRingkasStatus_(_sgBacaStatus_())
+    });
+  }
+  const oleh = 'Telegram' + (data && data.oleh ? ' · ' + String(data.oleh).slice(0, 60) : '');
+  try {
+    const st = _sgJalankan_('telegram', oleh);
+    return responseJSON({ result: 'success', status: st, message: _sgRingkasStatus_(st) });
+  } catch (e) {
+    return responseJSON({ result: 'error', message: '❌ Sinkron gagal: ' + e.message });
+  }
 }

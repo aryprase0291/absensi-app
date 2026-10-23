@@ -175,7 +175,9 @@ function _timingSafeEqual(a, b) {
 
 // '*' = semua user yang sudah login
 // array = hanya role tersebut
-const PUBLIC_ACTIONS = ['ping', 'check_version', 'login', 'reset_password_mandiri'];
+// 'sinkron_gsheet_bot' tanpa token login, TAPI wajib kunci bot sendiri
+// (Script Property SINKRON_BOT_KEY) — dicek di handleSinkronGsheetBot.
+const PUBLIC_ACTIONS = ['ping', 'check_version', 'login', 'reset_password_mandiri', 'sinkron_gsheet_bot'];
 
 const ACTION_ROLES = {
   // --- Semua user yang sudah login ---

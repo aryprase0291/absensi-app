@@ -349,6 +349,7 @@ function handleGetLogLogin(data) {
     if (action === 'get_sinkron_gsheet') return handleGetSinkronGsheet(data);
     if (action === 'set_sinkron_gsheet') return handleSetSinkronGsheet(data);
     if (action === 'sinkron_gsheet') return handleSinkronGsheet(data);
+    if (action === 'sinkron_gsheet_bot') return handleSinkronGsheetBot(data);
 
     // --- FITUR ABSENSI UTAMA ---
     if (action === 'absen') return handleAbsen(data);
