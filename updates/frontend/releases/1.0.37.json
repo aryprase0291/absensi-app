@@ -1,0 +1,8 @@
+{
+  "version": "1.0.37",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Board Absensi & Tabel Data (DB_FIX) di HP bisa digeser ke kanan lagi: kolom beku (376px & 430px) dulu lebih lebar dari layar sehingga kolom tanggal selalu tertutup. Di HP kini hanya kolom NAMA yang dibekukan; desktop tidak berubah.", "Board: kepala kartu ringkas di HP (keterangan pendek, tombol Excel Board)."
+  ]
+}
