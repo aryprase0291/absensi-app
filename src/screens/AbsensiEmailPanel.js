@@ -8,7 +8,8 @@
 // Backend: aksi get_sinkron_gsheet dengan bagian='absensi_email'
 // (handleGetAbsensiEmail di apps-script/SinkronGsheet.gs).
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, RefreshCcw, ExternalLink, Search, AlertTriangle, Mail } from 'lucide-react';
+import { Loader2, RefreshCcw, ExternalLink, Search, AlertTriangle, Mail, Download } from 'lucide-react';
+import { eksporAbsensiEmail } from '../utils/eksporAbsensiEmail';
 import { useUrutCari, IsiKepala, TombolResetKolom } from '../components/KolomTabel';
 
 const TINGGI_KEPALA = 26; // px per baris kepala (3 baris)
@@ -132,6 +133,27 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
   const urutKolom = useUrutCari(barisData, kolomUrut);
   const barisAkhir = urutKolom.adaFilter ? urutKolom.rows : barisTampil;
 
+  // EXPORT EXCEL format sama dengan tampilan (24 Okt 2026).
+  // - Tombol "Excel": baris yang sedang tampil (grup, cari, filter & urut kolom).
+  // - Tombol "GMS JKT": khusus departemen GMS JKT, apa pun filter yang aktif.
+  const grupGmsJkt = useMemo(() => daftarGrup.find(g => /^GMS\b.*\b(JKT|JAKARTA)\b/i.test(g.replace(/\s+/g, ' '))) || '', [daftarGrup]);
+  const [mengekspor, setMengekspor] = useState('');
+  const ekspor = async (mode) => {
+    if (!data || !susunan || mengekspor) return;
+    setMengekspor(mode);
+    try {
+      const baris = mode === 'gms'
+        ? data.baris.filter(b => !b.pisah && String(b.t[0] || '').trim() === grupGmsJkt)
+        : barisAkhir;
+      if (!baris.filter(b => !b.pisah).length) { alert('Tidak ada baris untuk diekspor.'); return; }
+      await eksporAbsensiEmail({ data, susunan, baris, label: mode === 'gms' ? grupGmsJkt : (grup || '') });
+    } catch (e) {
+      alert('Gagal membuat Excel: ' + (e && e.message ? e.message : e));
+    } finally {
+      setMengekspor('');
+    }
+  };
+
   const palet = (data && data.palet) || ['#ffffff', '#000000'];
   const dibekukan = (i) => susunan && (hp ? i === susunan.idxBeku : i <= susunan.idxBeku);
   const beku = (i, z, extra = {}) => (dibekukan(i)
@@ -215,6 +237,19 @@ export default function AbsensiEmailPanel({ doApiCall, onBukaSetelan }) {
               {memuat ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
               <span className="hidden sm:inline">Muat ulang</span>
             </button>
+            {data && grupGmsJkt && (
+              <button onClick={() => ekspor('gms')} disabled={!!mengekspor} title={`Excel khusus departemen ${grupGmsJkt}, format sama dengan tampilan`}
+                      className="px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold flex items-center gap-1.5 disabled:opacity-60">
+                {mengekspor === 'gms' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} {grupGmsJkt}
+              </button>
+            )}
+            {data && (
+              <button onClick={() => ekspor('tampil')} disabled={!!mengekspor} title="Excel dari baris yang sedang tampil, format sama dengan tampilan"
+                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-bold flex items-center gap-1.5 disabled:opacity-60">
+                {mengekspor === 'tampil' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Excel{grup ? ` ${grup}` : ''}
+              </button>
+            )}
             {data && data.url && (
               <a href={data.url} target="_blank" rel="noreferrer"
                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5">

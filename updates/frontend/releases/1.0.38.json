@@ -1,0 +1,8 @@
+{
+  "version": "1.0.38",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "ABSEN-EMAIL: tombol export Excel dengan format sama seperti tampilan (judul, kepala 3 baris tanggal/hari/ABSEN-TELAT, warna latar & huruf tiap sel, lebar kolom, kolom & kepala beku). Tombol GMS JKT khusus departemen GMS JKT; tombol Excel mengikuti filter yang sedang tampil.", "Pustaka ExcelJS dimuat hanya saat tombol ditekan (tidak menambah berat pembukaan aplikasi)."
+  ]
+}
