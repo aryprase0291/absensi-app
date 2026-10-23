@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.32";
+const APP_VERSION = "1.0.33";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -365,6 +365,9 @@ function handleGetLogLogin(data) {
     // --- FITUR APPROVAL ---
     if (action === 'request_approval_email') return handleRequestApprovalEmail(data);
     if (action === 'process_approval') return handleProcessApprovalManual(data);
+    // --- NOTIFIKASI KARYAWAN (lihat NotifKaryawan.gs) ---
+    if (action === 'get_notif_karyawan') return handleGetNotifKaryawan(data);
+    if (action === 'baca_notif_karyawan') return handleBacaNotifKaryawan(data);
     if (action === 'get_approval_list') return handleGetApprovalList(data);
     if (action === 'get_team_history') return handleGetTeamHistory(data);
     if (action == 'update_status_absen') return handleUpdateStatusAbsen(data);
@@ -1541,6 +1544,10 @@ function handleUpdateRemarkStatus(data) {
         sheet.getRange(i + 1, REMARKS_COL_POTONG_JUMLAH).setValue(hasilPotong ? hasilPotong.jumlah : '');
         sheet.getRange(i + 1, REMARKS_COL_POTONG_UUID).setValue(hasilPotong ? hasilPotong.uuidList.join(', ') : '');
         sheet.getRange(i + 1, REMARKS_COL_POTONG_STATUS).setValue(hasilPotong ? hasilPotong.status : 'Tidak memotong kuota');
+
+        if (typeof notifKaryawanDariRemark_ === 'function') {
+          notifKaryawanDariRemark_(rows[i], responPesan, data.approverName || 'HRD');
+        }
 
         // Return Sukses JSON
         return ContentService.createTextOutput(JSON.stringify({ 
@@ -2990,6 +2997,15 @@ function handleBukaAplikasi(data) {
     console.warn('Ringkasan approval gagal saat buka aplikasi: ' + e.message);
   }
 
+  // --- Notifikasi status pengajuan untuk karyawan (NotifKaryawan.gs) --
+  // Hanya yang BELUM dibaca, maks beberapa baris — dibaca dari ekor sheet.
+  hasil.notifKaryawan = null;
+  try {
+    if (typeof notifKaryawanRingkas_ === 'function') hasil.notifKaryawan = notifKaryawanRingkas_(String(data.userId));
+  } catch (e) {
+    console.warn('Notifikasi karyawan gagal saat buka aplikasi: ' + e.message);
+  }
+
   return responseJSON(hasil);
 }
 
@@ -3843,6 +3859,12 @@ function processApprovalLogic(uuid, decision, approverName, alasanAdmin) {
       sheet.getRange(i + 1, 14).setValue(approverName);
       sheet.getRange(i + 1, 15).setValue(waktuApproval);
       sheet.getRange(i + 1, 17).setValue(alasanAdmin || '-');
+
+      // Beri tahu karyawan (NotifKaryawan.gs). Tidak pernah melempar error.
+      if (typeof notifKaryawanDariPengajuan_ === 'function') {
+        notifKaryawanDariPengajuan_(rows[i], statusFinal, approverName,
+          decision === 'reject' ? alasanAdmin : (alasanAdmin && alasanAdmin !== 'Diproses melalui Link Email' ? alasanAdmin : ''));
+      }
       
       // ============================================================
       // --- INTEGRASI UPDATE KE 3 LINK EXTERNAL (PERBAIKAN) ---
@@ -5019,6 +5041,9 @@ function handleDeleteAbsensi(data) {
 
     sheet.deleteRow(rowIndex);
     if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_();
+    if (typeof notifKaryawanDariPengajuan_ === 'function') {
+      notifKaryawanDariPengajuan_(row, 'Hapus', data.approverName || 'Admin', data.alasan || '');
+    }
 
     return responseJSON({ result: 'success', message: 'Pengajuan berhasil dihapus.' });
   } finally {
@@ -5440,6 +5465,10 @@ function handleUpdateStatusAbsen(data) {
     // M, N, O sekaligus, lalu Q.
     sheet.getRange(rowIndex, 13, 1, 3).setValues([[newStatus, approverName, formattedTime]]);
     sheet.getRange(rowIndex, 17).setValue(alasanSimpan);
+
+    if (typeof notifKaryawanDariPengajuan_ === 'function') {
+      notifKaryawanDariPengajuan_(row, isBatal ? 'Batal' : newStatus, approverName, keterangan);
+    }
 
     // Approval yang dibatalkan: bersihkan simbol yang dulu ditulis
     // syncToExternalPayroll di sheet payroll eksternal.

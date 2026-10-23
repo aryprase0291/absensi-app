@@ -1,0 +1,10 @@
+{
+  "version": "1.0.33",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Notifikasi untuk karyawan: kartu \"Pengajuan Anda sudah direspon\" di dashboard saat pengajuan disetujui, ditolak, dibatalkan, atau dihapus, dan saat Lapor HRD dijawab.",
+    "Lencana angka di tombol Riwayat dan Lapor HRD. Ketuk notifikasi untuk langsung membuka layar terkait; notifikasi otomatis tertandai dibaca.",
+    "Aplikasi yang dibiarkan terbuka memeriksa notifikasi baru saat kembali ke depan (paling cepat tiap 10 menit)."
+  ]
+}

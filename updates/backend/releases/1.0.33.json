@@ -1,0 +1,11 @@
+{
+  "version": "1.0.33",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "NotifKaryawan.gs (file BARU): notifikasi status pengajuan untuk karyawan, disimpan di sheet NotifKaryawan (dibuat otomatis saat notifikasi pertama).",
+    "Ditulis saat: approval/penolakan atasan (layar Approval & link email), ubah status oleh admin/HRD (termasuk batal approval), hapus pengajuan oleh admin, dan jawaban Lapor HRD.",
+    "Ringkasan belum-dibaca ikut di respons buka_aplikasi (field notifKaryawan) — tidak menambah request. Action baru: get_notif_karyawan, baca_notif_karyawan ('*' di Auth.gs, userId dari token).",
+    "Urutan deploy: NotifKaryawan.gs + Code.gs + Auth.gs bersamaan; bundle frontend boleh menyusul (frontend lama mengabaikan field baru)."
+  ]
+}

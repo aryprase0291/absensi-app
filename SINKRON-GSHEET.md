@@ -80,7 +80,8 @@ Kalau langkah 2 gagal, status menampilkan "… TETAPI Sinkron Absensi gagal: …
 
 1. Apps Script project `absen`: jalankan **`SINKRON_BOT_KUNCI_BUAT`** sekali →
    salin kunci dari Log. Deploy ulang (Versi baru).
-2. Pasang `scripts/autoabsen/SinkronGsheet.ps1` di `D:\AutoAbsen` — langkahnya
-   ada di kepala file. Isi kunci + chat id grup yang boleh.
-3. Di grup: `/sinkron` (jalankan) atau `/sinkronstatus` (lihat terakhir).
+2. Sudah terpasang di bot (`autoabsen/sinkron_gsheet.ps1`, 24 Okt 2026).
+   Simpan kuncinya sekali: di PC `sinkron_gsheet.ps1 -Setel`, atau kirim
+   `/sinkron kunci <kunci>` lewat **chat pribadi** dengan bot (admin).
+3. Di grup: `/sinkron` (jalankan) atau `/sinkron status` (lihat terakhir).
    Di layar Rekap tercatat sebagai `telegram, Telegram · <nama>`.

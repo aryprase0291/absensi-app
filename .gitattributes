@@ -1,0 +1,3 @@
+# Skrip PowerShell AutoAbsen: simpan byte apa adanya (BOM UTF-8, akhir baris).
+# perbarui.ps1 mencocokkan SHA-1 blob git dengan file di PC.
+autoabsen/** -text

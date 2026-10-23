@@ -19,6 +19,7 @@ import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
 import ImportNotifier from './components/ImportNotifier';
 import ProcessingModal from './components/ProcessingModal';
+import { useNotifKaryawan, NotifPengajuanCard, hitungLencana } from './components/NotifPengajuan';
 import { getVerifiedGeolocation } from './utils/antiFakeGps';
 import { mulaiPelacakGps, kirimTitikGps } from './utils/gpsTracker';
 import { periksaGpsWajib, izinSudahDiberikan, tandaiIzinPernahOk, lupakanIzin, GPS_STATUS, adalahPcAtauLaptop } from './utils/gpsWajib';
@@ -65,7 +66,8 @@ const ACTION_AMAN_DIULANG = [
   // verifikasi_wajah hanya membandingkan angka dan tidak menulis apa pun,
   // jadi aman diulang — dan justru harus, karena kegagalannya menghalangi
   // karyawan mengambil foto presensi.
-  'verifikasi_wajah', 'get_device_list', 'get_device_audit', 'get_wajah_list'
+  'verifikasi_wajah', 'get_device_list', 'get_device_audit', 'get_wajah_list',
+  'get_notif_karyawan'
 ];
 
 const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
@@ -529,6 +531,10 @@ const [bootMenunggu, setBootMenunggu] = useState(() => {
 const [gpsTrackingAwal, setGpsTrackingAwal] = useState(null);
 
 const bootDijalankanRef = useRef(false);
+
+    // Notifikasi status pengajuan (components/NotifPengajuan.js). Datanya
+    // ikut di respons buka_aplikasi — tidak menambah request saat dibuka.
+const notifKaryawan = useNotifKaryawan({ user, bootAwal, fetchApi, scriptUrl: SCRIPT_URL });
 
     //----LOGIKA AUTO LOGIN / RESTORE SESSION----
 useEffect(() => { 
@@ -1004,7 +1010,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice} bootAwal={bootAwal} bootMenunggu={bootMenunggu}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='log_login'&&<LogLoginScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='dashboard_kerani'&&<DashboardKerani user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice} bootAwal={bootAwal} bootMenunggu={bootMenunggu} notifKaryawan={notifKaryawan.notif} tandaiNotif={notifKaryawan.tandaiDibaca}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='log_login'&&<LogLoginScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='dashboard_kerani'&&<DashboardKerani user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
       <GpsGateScreen
         status={gpsGate.status}
         pesan={gpsGate.pesan}
@@ -1111,7 +1117,8 @@ function labelPeriodeDDMM(mulai, selesai) {
   return `${susun(mulai)} - ${susun(selesai)}`;
 }
 
-function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice, bootAwal, bootMenunggu }) {
+function Dashboard({ user, setUser, setView, handleLogout, masterData, approvalNotice, setApprovalNotice, bootAwal, bootMenunggu, notifKaryawan, tandaiNotif }) {
+  const lencanaNotif = hitungLencana(notifKaryawan);
   const [time, setTime] = useState(() => getServerNow());
   const [cuaca, setCuaca] = useState(null);
 
@@ -1787,8 +1794,11 @@ const Skeleton = ({ className }) => (
       <div className={`overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)] flex flex-col justify-center ${adaTombolAbsen ? (canAccessPanel || canApprove ? "md:col-span-6 lg:col-span-7" : "md:col-span-6") : "col-span-12"}`}>
         <div className={`grid divide-x divide-slate-100 ${canApprove && canAccessPanel ? 'grid-cols-5' : (canApprove || canAccessPanel ? 'grid-cols-4' : 'grid-cols-3')}`}>
 
-            <button onClick={() => setView('history')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+            <button onClick={() => setView('history')} className="group relative flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><History className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
+                {lencanaNotif.history > 0 && (
+                  <span className="absolute right-2 top-2.5 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm">{lencanaNotif.history}</span>
+                )}
                 <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Riwayat</span>
             </button>
 
@@ -1797,8 +1807,11 @@ const Skeleton = ({ className }) => (
                 <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Data mesin</span>
             </button>
 
-            <button onClick={() => setView('remark')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+            <button onClick={() => setView('remark')} className="group relative flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><MessageSquareText className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
+                {lencanaNotif.remark > 0 && (
+                  <span className="absolute right-2 top-2.5 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm">{lencanaNotif.remark}</span>
+                )}
                 <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">{isHRDOrAdmin ? 'Respon' : 'Lapor HRD'}</span>
             </button>
 
@@ -1870,6 +1883,8 @@ const Skeleton = ({ className }) => (
         </div>
       )}
       
+      <NotifPengajuanCard notif={notifKaryawan} tandaiDibaca={tandaiNotif} setView={setView} />
+
       {/* --- RESPONSIVE 2-COLUMN SECTION ON DESKTOP --- */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         

@@ -1,0 +1,10 @@
+# Hanya skrip & dokumen yang dilacak. Rahasia, konfigurasi, log, ekspor
+# di D:\AutoAbsen TIDAK boleh masuk repo (repo ini public).
+*.dat
+*.json
+*.txt
+*.log
+*.bak*
+log/
+ekspor/
+_cadangan/

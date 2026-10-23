@@ -196,6 +196,10 @@ const ACTION_ROLES = {
   // karyawan biasa.
   'buka_aplikasi': '*',
   'get_absence_period': '*',
+  // Notifikasi status pengajuan milik SENDIRI (NotifKaryawan.gs) — userId
+  // ditimpa dari token di bawah, jadi tidak bisa membaca / menandai milik orang lain.
+  'get_notif_karyawan': '*',
+  'baca_notif_karyawan': '*',
   'ganti_password': '*',
   'upload_profile': '*',
   'send_remark': '*',

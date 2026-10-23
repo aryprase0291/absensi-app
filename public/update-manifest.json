@@ -1,7 +1,18 @@
 {
   "frontend": {
-    "currentVersion": "1.0.32",
+    "currentVersion": "1.0.33",
     "history": [
+      {
+        "file": "1.0.33.json",
+        "version": "1.0.33",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Notifikasi untuk karyawan: kartu \"Pengajuan Anda sudah direspon\" di dashboard saat pengajuan disetujui, ditolak, dibatalkan, atau dihapus, dan saat Lapor HRD dijawab.",
+          "Lencana angka di tombol Riwayat dan Lapor HRD. Ketuk notifikasi untuk langsung membuka layar terkait; notifikasi otomatis tertandai dibaca.",
+          "Aplikasi yang dibiarkan terbuka memeriksa notifikasi baru saat kembali ke depan (paling cepat tiap 10 menit)."
+        ]
+      },
       {
         "file": "1.0.32.json",
         "version": "1.0.32",
@@ -219,8 +230,20 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.32",
+    "currentVersion": "1.0.33",
     "history": [
+      {
+        "file": "1.0.33.json",
+        "version": "1.0.33",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "NotifKaryawan.gs (file BARU): notifikasi status pengajuan untuk karyawan, disimpan di sheet NotifKaryawan (dibuat otomatis saat notifikasi pertama).",
+          "Ditulis saat: approval/penolakan atasan (layar Approval & link email), ubah status oleh admin/HRD (termasuk batal approval), hapus pengajuan oleh admin, dan jawaban Lapor HRD.",
+          "Ringkasan belum-dibaca ikut di respons buka_aplikasi (field notifKaryawan) — tidak menambah request. Action baru: get_notif_karyawan, baca_notif_karyawan ('*' di Auth.gs, userId dari token).",
+          "Urutan deploy: NotifKaryawan.gs + Code.gs + Auth.gs bersamaan; bundle frontend boleh menyusul (frontend lama mengabaikan field baru)."
+        ]
+      },
       {
         "file": "1.0.32.json",
         "version": "1.0.32",
