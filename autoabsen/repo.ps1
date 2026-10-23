@@ -94,36 +94,54 @@ function JsonBaca([string]$s) {
     if ($AA_JsonSer) { return $AA_JsonSer.DeserializeObject($s) }
     return ($s | ConvertFrom-Json -AsHashtable -Depth 100)
 }
-# Lepas pembungkus PSObject (JavaScriptSerializer akan menulis properti
-# PSObject-nya, bukan nilainya) dan ubah semua kamus/larik ke bentuk polos.
-function Polos($x) {
-    if ($null -eq $x) { return $null }
-    # Di PowerShell 5.1 hampir semua objek terbungkus PSObject dan lolos uji
-    # "-is [PSCustomObject]". Karena itu jenis ASLI dilihat dari BaseObject,
-    # dan properti hanya diambil dari NoteProperty (bukan properti adaptasi
-    # seperti Item/Keys milik Dictionary yang membuat referensi melingkar).
-    $asli = $x
-    if ($x -is [System.Management.Automation.PSObject]) { $asli = $x.PSObject.BaseObject }
-    if ($asli -is [string] -or $asli -is [ValueType]) { return $asli }
-    if ($asli -is [System.Collections.IDictionary]) {
-        $d = New-Object 'System.Collections.Generic.Dictionary[string,object]'
-        foreach ($k in @($asli.Keys)) { $d[[string]$k] = (Polos $asli[$k]) }
-        return $d
+# Penulis JSON sendiri (24 Okt 2026). JavaScriptSerializer.Serialize di
+# PowerShell 5.1 gagal "circular reference ... PSParameterizedProperty" pada
+# objek yang terbungkus PSObject. Penulis ini hanya mengenal tipe dasar —
+# null, bool, angka, teks, tanggal, kamus, larik, PSCustomObject — dan
+# menulis selain itu sebagai teks, jadi tidak mungkin berputar.
+function JsonTeks([string]$s) {
+    $s = $s.Replace('\', '\\').Replace('"', '\"').Replace("`r", '\r').Replace("`n", '\n').Replace("`t", '\t')
+    $s = [regex]::Replace($s, '[\u0000-\u001f  ]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+    return '"' + $s + '"'
+}
+function JsonNilai($sb, $x, [int]$dalam) {
+    if ($dalam -gt 60) { throw 'JSON terlalu dalam.' }
+    if ($null -eq $x) { [void]$sb.Append('null'); return }
+    if ($x -is [System.Management.Automation.PSObject]) {
+        $b = $x.PSObject.BaseObject
+        if ($b -is [System.Management.Automation.PSCustomObject]) {
+            [void]$sb.Append('{'); $i = 0
+            foreach ($p in @($x.PSObject.Properties | Where-Object { $_.MemberType -eq 'NoteProperty' })) {
+                if ($i++) { [void]$sb.Append(',') }
+                [void]$sb.Append((JsonTeks $p.Name)).Append(':'); JsonNilai $sb $p.Value ($dalam + 1)
+            }
+            [void]$sb.Append('}'); return
+        }
+        $x = $b
     }
-    if ($asli -is [System.Collections.IEnumerable]) {
-        $l = New-Object System.Collections.Generic.List[object]
-        foreach ($e in $asli) { $l.Add((Polos $e)) }
-        return ,($l.ToArray())
+    if ($x -is [bool]) { [void]$sb.Append($(if ($x) { 'true' } else { 'false' })); return }
+    if ($x -is [string] -or $x -is [char] -or $x -is [guid]) { [void]$sb.Append((JsonTeks ([string]$x))); return }
+    if ($x -is [datetime]) { [void]$sb.Append((JsonTeks $x.ToString('o'))); return }
+    if ($x -is [int] -or $x -is [long] -or $x -is [double] -or $x -is [decimal] -or $x -is [single] -or $x -is [int16] -or $x -is [byte] -or $x -is [uint32] -or $x -is [uint64]) {
+        [void]$sb.Append(([IFormattable]$x).ToString($null, [Globalization.CultureInfo]::InvariantCulture)); return
     }
-    if ($asli -is [System.Management.Automation.PSCustomObject]) {
-        $d = New-Object 'System.Collections.Generic.Dictionary[string,object]'
-        foreach ($p in @($x.PSObject.Properties | Where-Object { $_.MemberType -eq 'NoteProperty' })) { $d[$p.Name] = (Polos $p.Value) }
-        return $d
+    if ($x -is [System.Collections.IDictionary]) {
+        [void]$sb.Append('{'); $i = 0
+        foreach ($k in @($x.Keys)) {
+            if ($i++) { [void]$sb.Append(',') }
+            [void]$sb.Append((JsonTeks ([string]$k))).Append(':'); JsonNilai $sb $x[$k] ($dalam + 1)
+        }
+        [void]$sb.Append('}'); return
     }
-    return [string]$asli
+    if ($x -is [System.Collections.IEnumerable]) {
+        [void]$sb.Append('['); $i = 0
+        foreach ($e in $x) { if ($i++) { [void]$sb.Append(',') }; JsonNilai $sb $e ($dalam + 1) }
+        [void]$sb.Append(']'); return
+    }
+    [void]$sb.Append((JsonTeks ([string]$x)))
 }
 function JsonTulis($obj) {
-    $obj = Polos $obj
-    if ($AA_JsonSer) { return $AA_JsonSer.Serialize($obj) }
-    return ($obj | ConvertTo-Json -Depth 100 -Compress)
+    $sb = New-Object System.Text.StringBuilder
+    JsonNilai $sb $obj 0
+    return $sb.ToString()
 }
