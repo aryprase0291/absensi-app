@@ -289,7 +289,7 @@ export default function SinkronGsheetPanel({ doApiCall, kelasKartu }) {
               <div><span className="text-slate-400">Otomatis:</span> {setelan.otomatis !== false ? 'aktif' : 'mati'}</div>
               <div className="pt-1"><span className="text-slate-400">Terakhir:</span> <StatusSinkronGsheet status={info && info.status} antri={info && info.antri} /></div>
               <div className="pt-2 border-t border-slate-200 text-slate-500 leading-relaxed">
-                Kolom dicocokkan dari nama header baris 1 (ID, NO AKUN, PAYROLL, NAMA, TANGGAL, … WAKTU SCAN). Isi lama di bawah header diganti isi periode; kolom ID tetap rumus <span className="font-mono">=PAYROLL&amp;TANGGAL</span>.
+                Kolom dicocokkan dari nama header baris 1 (ID, NO AKUN, PAYROLL, NAMA, TANGGAL, … WAKTU SCAN). Isi lama di bawah header diganti isi periode; kolom ID tetap rumus <span className="font-mono">=PAYROLL&amp;TANGGAL</span>. Setelah itu "Sinkron Absensi" di file tujuan (ABSENSI → ABSENSI-email) ikut dijalankan otomatis.
               </div>
             </div>
           </div>

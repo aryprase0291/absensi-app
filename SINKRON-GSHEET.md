@@ -48,3 +48,19 @@ menggantikan salin-tempel dari Excel.
 - TANGGAL ditulis sebagai nomor seri tanggal → tidak bisa bergeser sehari.
 - Isi lama di bawah header diganti; sisa baris dikosongkan. Sheet tidak
   dihapus, jadi rumus di sheet lain (ABSENSI, db2-telat, DB1, …) tetap utuh.
+
+## Sinkron Absensi ikut jalan (23 Okt 2026)
+
+Setiap sinkron — manual maupun otomatis — urutannya:
+
+1. Tabel Data ditulis ke `db1-absen`, lalu `flush` (rumus ABSENSI terhitung ulang).
+2. **Sinkron Absensi** dijalankan di file yang sama: nilai `ABSENSI` disalin ke
+   `ABSENSI-email` (sama persis dengan tombol "SINKRON ABSENSI" / menu
+   *Sinkron Absensi → Pindah ABSENSI → ABSENSI-email*: isi "O" untuk absen
+   kosong, nama merah → "A", sel rumus tidak ditimpa, ganti periode + arsip).
+
+Kode ada di `_sgPindahAbsensi_` (SinkronGsheet.gs) — salinan dari script file
+DB_ABSEN. Kalau script di file DB_ABSEN diubah, samakan juga di sini.
+File tanpa sheet `ABSENSI`/`ABSENSI-email` → langkah 2 dilewati (dicatat di status).
+Kalau langkah 2 gagal, status menampilkan "… TETAPI Sinkron Absensi gagal: …"
+(db1-absen tetap sudah tertulis).

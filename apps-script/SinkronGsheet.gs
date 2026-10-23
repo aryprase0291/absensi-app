@@ -15,6 +15,8 @@
 //    Perubahan beruntun (impor berpotongan-potongan) digabung jadi satu
 //    sinkron: selama masih ada perubahan baru, jadwal digeser.
 //  - Manual: tombol "Sinkron ke GSheet" (aksi `sinkron_gsheet`).
+//  - Setiap sinkron (manual/otomatis) LANGSUNG diikuti "Sinkron Absensi"
+//    file tujuan (ABSENSI -> ABSENSI-email), lihat _sgPindahAbsensi_.
 //
 // FILE TUJUAN GANTI TIAP BULAN: link & periode disimpan di Script
 // Properties lewat layar "Sinkron GSheet" (aksi `set_sinkron_gsheet`).
@@ -286,10 +288,20 @@ function _sgJalankan_(asal, oleh) {
         String(a.tanggalYMD).localeCompare(String(b.tanggalYMD));
     });
     const hasil = _sgTulis_(cfg, rec);
-    st.ok = true;
     st.baris = rec.length;
     st.namaFile = hasil.namaFile;
     st.pesan = rec.length + ' baris periode ' + dari + ' s/d ' + sampai + ' tertulis ke "' + hasil.namaFile + '" / ' + cfg.sheet + '.';
+    // Lanjut: "Sinkron Absensi" di file tujuan (ABSENSI -> ABSENSI-email),
+    // supaya ABSENSI-email & tab ABSEN-EMAIL langsung ikut data terbaru.
+    try {
+      const pa = _sgPindahAbsensi_(hasil.ss);
+      st.sinkronAbsensi = pa;
+      st.pesan += pa.dilewati ? ' Sinkron Absensi dilewati: ' + pa.dilewati : ' Sinkron Absensi: ' + pa.pesan;
+    } catch (e2) {
+      st.sinkronAbsensi = { ok: false, pesan: e2.message };
+      throw new Error(st.pesan + ' TETAPI Sinkron Absensi (ABSENSI -> ABSENSI-email) gagal: ' + e2.message);
+    }
+    st.ok = true;
   } catch (e) {
     st.pesan = e.message;
     throw e;
@@ -358,7 +370,176 @@ function _sgTulis_(cfg, rec) {
   }
   if (akhirLama > n + 1) sh.getRange(n + 2, 1, akhirLama - n - 1, lebar).clearContent();
   SpreadsheetApp.flush();
-  return { namaFile: ss.getName() };
+  return { namaFile: ss.getName(), ss: ss };
+}
+
+// ================================================================
+// SINKRON ABSENSI (ABSENSI -> ABSENSI-email) — 23 Okt 2026
+//
+// Salinan logika tombol "SINKRON ABSENSI" / menu "Sinkron Absensi >
+// Pindah ABSENSI -> ABSENSI-email" milik script file DB_ABSEN, supaya
+// ikut jalan setiap sinkron (manual & otomatis) TANPA perlu klik tombol
+// di GSheet. Urutannya: db1-absen ditulis -> flush -> rumus ABSENSI
+// terhitung ulang -> nilai ABSENSI disalin ke ABSENSI-email.
+//
+// Bedanya dengan versi di file: bekerja pada spreadsheet hasil openById
+// (bukan getActive), dan toast diabaikan (tidak ada UI di web app).
+// Kalau logika di file DB_ABSEN diubah, ubah juga di sini.
+// ================================================================
+const SA_SRC = 'ABSENSI';
+const SA_DST = 'ABSENSI-email';
+const SA_OFFSET = 3;          // kolom D (4) -> A (1)
+const SA_DATE_START = 12;     // kolom L = tanggal pertama (ABSEN)
+const SA_N_DAYS = 31;         // kolom L..BU
+const SA_HEADER_DATE_ROW = 3;
+const SA_DAY_NAME_ROW = 4;
+const SA_FIRST_ROW = 9;
+const SA_SRC_ID_COL = 6;      // F = PAYROLL di ABSENSI
+const SA_NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function _saToast_(ss, pesan, judul) { try { ss.toast(pesan, judul, 8); } catch (e) { /* tanpa UI */ } }
+
+function _saLastDataRow_(src) {
+  const last = src.getLastRow();
+  if (last < 1) return SA_FIRST_ROW;
+  const ids = src.getRange(1, SA_SRC_ID_COL, last, 1).getDisplayValues();
+  for (let r = ids.length - 1; r >= 0; r--) if (String(ids[r][0]).trim() !== '') return r + 1;
+  return SA_FIRST_ROW;
+}
+
+function _saFmtTgl_(ss, v) {
+  const tz = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Jakarta';
+  return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : String(v).trim();
+}
+
+function _saRumus_(ss, dst, f) {
+  const contoh = dst.getRange('B2').getFormula();
+  const pemisah = (/;/.test(contoh) || /^(in|id)/i.test(ss.getSpreadsheetLocale() || '')) ? ';' : ',';
+  return pemisah === ';' ? f.replace(/,/g, ';') : f;
+}
+
+function _saPeriodeDari_(sheet, firstCol) {
+  const sel = sheet.getRange(SA_HEADER_DATE_ROW, firstCol);
+  if (!(sel.getValue() instanceof Date)) return null;
+  const t = String(sel.getDisplayValue()).match(/(\d{1,2})\D+(\d{1,2})\D+(\d{2,4})/);
+  if (!t) return null;
+  const d = +t[1], m1 = +t[2], y = t[3].length === 2 ? 2000 + +t[3] : +t[3];
+  const akhirUtc = new Date(Date.UTC(y, m1, d - 1));
+  const jumlahHari = Math.round((akhirUtc.getTime() - Date.UTC(y, m1 - 1, d)) / 86400000) + 1;
+  const label = d + ' ' + SA_NAMA_BULAN[m1 - 1] + ' - ' + akhirUtc.getUTCDate() + ' ' + SA_NAMA_BULAN[akhirUtc.getUTCMonth()] + ' ' + akhirUtc.getUTCFullYear();
+  return { kunci: y + '-' + m1 + '-' + d, bulan: y + '-' + m1, urut: Date.UTC(y, m1 - 1, d), jumlahHari: Math.min(jumlahHari, SA_N_DAYS), label: label };
+}
+
+function _saNamaArsip_(p) { return 'ARSIP ' + SA_DST + ' ' + p.label; }
+
+function _saArsipkan_(ss, sh, nama) {
+  if (ss.getSheetByName(nama)) return;
+  const copy = sh.copyTo(ss).setName(nama);
+  const rg = copy.getDataRange();
+  rg.copyTo(rg, { contentsOnly: true });
+}
+
+function _saSiapkanPeriode_(ss, src, dst) {
+  const firstSrcCol = SA_DATE_START + SA_OFFSET;
+  const p = _saPeriodeDari_(src, firstSrcCol);
+  if (!p) throw new Error('Tanggal pertama di ABSENSI (sel ' + src.getRange(SA_HEADER_DATE_ROW, firstSrcCol).getA1Notation() + ') kosong / bukan tanggal.');
+  const lama = _saPeriodeDari_(dst, SA_DATE_START);
+  const kolomAkhir = SA_DATE_START + (p.jumlahHari - 1) * 2;
+  const rumusJudul = _saRumus_(ss, dst, '="ABSENSI KARYAWAN PERIODE "&UPPER(TEXT(L3,"DD MMM"))&" - "&UPPER(TEXT(' + dst.getRange(SA_HEADER_DATE_ROW, kolomAkhir).getA1Notation() + ',"DD MMM YYYY"))');
+  const judulPas = dst.getRange('B2').getFormula().replace(/\s/g, '') === rumusJudul.replace(/\s/g, '');
+  if (lama && lama.kunci === p.kunci && judulPas) return p;
+
+  const bulanBaru = !lama || lama.bulan !== p.bulan;
+  if (bulanBaru) {
+    if (lama && p.urut < lama.urut) {
+      throw new Error('Periode ABSENSI (' + p.label + ') lebih lama dari ABSENSI-email (' + lama.label + '). Cek tanggal di ABSENSI sel O3.');
+    }
+    if (lama) _saArsipkan_(ss, dst, _saNamaArsip_(lama));
+    _saToast_(ss, 'Ganti periode ke ' + p.label + (lama ? '. Data lama disimpan di sheet "' + _saNamaArsip_(lama) + '".' : '.'), 'Periode baru');
+  }
+
+  const sTgl = src.getRange(SA_HEADER_DATE_ROW, firstSrcCol, 1, SA_N_DAYS * 2).getValues()[0];
+  const rgTgl = dst.getRange(SA_HEADER_DATE_ROW, SA_DATE_START, 1, SA_N_DAYS * 2);
+  const rgHari = dst.getRange(SA_DAY_NAME_ROW, SA_DATE_START, 1, SA_N_DAYS * 2);
+  const tgl = rgTgl.getValues()[0];
+  const hari = rgHari.getFormulas()[0];
+  for (let i = 0; i < SA_N_DAYS; i++) {
+    const k = i * 2;
+    tgl[k] = i < p.jumlahHari ? sTgl[k] : '';
+    const a1 = dst.getRange(SA_HEADER_DATE_ROW, SA_DATE_START + k).getA1Notation();
+    hari[k] = _saRumus_(ss, dst, '=IF(' + a1 + '="","",TEXT(' + a1 + ',"DDD"))');
+  }
+  rgTgl.setValues([tgl]);
+  for (let i = 0; i < p.jumlahHari; i++) dst.getRange(SA_HEADER_DATE_ROW, SA_DATE_START + i * 2).setNumberFormat('dd-mm-yyyy');
+  rgHari.setFormulas([hari]);
+  dst.getRange('B2').setFormula(rumusJudul);
+  SpreadsheetApp.flush();
+  return p;
+}
+
+function _saIsRed_(hex) {
+  if (!hex || hex[0] !== '#' || hex.length < 7) return false;
+  const r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+  return r >= 180 && g <= 110 && b <= 110;
+}
+
+/**
+ * Sama dengan pindahSemua() di file DB_ABSEN. Mengembalikan ringkasan;
+ * { dilewati } kalau file tidak punya sheet ABSENSI / ABSENSI-email.
+ */
+function _sgPindahAbsensi_(ss) {
+  const src = ss.getSheetByName(SA_SRC);
+  const dst = ss.getSheetByName(SA_DST);
+  if (!src || !dst) return { ok: true, dilewati: 'sheet "' + (!src ? SA_SRC : SA_DST) + '" tidak ada.' };
+
+  SpreadsheetApp.flush(); // pastikan rumus ABSENSI sudah membaca db1-absen terbaru
+  const startRow = SA_FIRST_ROW;
+  const endRow = _saLastDataRow_(src);
+  const nCols = (SA_DATE_START - 1) + SA_N_DAYS * 2; // A..BU
+  const nRows = endRow - startRow + 1;
+
+  const p = _saSiapkanPeriode_(ss, src, dst);
+  const nHari = p.jumlahHari;
+
+  const sH = src.getRange(SA_HEADER_DATE_ROW, SA_DATE_START + SA_OFFSET, 1, nHari * 2).getValues()[0];
+  const dH = dst.getRange(SA_HEADER_DATE_ROW, SA_DATE_START, 1, nHari * 2).getValues()[0];
+  for (let i = 0; i < nHari * 2; i += 2) {
+    if (_saFmtTgl_(ss, sH[i]) !== _saFmtTgl_(ss, dH[i])) throw new Error('Header tanggal beda di hari ke-' + (i / 2 + 1) + ': ' + _saFmtTgl_(ss, sH[i]) + ' vs ' + _saFmtTgl_(ss, dH[i]));
+  }
+
+  if (dst.getMaxRows() < endRow) dst.insertRowsAfter(dst.getMaxRows(), endRow - dst.getMaxRows());
+
+  const sVals = src.getRange(startRow, 1 + SA_OFFSET, nRows, nCols).getValues();
+  const dRange = dst.getRange(startRow, 1, nRows, nCols);
+  const dForm = dRange.getFormulas();
+  const nameBg = src.getRange(startRow, 1 + SA_OFFSET + 4, nRows, 1).getBackgrounds();
+  let redRows = 0, filledO = 0, skippedF = 0;
+  const out = [];
+
+  for (let r = 0; r < nRows; r++) {
+    const isEmployee = String(sVals[r][2]).trim() !== '';
+    const isRed = isEmployee && _saIsRed_(nameBg[r][0]);
+    if (isRed) redRows++;
+    const o = [];
+    for (let c = 0; c < nCols; c++) {
+      const col = c + 1;
+      const isAbsen = col >= SA_DATE_START && (col - SA_DATE_START) % 2 === 0;
+      const diLuarPeriode = col >= SA_DATE_START && Math.floor((col - SA_DATE_START) / 2) >= nHari;
+      if (isRed && (col === 10 || col === 11)) { o.push(''); continue; }
+      if (diLuarPeriode) { if (dForm[r][c]) skippedF++; o.push(dForm[r][c] || ''); continue; }
+      if (isRed && isAbsen) { o.push('A'); continue; }
+      if (dForm[r][c]) { o.push(dForm[r][c]); skippedF++; continue; }
+      let v = sVals[r][c];
+      if (isEmployee && isAbsen && String(v).trim() === '') { v = 'O'; filledO++; }
+      o.push(v);
+    }
+    out.push(o);
+  }
+  dRange.setValues(out);
+  SpreadsheetApp.flush();
+  const pesan = 'periode ' + p.label + ' (' + nHari + ' hari), baris ' + startRow + '-' + endRow + ' tersalin ke ABSENSI-email.';
+  _saToast_(ss, pesan, 'Sinkron absensi selesai');
+  return { ok: true, pesan: pesan, periode: p.label, baris: nRows, diisiO: filledO, namaMerah: redRows, rumusDilewati: skippedF };
 }
 
 // ================================================================
