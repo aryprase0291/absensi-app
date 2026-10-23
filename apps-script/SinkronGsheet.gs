@@ -122,6 +122,9 @@ function _sgPeriodeBawaan_() {
 
 /** Aksi `get_sinkron_gsheet`: setelan + status terakhir. */
 function handleGetSinkronGsheet(data) {
+  // Tab ABSEN-EMAIL memakai aksi yang sama (tanpa perlu rute baru di
+  // Code.gs/Auth.gs): bagian='absensi_email' -> isi sheet ABSENSI-email.
+  if (data && data.bagian === 'absensi_email') return handleGetAbsensiEmail(data);
   const cfg = _sgBacaCfg_() || {};
   let antri = '';
   try {
@@ -356,4 +359,106 @@ function _sgTulis_(cfg, rec) {
   if (akhirLama > n + 1) sh.getRange(n + 2, 1, akhirLama - n - 1, lebar).clearContent();
   SpreadsheetApp.flush();
   return { namaFile: ss.getName() };
+}
+
+// ================================================================
+// TAB ABSEN-EMAIL (23 Okt 2026)
+//
+// Menampilkan sheet ABSENSI-email ("ABSENSI KARYAWAN PERIODE ...") dari
+// file DB_ABSEN yang sama dengan tujuan sinkron, apa adanya: teks yang
+// tampil, warna latar & warna huruf (warna = arti simbol, lihat legenda
+// baris 1), lebar kolom, dan kolom tersembunyi ikut disembunyikan.
+// Hanya membaca — tidak menulis apa pun.
+// ================================================================
+const SG_SHEET_EMAIL = 'ABSENSI-email';
+const SG_EMAIL_BARIS_DATA = 9;
+
+function _sgHurufKolom_(n) {
+  let s = '';
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+function handleGetAbsensiEmail(data) {
+  const cfg = _sgBacaCfg_() || {};
+  const id = _sgIdDariLink_(data && data.link) || cfg.id;
+  if (!id) return responseJSON({ result: 'error', message: 'Link file DB_ABSEN belum diatur. Isi dulu di tab "Sinkron GSheet".' });
+  let ss;
+  try { ss = SpreadsheetApp.openById(id); } catch (e) {
+    return responseJSON({ result: 'error', message: 'File DB_ABSEN tidak bisa dibuka: ' + e.message });
+  }
+  const namaSheet = String((data && data.sheet) || SG_SHEET_EMAIL);
+  const sh = ss.getSheetByName(namaSheet);
+  if (!sh) {
+    return responseJSON({ result: 'error', message: 'Sheet "' + namaSheet + '" tidak ada di "' + ss.getName() + '".' });
+  }
+
+  const akhirBaris = sh.getLastRow();
+  const akhirKolom = sh.getLastColumn();
+  if (akhirBaris < 1 || akhirKolom < 1) return responseJSON({ result: 'error', message: 'Sheet "' + namaSheet + '" kosong.' });
+  const rg = sh.getRange(1, 1, akhirBaris, akhirKolom);
+  const teks = rg.getDisplayValues();
+  const latar = rg.getBackgrounds();
+  const huruf = rg.getFontColors();
+
+  // Kolom yang tampil saja.
+  const kol = [];
+  for (let c = 1; c <= akhirKolom; c++) {
+    if (!sh.isColumnHiddenByUser(c)) kol.push(c);
+  }
+
+  // Palet warna -> nomor, supaya JSON kecil.
+  const palet = [];
+  const idxPalet = {};
+  const warna = function (w) {
+    const k = String(w || '#ffffff').toLowerCase();
+    if (idxPalet[k] === undefined) { idxPalet[k] = palet.length; palet.push(k); }
+    return idxPalet[k];
+  };
+  warna('#ffffff'); // 0 = putih
+  warna('#000000'); // 1 = hitam
+
+  const ambil = function (r) { return kol.map(function (c) { return teks[r - 1][c - 1]; }); };
+
+  // Legenda baris 1.
+  const legenda = [];
+  kol.forEach(function (c) {
+    const t = String(teks[0][c - 1] || '').trim();
+    if (t) legenda.push({ teks: t, b: warna(latar[0][c - 1]), f: warna(huruf[0][c - 1]) });
+  });
+
+  // Judul = teks pertama yang tidak kosong di baris 2.
+  let judul = '';
+  for (let c = 1; c <= akhirKolom && !judul; c++) judul = String(teks[1] ? teks[1][c - 1] : '').trim();
+
+  // Baris data mulai baris 9. Baris kosong putih beruntun dijadikan satu pemisah.
+  const baris = [];
+  let pemisahTerakhir = true;
+  for (let r = SG_EMAIL_BARIS_DATA; r <= akhirBaris; r++) {
+    const t = ambil(r);
+    const b = kol.map(function (c) { return warna(latar[r - 1][c - 1]); });
+    const kosong = t.every(function (x) { return String(x).trim() === ''; }) && b.every(function (x) { return x === 0; });
+    if (kosong) {
+      if (!pemisahTerakhir) baris.push({ pisah: true });
+      pemisahTerakhir = true;
+      continue;
+    }
+    pemisahTerakhir = false;
+    baris.push({ r: r, t: t, b: b, f: kol.map(function (c) { return warna(huruf[r - 1][c - 1]); }) });
+  }
+  while (baris.length && baris[baris.length - 1].pisah) baris.pop();
+
+  return responseJSON({
+    result: 'success',
+    namaFile: ss.getName(),
+    sheet: namaSheet,
+    url: ss.getUrl() + '#gid=' + sh.getSheetId(),
+    judul: judul,
+    kolom: kol.map(function (c) { return { huruf: _sgHurufKolom_(c), lebar: sh.getColumnWidth(c) }; }),
+    kepala: { tanggal: ambil(3), hari: ambil(4), label: ambil(5) },
+    legenda: legenda,
+    palet: palet,
+    baris: baris,
+    dibaca: new Date().toISOString()
+  });
 }

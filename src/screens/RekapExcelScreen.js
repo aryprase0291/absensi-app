@@ -5,11 +5,12 @@ import {
   Building, RefreshCcw, Check, X, Loader2,
   ShieldAlert, Layers, PieChart, Sparkles, Tag, AlertTriangle,
   Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays,
-  Maximize2, Minimize2, UploadCloud
+  Maximize2, Minimize2, UploadCloud, Mail
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
 import SinkronGsheetPanel, { TombolSinkronGsheet } from './SinkronGsheetPanel';
+import AbsensiEmailPanel from './AbsensiEmailPanel';
 import { useUrutCari, IsiKepala, TombolResetKolom, tooltipSelTerpotong } from '../components/KolomTabel';
 import {
   susunBoard, boardKeSheet, labelTanggalPendek,
@@ -1797,6 +1798,18 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <UploadCloud className="w-4 h-4" />
             <span>Sinkron GSheet</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('absenemail')}
+            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition whitespace-nowrap ${
+              activeTab === 'absenemail'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Mail className="w-4 h-4" />
+            <span>ABSEN-EMAIL</span>
+          </button>
         </div>
       </header>
 
@@ -2487,6 +2500,10 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         )}
 
         {/* TAB 3: KOREKSI DATA ABSENSI */}
+        {activeTab === 'absenemail' && (
+          <AbsensiEmailPanel doApiCall={doApiCall} onBukaSetelan={() => setActiveTab('gsheet')} />
+        )}
+
         {activeTab === 'gsheet' && (
           <SinkronGsheetPanel doApiCall={doApiCall} kelasKartu="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col" />
         )}
