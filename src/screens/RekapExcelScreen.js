@@ -914,9 +914,15 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     if (pengamatFreezeRef.current) { pengamatFreezeRef.current.disconnect(); pengamatFreezeRef.current = null; }
     if (!el) return;
     const ukur = () => {
+      // Jangan pakai offsetLeft: di Safari nilainya ikut bergeser karena sel
+      // sudah sticky, sehingga posisi makin melenceng tiap kali diukur ulang.
+      // Lebar sel (offsetWidth) tidak terpengaruh sticky, jadi dijumlahkan saja.
       const ths = el.querySelectorAll('thead tr:first-child > th');
+      let kiri = 0;
       for (let i = 0; i < DBFIX_JUMLAH_FREEZE && i < ths.length; i++) {
-        el.style.setProperty(`--fz${i}`, `${ths[i].offsetLeft}px`);
+        const nilai = `${kiri}px`;
+        if (el.style.getPropertyValue(`--fz${i}`) !== nilai) el.style.setProperty(`--fz${i}`, nilai);
+        kiri += ths[i].offsetWidth;
       }
     };
     ukur();
