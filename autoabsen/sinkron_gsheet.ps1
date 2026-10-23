@@ -41,6 +41,18 @@ function Lapor([string]$teks) {
     if ($Chat) { KirimTelegram $teks $Chat } else { Write-Output (($teks -replace '<[^>]+>', '') -replace '&lt;', '<' -replace '&gt;', '>' -replace '&amp;', '&') }
 }
 
+# Titipan sekali pakai: kunci ditaruh polos di sinkron_gsheet_kunci.txt
+# (mis. disalin dari jarak jauh) -> dienkripsi DPAPI lalu file polosnya dihapus.
+$FileTitipan = Join-Path $AA_Dasar 'sinkron_gsheet_kunci.txt'
+if (-not $Kunci -and (Test-Path $FileTitipan)) {
+    $t = ([IO.File]::ReadAllText($FileTitipan)).Trim()
+    if ($t -match '^[0-9a-fA-F]{32,128}$') {
+        SimpanDpapi $FileKunci $t
+        Catat $T 'kunci dari titipan disimpan (DPAPI)' | Out-Null
+    } else { Catat $T 'titipan kunci tidak valid, diabaikan' | Out-Null }
+    Remove-Item $FileTitipan -Force -ErrorAction SilentlyContinue
+}
+
 if ($Setel -or $Kunci) {
     if (-not $Kunci) {
         $s = Read-Host 'Tempel kunci dari Log SINKRON_BOT_KUNCI_BUAT' -AsSecureString
