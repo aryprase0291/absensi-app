@@ -98,25 +98,29 @@ function JsonBaca([string]$s) {
 # PSObject-nya, bukan nilainya) dan ubah semua kamus/larik ke bentuk polos.
 function Polos($x) {
     if ($null -eq $x) { return $null }
-    if ($x -is [System.Management.Automation.PSCustomObject]) {
-        # properti PSCustomObject ada di pembungkusnya: baca SEBELUM dibuka
+    # Di PowerShell 5.1 hampir semua objek terbungkus PSObject dan lolos uji
+    # "-is [PSCustomObject]". Karena itu jenis ASLI dilihat dari BaseObject,
+    # dan properti hanya diambil dari NoteProperty (bukan properti adaptasi
+    # seperti Item/Keys milik Dictionary yang membuat referensi melingkar).
+    $asli = $x
+    if ($x -is [System.Management.Automation.PSObject]) { $asli = $x.PSObject.BaseObject }
+    if ($asli -is [string] -or $asli -is [ValueType]) { return $asli }
+    if ($asli -is [System.Collections.IDictionary]) {
         $d = New-Object 'System.Collections.Generic.Dictionary[string,object]'
-        foreach ($p in $x.PSObject.Properties) { $d[$p.Name] = (Polos $p.Value) }
+        foreach ($k in @($asli.Keys)) { $d[[string]$k] = (Polos $asli[$k]) }
         return $d
     }
-    if ($x -is [System.Management.Automation.PSObject]) { $x = $x.PSObject.BaseObject }
-    if ($x -is [string] -or $x -is [ValueType]) { return $x }
-    if ($x -is [System.Collections.IDictionary]) {
-        $d = New-Object 'System.Collections.Generic.Dictionary[string,object]'
-        foreach ($k in @($x.Keys)) { $d[[string]$k] = (Polos $x[$k]) }
-        return $d
-    }
-    if ($x -is [System.Collections.IEnumerable]) {
+    if ($asli -is [System.Collections.IEnumerable]) {
         $l = New-Object System.Collections.Generic.List[object]
-        foreach ($e in $x) { $l.Add((Polos $e)) }
+        foreach ($e in $asli) { $l.Add((Polos $e)) }
         return ,($l.ToArray())
     }
-    return $x
+    if ($asli -is [System.Management.Automation.PSCustomObject]) {
+        $d = New-Object 'System.Collections.Generic.Dictionary[string,object]'
+        foreach ($p in @($x.PSObject.Properties | Where-Object { $_.MemberType -eq 'NoteProperty' })) { $d[$p.Name] = (Polos $p.Value) }
+        return $d
+    }
+    return [string]$asli
 }
 function JsonTulis($obj) {
     $obj = Polos $obj
