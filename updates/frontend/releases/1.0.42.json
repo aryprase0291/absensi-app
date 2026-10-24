@@ -1,0 +1,9 @@
+{
+  "version": "1.0.42",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Admin Panel > Data > Karyawan bebas absen mesin: master karyawan yang tidak wajib absen di mesin. Hari kerja tanpa scan (Alpa dari mesin) otomatis menjadi NF dan dihitung masuk.",
+    "Simbol NF kini berarti \"Bebas absen mesin (masuk)\": masuk hitungan Hadir di Data Mesin & dashboard, tidak lagi di kelompok \"Perlu cek\". Filter simbol Rekap punya pilihan NF."
+  ]
+}

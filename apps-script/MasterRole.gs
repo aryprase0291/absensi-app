@@ -99,6 +99,13 @@ function MASTER_ROLE_SEGARKAN() {
 
 /** Aksi `segarkan_master_role` (admin): dipanggil layar Master Role sesudah menyimpan. */
 function handleSegarkanMasterRole(data) {
+  // Master karyawan bebas absen berubah -> isi db_absen ikut berubah
+  // (NF <-> A). Rekap & indeks statistik harus dihitung ulang.
+  if (data && data.bebasBerubah) {
+    try { if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_(); } catch (e) { console.warn(e.message); }
+    try { if (typeof bersihkanIndeksDbAbsen === 'function') bersihkanIndeksDbAbsen(); } catch (e) { console.warn(e.message); }
+    return responseJSON({ result: 'success', message: 'Rekap akan dihitung ulang dengan data bebas absen terbaru.' });
+  }
   try {
     const h = MASTER_ROLE_SEGARKAN();
     return responseJSON({ result: 'success', message: 'Master role diterapkan (' + h.role + ' role, ' + h.lokasi + ' lokasi). Berlaku untuk request berikutnya; menu baru tampil setelah user login ulang.' });

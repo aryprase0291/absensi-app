@@ -50,7 +50,7 @@
 // =======================================================
 
 // V5: sumber kebenaran pindah ke Script Properties.
-const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V7';
+const KUNCI_IDX_DBABSEN = 'DBABSEN_IDX_V8'; // V8: NF (bebas absen mesin) dihitung hadir
 const KUNCI_REV_IDX_DBABSEN = 'DBABSEN_IDX_REVISION_V1';
 
 // Awalan properti penyimpan indeks. Dipakai juga untuk membersihkan
@@ -89,13 +89,17 @@ const IDX_BATAS_CACHE = 100 * 1024;
 //   ONL   Absen online         <- ditambahkan
 //
 // SENGAJA TIDAK termasuk: A/AC (Alpa), S (Sakit), C/CB (Cuti), O (Off),
-// NF (Tidak Absen sama sekali), dan EO (Extra Ordinary — artinya belum
+// dan EO (Extra Ordinary — artinya belum
 // dipastikan, jadi dibiarkan di luar sampai ada keputusan).
 //
 // Kalau daftar ini diubah lagi, WAJIB naikkan KUNCI_IDX_DBABSEN di atas —
 // kalau tidak, indeks lama tetap terpakai dengan aturan lama dan angkanya
 // tidak berubah walau kodenya sudah benar.
-const IDX_HADIR_SYMBOLS = ['H', 'I', 'T', 'TPC', 'PC', 'Si', 'So', 'TSi', 'TSo', 'SiSo', 'SiPC', 'DL', 'ONL'];
+//
+// NF (24 Okt 2026): dipakai master karyawan bebas absen mesin (tabel
+// karyawan_bebas_absen di Supabase) = MASUK tanpa scan. Mesin sendiri tidak
+// pernah mengeluarkan NF, jadi NF kini dihitung hadir.
+const IDX_HADIR_SYMBOLS = ['H', 'I', 'T', 'TPC', 'PC', 'Si', 'So', 'TSi', 'TSo', 'SiSo', 'SiPC', 'DL', 'ONL', 'NF'];
 
 
 // =======================================================

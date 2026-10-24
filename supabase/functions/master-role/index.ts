@@ -13,6 +13,9 @@
 //   hapus_role    {kode}       -> hapus role yang tidak dipakai (admin)
 //   simpan_lokasi {lokasi}     -> upsert satu lokasi            (admin)
 //   hapus_lokasi  {kode}       -> hapus lokasi yang tidak dipakai role (admin)
+//   bebas_semua                -> { bebas, karyawan }  master karyawan bebas absen mesin (admin)
+//   simpan_bebas  {bebas}      -> upsert + terapkan ulang ke db_absen (admin)
+//   hapus_bebas   {payroll}    -> hapus + kembalikan NF -> A (admin)
 // =====================================================================
 import { klienAdmin, jawab, CORS, rahasiaSinkronSah } from "../_bersama/util.ts";
 import { bacaToken } from "../_bersama/token.ts";
@@ -131,6 +134,52 @@ Deno.serve(async (req) => {
       const { error } = await db.from("master_lokasi").delete().eq("kode", kode);
       if (error) throw error;
       return jawab({ result: "success" });
+    }
+
+    // --- MASTER KARYAWAN BEBAS ABSEN MESIN -------------------------------
+    if (aksi === "bebas_semua") {
+      const [b, k] = await Promise.all([
+        db.from("karyawan_bebas_absen").select("*").order("nama"),
+        db.from("karyawan").select("id,nama,no_payroll,lokasi,divisi").order("nama"),
+      ]);
+      if (b.error) throw b.error;
+      if (k.error) throw k.error;
+      // Jumlah hari NF per payroll (yang sudah diterapkan di db_absen).
+      const hariNf: Record<string, number> = {};
+      await Promise.all((b.data || []).map(async (x) => {
+        const { count } = await db.from("db_absen").select("nik", { count: "exact", head: true })
+          .eq("symbol", "NF").eq("nik", String(x.payroll));
+        hariNf[String(x.payroll).toUpperCase()] = count || 0;
+      }));
+      return jawab({ result: "success", bebas: b.data || [], karyawan: k.data || [], hariNf });
+    }
+
+    if (aksi === "simpan_bebas") {
+      const x = body.bebas || {};
+      const payroll = teks(x.payroll, 40).toUpperCase();
+      if (!payroll) return jawab({ result: "error", message: "Payroll wajib diisi." });
+      const tgl = (v: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
+      const mulai = tgl(x.mulai), selesai = tgl(x.selesai);
+      if (mulai && selesai && selesai < mulai) return jawab({ result: "error", message: "Tanggal selesai lebih awal dari tanggal mulai." });
+      const baris = {
+        payroll, nama: teks(x.nama, 120), mulai, selesai, simbol: "NF",
+        keterangan: teks(x.keterangan, 300), aktif: x.aktif !== false,
+        diperbarui_pada: new Date().toISOString(), diperbarui_oleh: oleh,
+      };
+      const { error } = await db.from("karyawan_bebas_absen").upsert(baris, { onConflict: "payroll" });
+      if (error) throw error;
+      const { data: hasil, error: e2 } = await db.rpc("terapkan_bebas_absen", { p_nik: payroll });
+      if (e2) throw e2;
+      return jawab({ result: "success", bebas: baris, terapkan: hasil });
+    }
+
+    if (aksi === "hapus_bebas") {
+      const payroll = teks(body.payroll, 40).toUpperCase();
+      const { error } = await db.from("karyawan_bebas_absen").delete().eq("payroll", payroll);
+      if (error) throw error;
+      const { data: hasil, error: e2 } = await db.rpc("terapkan_bebas_absen", { p_nik: payroll });
+      if (e2) throw e2;
+      return jawab({ result: "success", terapkan: hasil });
     }
 
     return jawab({ result: "error", message: "Aksi tidak dikenal: " + aksi });

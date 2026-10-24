@@ -1,7 +1,8 @@
 import { klienAdmin, jawab, CORS, rahasiaSinkronSah } from "../_bersama/util.ts";
 import { bacaToken } from "../_bersama/token.ts";
 
-const SIMBOL_HADIR = ["H","I","T","TPC","PC","Si","So","TSi","TSo","SiSo","SiPC","DL","ONL"];
+// NF = karyawan bebas absen mesin (tabel karyawan_bebas_absen) -> dihitung masuk.
+const SIMBOL_HADIR = ["H","I","T","TPC","PC","Si","So","TSi","TSo","SiSo","SiPC","DL","ONL","NF"];
 const SIMBOL_TANPA_SCAN_MASUK = ["Si","TSi","SiPC","SiSo"];
 const SIMBOL_TANPA_SCAN_PULANG = ["So","TSo","SiSo"];
 const BATAS_BARIS_POTONGAN = 5000;

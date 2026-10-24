@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.41";
+const APP_VERSION = "1.0.42";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -6147,7 +6147,8 @@ function handleGetRekapAdmin(data) {
     // minggu tetap menunjukkan jumlah hadir SELURUH periode. Sejak
     // rentangnya turun ke server, angka ini ikut rentang seperti yang
     // lain.
-    if (['H', 'ONL', 'HADIR'].includes(sym)) {
+    // NF = karyawan bebas absen mesin (master karyawan_bebas_absen) -> masuk.
+    if (['H', 'ONL', 'HADIR', 'NF'].includes(sym)) {
       empSummary[empKey].hadir++;
     }
 

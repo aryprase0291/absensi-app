@@ -1699,6 +1699,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                     ))}
                     <option value="Si">Si - Tidak Absen Masuk</option>
                     <option value="So">So - Tidak Absen Pulang</option>
+                    <option value="NF">NF - Bebas absen mesin (masuk)</option>
                   </select>
                 </div>
               )}

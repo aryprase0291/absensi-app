@@ -1,7 +1,17 @@
 {
   "frontend": {
-    "currentVersion": "1.0.41",
+    "currentVersion": "1.0.42",
     "history": [
+      {
+        "file": "1.0.42.json",
+        "version": "1.0.42",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Admin Panel > Data > Karyawan bebas absen mesin: master karyawan yang tidak wajib absen di mesin. Hari kerja tanpa scan (Alpa dari mesin) otomatis menjadi NF dan dihitung masuk.",
+          "Simbol NF kini berarti \"Bebas absen mesin (masuk)\": masuk hitungan Hadir di Data Mesin & dashboard, tidak lagi di kelompok \"Perlu cek\". Filter simbol Rekap punya pilihan NF."
+        ]
+      },
       {
         "file": "1.0.41.json",
         "version": "1.0.41",
@@ -308,8 +318,18 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.41",
+    "currentVersion": "1.0.42",
     "history": [
+      {
+        "file": "1.0.42.json",
+        "version": "1.0.42",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Supabase: tabel karyawan_bebas_absen + trigger db_absen — baris hari kerja tanpa scan bertanda A milik karyawan di master otomatis menjadi NF, termasuk untuk impor berikutnya. Diisi 7 karyawan (DHENY SANGGARA, ANDIKA, BAMBANG ASTONO, SUKARI, ISNUL FAUZIAH, ANDY HERMAWAN, SETIAWAN RUBIONO).",
+          "Code.gs (rekap) & StatsIndex.gs: NF dihitung hadir (indeks statistik naik ke V8). Aksi segarkan_master_role dengan bebasBerubah membuang simpanan rekap & indeks."
+        ]
+      },
       {
         "file": "1.0.41.json",
         "version": "1.0.41",

@@ -3,7 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { Send, Mail, Paperclip, SwitchCamera, RotateCcw, ChevronLeft, ShieldCheck, CalendarRange, LocateFixed, NotebookPen, CircleAlert, Layers, List, EyeOff, Lock, Shield, Sparkles,
-  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp, Menu, ArrowUp } from 'lucide-react';
+  Camera, MapPin, CheckCircle, LogOut, LogIn, User, Activity, Clock, Key, Star, Calendar, History, Trash2, Edit, CreditCard, PieChart, Building, FileText, AlertTriangle, X, File as FileIcon, Filter, CheckSquare, Users, Eye, ScanFace, Fingerprint, Smartphone, ChevronDown, ChevronRight, Search, MessageSquare, MessageSquareText, Upload, Check, Info, CalendarCheck, Printer, FileSpreadsheet, Loader2, CalendarDays, CloudSun, Sun, Moon, Cloud, CloudRain, CloudLightning, Snowflake, KeyRound, ScanLine, RefreshCcw, UserRoundPlus, UsersRound, SlidersHorizontal, Database, Megaphone, ClipboardList, HeartPulse, Timer, PlaneTakeoff, Palmtree, ArrowLeftRight, Coffee, ChartColumn, FileUp, Menu, ArrowUp, UserCheck } from 'lucide-react';
 import { SCRIPT_URL, TIMEOUT_DURATION, TIMEOUT_LABEL, BOARD_ABSENSI_URL } from './config/constants';
 import { loginLewatSupabase } from './utils/loginSupabase';
 import LogLoginScreen from './screens/LogLoginScreen';
@@ -16,6 +16,7 @@ import DashboardKerani from './screens/DashboardKerani';
 import GpsGateScreen from './screens/GpsGateScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import MasterRolePanel, { ambilDaftarRoleMaster } from './screens/MasterRolePanel';
+import BebasAbsenPanel from './screens/BebasAbsenPanel';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
 import ImportNotifier from './components/ImportNotifier';
@@ -8185,6 +8186,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         { view: 'analysis', label: 'Analisa data', ikon: ChartColumn },
         { tab: 'master', label: 'Master data', ikon: Database },
         { tab: 'import_db', label: 'Import data mesin absen', ikon: FileUp },
+        { tab: 'bebas_absen', label: 'Karyawan bebas absen mesin', ikon: UserCheck },
         { tab: 'geomaster', label: 'Master lokasi geofence', ikon: MapPin },
         { tab: 'geofence', label: 'Geofence absen online', ikon: LocateFixed },
         { tab: 'period', label: 'Periode absensi', ikon: CalendarRange },
@@ -8259,6 +8261,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'perangkat': return 'Perangkat & Sesi Login';
           case 'wajah': return 'Wajah Karyawan';
           case 'master_role': return 'Master Role & Lokasi Akses';
+          case 'bebas_absen': return 'Karyawan Bebas Absen Mesin';
           default: return 'Admin Panel';
       }
   };
@@ -8757,6 +8760,10 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           Yang benar-benar menjaga isinya adalah izin berbagi di Google Drive —
           spreadsheet itu harus dibagikan hanya ke akun admin, bukan
           "siapa saja yang memiliki link". */}
+      {activeTab === 'bebas_absen' && user.role === 'admin' && (
+        <BebasAbsenPanel user={user} fetchApi={fetchApi} />
+      )}
+
       {activeTab === 'master_role' && user.role === 'admin' && (
         <MasterRolePanel user={user} fetchApi={fetchApi} />
       )}
@@ -10151,9 +10158,9 @@ const HARI_PENDEK = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
 // diklik — kalau keduanya punya daftar kode sendiri-sendiri, cepat atau
 // lambat angka yang tertulis tidak akan cocok dengan hari yang menyala.
 const GRUP_RINGKAS = {
-  GRUP_HADIR: { label: 'Hadir',     kode: ['H', 'T', 'TPC', 'PC', 'TSi', 'TSo', 'Si', 'So', 'SiSo', 'SiPC', 'ONL'], warna: 'text-slate-900',  aktif: 'bg-slate-900 text-white' },
+  GRUP_HADIR: { label: 'Hadir',     kode: ['H', 'T', 'TPC', 'PC', 'TSi', 'TSo', 'Si', 'So', 'SiSo', 'SiPC', 'ONL', 'NF'], warna: 'text-slate-900',  aktif: 'bg-slate-900 text-white' },
   GRUP_TELAT: { label: 'Telat',     kode: ['T', 'TPC', 'TSi', 'TSo', 'SiPC'],                                warna: 'text-amber-600',  aktif: 'bg-amber-500 text-white' },
-  GRUP_PERLU: { label: 'Perlu cek', kode: ['Si', 'So', 'SiSo', 'A', 'AC', 'NF'],                             warna: 'text-rose-600',   aktif: 'bg-rose-600 text-white' },
+  GRUP_PERLU: { label: 'Perlu cek', kode: ['Si', 'So', 'SiSo', 'A', 'AC'],                                   warna: 'text-rose-600',   aktif: 'bg-rose-600 text-white' },
   GRUP_IZIN:  { label: 'Izin/cuti', kode: ['I', 'S', 'C', 'CB', 'DL', 'EO'],                                 warna: 'text-slate-900',  aktif: 'bg-teal-600 text-white' },
 };
 
@@ -10262,7 +10269,7 @@ function DbAbsenScreen({ user, setView }) {
       'DL': 'Dinas Luar', 'ONL': 'Absen online', 'STB': 'Standby', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
       'TSi': 'Telat & No Scan In', 'SiSo': 'Tdk Absen IN & OUT',
       'SiPC': 'Tdk Absen IN & Pulang Cepat', 'AC': 'Alpa (Lebih Cuti)',
-      'EO': 'Extra Ordinary', 'NF': 'Tidak Absen', 'BLM': 'Belum Absen'
+      'EO': 'Extra Ordinary', 'NF': 'Bebas absen mesin (masuk)', 'BLM': 'Belum Absen'
   };
   
   const availableStatusOptions = [...new Set(list.flatMap(item => [item.symbol, ...(Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0 ? ['ONL'] : [])]))]
@@ -10377,7 +10384,7 @@ function DbAbsenScreen({ user, setView }) {
     // Dashboard lewat handleStatClick, jadi mengubah isinya akan diam-diam
     // mengubah arti tombol di layar lain.
     if (filterStatus === 'HADIR_ALL') {
-      return ['H', 'I', 'T', 'TSi', 'TSo', 'TPC', 'SiPC', 'So', 'Si', 'PC', 'ONL'].includes(item.symbol);
+      return ['H', 'I', 'T', 'TSi', 'TSo', 'TPC', 'SiPC', 'So', 'Si', 'PC', 'ONL', 'NF'].includes(item.symbol);
     }
     return item.symbol === filterStatus;
   };
