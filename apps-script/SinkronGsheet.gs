@@ -330,6 +330,10 @@ function _sgJalankan_(asal, oleh) {
         String(a.payroll || '').localeCompare(String(b.payroll || '')) ||
         String(a.tanggalYMD).localeCompare(String(b.tanggalYMD));
     });
+    // Karyawan harian: jumlah hari MASUK di periode (hari ada scan, atau
+    // DL / absen online / NF tanpa scan). Ditulis ke kolom HARI KERJA riil
+    // ABSENSI-email oleh _sgPindahAbsensi_.
+    const hariMasukHarian = _sgHariMasukHarian_(rec);
     t0 = Date.now();
     const hasil = _sgTulis_(cfg, rec);
     tahap.db1 = Date.now() - t0;
@@ -341,7 +345,7 @@ function _sgJalankan_(asal, oleh) {
     // supaya ABSENSI-email & tab ABSEN-EMAIL langsung ikut data terbaru.
     try {
       t0 = Date.now();
-      const pa = _sgPindahAbsensi_(hasil.ss);
+      const pa = _sgPindahAbsensi_(hasil.ss, { hariMasukHarian: hariMasukHarian });
       tahap.absensi = Date.now() - t0;
       st.sinkronAbsensi = pa;
       st.pesan += pa.dilewati ? ' Sinkron Absensi dilewati: ' + pa.dilewati : ' Sinkron Absensi: ' + pa.pesan;
@@ -619,7 +623,38 @@ function _saIsRed_(hex) {
  * Sama dengan pindahSemua() di file DB_ABSEN. Mengembalikan ringkasan;
  * { dilewati } kalau file tidak punya sheet ABSENSI / ABSENSI-email.
  */
-function _sgPindahAbsensi_(ss) {
+// ================================================================
+// KARYAWAN HARIAN (24 Okt 2026)
+//
+// Karyawan harian (master karyawan_harian di Supabase, mis. OB Lapangan)
+// dibayar per hari masuk. Rumus ABSENSI menghitung HARI KERJA riil =
+// HARI KERJA periode - ketidakhadiran, sehingga yang masuk 16 hari
+// terbaca 15 (HARI KERJA periode 25, padahal mesin menjadwalkan 26 hari).
+// Untuk mereka kolom HARI KERJA riil ABSENSI-email (kolom K) diisi
+// jumlah hari masuk sebenarnya.
+// ================================================================
+const SA_KOL_HARI_KERJA_RIIL = 11; // K di ABSENSI-email
+const _SG_MASUK_TANPA_SCAN_ = ['DL', 'ONL', 'NF'];
+
+function _sgHariMasukHarian_(rec) {
+  const set = (typeof payrollHarian_ === 'function') ? payrollHarian_() : {};
+  if (!Object.keys(set).length) return {};
+  const ada = function (x) { const t = String(x == null ? '' : x).trim(); return t !== '' && t !== '-'; };
+  const hari = {};
+  (rec || []).forEach(function (r) {
+    const p = String(r.payroll || '').trim().toUpperCase();
+    if (!set[p]) return;
+    if (hari[p] === undefined) hari[p] = {};
+    const masuk = ada(r.masuk) || ada(r.pulang) || _SG_MASUK_TANPA_SCAN_.indexOf(String(r.id2 || '').toUpperCase()) !== -1;
+    if (masuk) hari[p][r.tanggalYMD] = true;
+  });
+  const hasil = {};
+  Object.keys(set).forEach(function (p) { hasil[p] = hari[p] ? Object.keys(hari[p]).length : 0; });
+  return hasil;
+}
+
+function _sgPindahAbsensi_(ss, opsi) {
+  const hariMasukHarian = (opsi && opsi.hariMasukHarian) || {};
   const src = ss.getSheetByName(SA_SRC);
   const dst = ss.getSheetByName(SA_DST);
   if (!src || !dst) return { ok: true, dilewati: 'sheet "' + (!src ? SA_SRC : SA_DST) + '" tidak ada.' };
@@ -646,7 +681,7 @@ function _sgPindahAbsensi_(ss) {
   const dRange = dst.getRange(startRow, 1, nRows, nCols);
   const dForm = dRange.getFormulas();
   const nameBg = src.getRange(startRow, 1 + SA_OFFSET + 4, nRows, 1).getBackgrounds();
-  let redRows = 0, filledO = 0, skippedF = 0;
+  let redRows = 0, filledO = 0, skippedF = 0, harianDiisi = 0;
   const out = [];
   const tzTm = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Jakarta';
   const ymdHari = [];
@@ -656,6 +691,8 @@ function _sgPindahAbsensi_(ss) {
     const isEmployee = String(sVals[r][2]).trim() !== '';
     const isRed = isEmployee && _saIsRed_(nameBg[r][0]);
     if (isRed) redRows++;
+    const payrollBaris = isEmployee ? String(sVals[r][2]).trim().toUpperCase() : '';
+    const hariHarian = payrollBaris && Object.prototype.hasOwnProperty.call(hariMasukHarian, payrollBaris) ? hariMasukHarian[payrollBaris] : null;
     // sVals kolom 0 = ABSENSI kolom D, jadi TGL MASUK (J) = indeks 6.
     const masukKerja = isEmployee ? _sgYmdTglMasuk_(sVals[r][SA_SRC_TGLMASUK_COL - 1 - SA_OFFSET], tzTm) : '';
     const o = [];
@@ -664,6 +701,7 @@ function _sgPindahAbsensi_(ss) {
       const isAbsen = col >= SA_DATE_START && (col - SA_DATE_START) % 2 === 0;
       const diLuarPeriode = col >= SA_DATE_START && Math.floor((col - SA_DATE_START) / 2) >= nHari;
       if (isRed && (col === 10 || col === 11)) { o.push(''); continue; }
+      if (hariHarian !== null && col === SA_KOL_HARI_KERJA_RIIL && !dForm[r][c]) { o.push(hariHarian); harianDiisi++; continue; }
       if (diLuarPeriode) { if (dForm[r][c]) skippedF++; o.push(dForm[r][c] || ''); continue; }
       if (isRed && isAbsen) { o.push('A'); continue; }
       if (dForm[r][c]) { o.push(dForm[r][c]); skippedF++; continue; }
@@ -682,7 +720,8 @@ function _sgPindahAbsensi_(ss) {
   let ringkasan = { diisi: 0 };
   try { ringkasan = _saIsiRingkasan_(dst, startRow, endRow); } catch (eR) { console.warn('Isi rumus ringkasan gagal: ' + eR.message); }
   const pesan = 'periode ' + p.label + ' (' + nHari + ' hari), baris ' + startRow + '-' + endRow + ' tersalin ke ABSENSI-email.' +
-    (ringkasan.diisi ? ' Rumus ringkasan (DL/CT/SK/EO/A…TOTAL) diisi di ' + ringkasan.diisi + ' baris baru.' : '');
+    (ringkasan.diisi ? ' Rumus ringkasan (DL/CT/SK/EO/A…TOTAL) diisi di ' + ringkasan.diisi + ' baris baru.' : '') +
+    (harianDiisi ? ' HARI KERJA ' + harianDiisi + ' karyawan harian = jumlah hari masuk.' : '');
   _saToast_(ss, pesan, 'Sinkron absensi selesai');
   return { ok: true, pesan: pesan, periode: p.label, baris: nRows, diisiO: filledO, namaMerah: redRows, rumusDilewati: skippedF };
 }

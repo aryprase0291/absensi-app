@@ -8186,7 +8186,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         { view: 'analysis', label: 'Analisa data', ikon: ChartColumn },
         { tab: 'master', label: 'Master data', ikon: Database },
         { tab: 'import_db', label: 'Import data mesin absen', ikon: FileUp },
-        { tab: 'bebas_absen', label: 'Karyawan bebas absen mesin', ikon: UserCheck },
+        { tab: 'bebas_absen', label: 'Bebas absen & karyawan harian', ikon: UserCheck },
         { tab: 'geomaster', label: 'Master lokasi geofence', ikon: MapPin },
         { tab: 'geofence', label: 'Geofence absen online', ikon: LocateFixed },
         { tab: 'period', label: 'Periode absensi', ikon: CalendarRange },
@@ -8261,7 +8261,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'perangkat': return 'Perangkat & Sesi Login';
           case 'wajah': return 'Wajah Karyawan';
           case 'master_role': return 'Master Role & Lokasi Akses';
-          case 'bebas_absen': return 'Karyawan Bebas Absen Mesin';
+          case 'bebas_absen': return 'Bebas Absen Mesin & Karyawan Harian';
           default: return 'Admin Panel';
       }
   };

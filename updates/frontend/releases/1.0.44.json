@@ -1,0 +1,8 @@
+{
+  "version": "1.0.44",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Admin Panel > Data > Bebas absen & karyawan harian: daftar Karyawan harian (MOH. RIZAL 585, ROCKY ADAM FARISI 587, ABI KELUT WIBOWO 670). HARI KERJA mereka di file DB_ABSEN = jumlah hari masuk."
+  ]
+}

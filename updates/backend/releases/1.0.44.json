@@ -1,0 +1,9 @@
+{
+  "version": "1.0.44",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Supabase: tabel karyawan_harian. Edge master-role: aksi simpan_harian/hapus_harian; aksi semua membawa daftar harian.",
+    "SinkronGsheet.gs: untuk karyawan harian, kolom HARI KERJA riil (K) ABSENSI-email diisi jumlah hari masuk periode (hari ada scan, atau DL/ONL/NF). MasterRole.gs menyimpan daftar harian; segarkan_master_role {harianBerubah} menjadwalkan sinkron ulang."
+  ]
+}

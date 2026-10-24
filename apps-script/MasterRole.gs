@@ -68,6 +68,13 @@ function peranEfektif_(kodeRole, lokasiUser) {
   return { kode: kode, nama: r.nama, tingkat: r.tingkat, cakupan: cakupan, menu: r.menu || [], terdaftar: true };
 }
 
+/** Payroll karyawan harian (huruf besar) -> true. Kosong bila master belum disegarkan. */
+function payrollHarian_() {
+  const set = {};
+  (_mrSimpanan_().harian || []).forEach(function (p) { set[String(p).toUpperCase()] = true; });
+  return set;
+}
+
 /** Tingkat dari kode role (untuk role karyawan LAIN yang dibaca dari sheet). */
 function tingkatRole_(kodeRole) {
   return peranEfektif_(kodeRole, '').tingkat;
@@ -90,7 +97,9 @@ function MASTER_ROLE_SEGARKAN() {
     alias[baku] = baku;
     (l.alias || []).forEach(function (a) { alias[String(a).trim().toLowerCase()] = baku; });
   });
-  const isi = { roles: roles, alias: alias, waktu: new Date().getTime() };
+  // Karyawan harian (tabel karyawan_harian): HARI KERJA = jumlah hari masuk. Dipakai SinkronGsheet.gs.
+  const harian = (j.harian || []).map(function (p) { return String(p).trim().toUpperCase(); }).filter(Boolean);
+  const isi = { roles: roles, alias: alias, harian: harian, waktu: new Date().getTime() };
   PropertiesService.getScriptProperties().setProperty(MR_PROP, JSON.stringify(isi));
   _mrMemo_ = isi;
   Logger.log('Master role tersimpan: ' + Object.keys(roles).length + ' role, ' + Object.keys(alias).length + ' alias lokasi.');
@@ -101,6 +110,12 @@ function MASTER_ROLE_SEGARKAN() {
 function handleSegarkanMasterRole(data) {
   // Master karyawan bebas absen berubah -> isi db_absen ikut berubah
   // (NF <-> A). Rekap & indeks statistik harus dihitung ulang.
+  // Master karyawan harian berubah -> simpanan disegarkan lalu GSheet disinkron ulang.
+  if (data && data.harianBerubah) {
+    try { MASTER_ROLE_SEGARKAN(); } catch (e) { return responseJSON({ result: 'error', message: 'Gagal menyegarkan master: ' + e.message }); }
+    try { if (typeof sinkronGsheetJadwalkan_ === 'function') sinkronGsheetJadwalkan_(); } catch (e) { console.warn(e.message); }
+    return responseJSON({ result: 'success', message: 'Daftar karyawan harian diterapkan; GSheet disinkron ulang sebentar lagi.' });
+  }
   if (data && data.bebasBerubah) {
     try { if (typeof rekapCacheBatalkan_ === 'function') rekapCacheBatalkan_(); } catch (e) { console.warn(e.message); }
     try { if (typeof bersihkanIndeksDbAbsen === 'function') bersihkanIndeksDbAbsen(); } catch (e) { console.warn(e.message); }

@@ -16,6 +16,8 @@
 //   bebas_semua                -> { bebas, karyawan }  master karyawan bebas absen mesin (admin)
 //   simpan_bebas  {bebas}      -> upsert + terapkan ulang ke db_absen (admin)
 //   hapus_bebas   {payroll}    -> hapus + kembalikan NF -> A (admin)
+//   simpan_harian {harian}     -> upsert karyawan harian (admin)
+//   hapus_harian  {payroll}    -> hapus karyawan harian (admin)
 // =====================================================================
 import { klienAdmin, jawab, CORS, rahasiaSinkronSah } from "../_bersama/util.ts";
 import { bacaToken } from "../_bersama/token.ts";
@@ -49,10 +51,11 @@ Deno.serve(async (req) => {
     }
 
     if (aksi === "semua") {
-      const [r, l, k] = await Promise.all([
+      const [r, l, k, h] = await Promise.all([
         db.from("master_role").select("*").order("urut").order("kode"),
         db.from("master_lokasi").select("*").order("urut").order("kode"),
         db.from("karyawan").select("role,lokasi"),
+        db.from("karyawan_harian").select("payroll").eq("aktif", true),
       ]);
       if (r.error) throw r.error;
       if (l.error) throw l.error;
@@ -65,7 +68,8 @@ Deno.serve(async (req) => {
         const lok = String(x.lokasi || "").trim() || "(kosong)";
         lokasiUser[lok] = (lokasiUser[lok] || 0) + 1;
       });
-      return jawab({ result: "success", roles: r.data || [], lokasi: l.data || [], pemakai, lokasiUser, tingkat: TINGKAT, menu: MENU });
+      const harian = (h.data || []).map((x) => String(x.payroll).toUpperCase());
+      return jawab({ result: "success", roles: r.data || [], lokasi: l.data || [], pemakai, lokasiUser, tingkat: TINGKAT, menu: MENU, harian });
     }
 
     if (aksi === "simpan_role") {
@@ -138,10 +142,12 @@ Deno.serve(async (req) => {
 
     // --- MASTER KARYAWAN BEBAS ABSEN MESIN -------------------------------
     if (aksi === "bebas_semua") {
-      const [b, k] = await Promise.all([
+      const [b, k, h] = await Promise.all([
         db.from("karyawan_bebas_absen").select("*").order("nama"),
         db.from("karyawan").select("id,nama,no_payroll,lokasi,divisi").order("nama"),
+        db.from("karyawan_harian").select("*").order("nama"),
       ]);
+      if (h.error) throw h.error;
       if (b.error) throw b.error;
       if (k.error) throw k.error;
       // Jumlah hari NF per payroll (yang sudah diterapkan di db_absen).
@@ -151,7 +157,7 @@ Deno.serve(async (req) => {
           .eq("symbol", "NF").eq("nik", String(x.payroll));
         hariNf[String(x.payroll).toUpperCase()] = count || 0;
       }));
-      return jawab({ result: "success", bebas: b.data || [], karyawan: k.data || [], hariNf });
+      return jawab({ result: "success", bebas: b.data || [], karyawan: k.data || [], hariNf, harian: h.data || [] });
     }
 
     if (aksi === "simpan_bebas") {
@@ -180,6 +186,27 @@ Deno.serve(async (req) => {
       const { data: hasil, error: e2 } = await db.rpc("terapkan_bebas_absen", { p_nik: payroll });
       if (e2) throw e2;
       return jawab({ result: "success", terapkan: hasil });
+    }
+
+    // --- MASTER KARYAWAN HARIAN -------------------------------------------
+    if (aksi === "simpan_harian") {
+      const x = body.harian || {};
+      const payroll = teks(x.payroll, 40).toUpperCase();
+      if (!payroll) return jawab({ result: "error", message: "Payroll wajib diisi." });
+      const baris = {
+        payroll, nama: teks(x.nama, 120), keterangan: teks(x.keterangan, 300), aktif: x.aktif !== false,
+        diperbarui_pada: new Date().toISOString(), diperbarui_oleh: oleh,
+      };
+      const { error } = await db.from("karyawan_harian").upsert(baris, { onConflict: "payroll" });
+      if (error) throw error;
+      return jawab({ result: "success", harian: baris });
+    }
+
+    if (aksi === "hapus_harian") {
+      const payroll = teks(body.payroll, 40).toUpperCase();
+      const { error } = await db.from("karyawan_harian").delete().eq("payroll", payroll);
+      if (error) throw error;
+      return jawab({ result: "success" });
     }
 
     return jawab({ result: "error", message: "Aksi tidak dikenal: " + aksi });
