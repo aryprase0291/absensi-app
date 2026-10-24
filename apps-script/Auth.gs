@@ -242,6 +242,8 @@ const ACTION_ROLES = {
   'get_geofence_config': ['admin', 'hrd'],
   'tambah_announcement': ['admin', 'hrd'],
   'update_remark_status': ['admin', 'hrd'],
+  // Master role (MasterRole.gs): terapkan perubahan dari layar Master Role.
+  'segarkan_master_role': ['admin'],
   'delete_remark': ['admin', 'hrd'],
   'update_status_absen': ['admin', 'hrd'],
   'get_analysis_data': ['admin', 'hrd'],
@@ -278,12 +280,13 @@ const ACTION_ROLES = {
   'import_db_absen': ['admin'],
 
   // --- Rekap & Koreksi Admin (GSheet DATABASE ABSENSI) ---
-  'get_koreksi_list': ['admin'],
+  // HRD boleh MEMBACA (tersaring cakupan lokasi di doPost); menulis tetap admin.
+  'get_koreksi_list': ['admin', 'hrd'],
   'save_koreksi': ['admin'],
   'delete_koreksi': ['admin'],
-  'get_rekap_admin': ['admin'],
+  'get_rekap_admin': ['admin', 'hrd'],
   // Sinkron Tabel Data ke GSheet DB ABSEN (SinkronGsheet.gs)
-  'get_sinkron_gsheet': ['admin'],
+  'get_sinkron_gsheet': ['admin', 'hrd'],
   'set_sinkron_gsheet': ['admin'],
   'sinkron_gsheet': ['admin'],
 
@@ -330,6 +333,17 @@ function authorizeRequest(data) {
   if (!auth) {
     return { ok: false, message: 'SESI_HABIS' };
   }
+
+  // MASTER ROLE (MasterRole.gs): kode role di token -> TINGKAT untuk
+  // aturan keamanan, dan cakupan lokasi (HRD SBY -> Surabaya). Kode yang
+  // tidak terdaftar dipakai apa adanya — perilaku sebelum master ada.
+  const peran = (typeof peranEfektif_ === 'function')
+    ? peranEfektif_(auth.r, auth.l)
+    : { kode: String(auth.r || '').trim().toLowerCase(), tingkat: String(auth.r || '').trim().toLowerCase(), cakupan: auth.l, menu: [] };
+  auth.rk = peran.kode;          // kode asli (mis. hrd_sby)
+  auth.r = peran.tingkat;        // tingkat (mis. hrd)
+  auth.l = peran.cakupan;        // cakupan lokasi (mis. Surabaya)
+  auth.menu = peran.menu || [];
 
   const role = String(auth.r || '').trim().toLowerCase();
   if (rule !== '*' && rule.indexOf(role) === -1) {

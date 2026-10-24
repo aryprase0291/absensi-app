@@ -449,6 +449,12 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const pageSize = 50;
 
   const isAdmin = user && (String(user.role).toLowerCase() === 'admin');
+  // MASTER ROLE (24 Okt 2026): HRD boleh MELIHAT rekap — server menyaring
+  // datanya ke cakupan lokasinya (mis. HRD SBY -> Surabaya). Menulis
+  // (koreksi, sinkron GSheet, setelan) tetap khusus admin (`isAdmin`).
+  const menuRekap = !user || !Array.isArray(user.menuAkses) || user.menuAkses.length === 0 || user.menuAkses.includes('rekap');
+  const bolehLihat = isAdmin || (user && String(user.role).toLowerCase() === 'hrd' && menuRekap);
+  const cakupanLokasi = (user && (user.lokasiAkses || user.lokasi)) || 'All';
 
   // Reset pagination on filter / search change
   useEffect(() => {
@@ -677,7 +683,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // sama sekali — hanya mengisi simpanan (browser & server).
   const sudahAmbilDiMuka = useRef(false);
   useEffect(() => {
-    if (!isAdmin || sudahAmbilDiMuka.current || loading || !periodeList.length) return undefined;
+    if (!bolehLihat || sudahAmbilDiMuka.current || loading || !periodeList.length) return undefined;
     sudahAmbilDiMuka.current = true;
     let batal = false;
     const hi = hariIniServer || hariIniYMD();
@@ -696,7 +702,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     })();
     return () => { batal = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, loading, periodeList, hariIniServer, doApiCall]);
+  }, [bolehLihat, loading, periodeList, hariIniServer, doApiCall]);
 
   // Muat ulang atas permintaan (tombol Refresh, tombol coba lagi).
   //
@@ -716,7 +722,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // browser. Ditunda 400 ms supaya mengetik tanggal tidak menembakkan
   // satu permintaan per ketikan.
   useEffect(() => {
-    if (!isAdmin) return undefined;
+    if (!bolehLihat) return undefined;
     // Dua tanggal dikosongkan -> kembali ke hari ini (bukan seluruh riwayat).
     if (!filterTglMulai && !filterTglSelesai) {
       const hi = hariIniYMD();
@@ -733,7 +739,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       fetchData(filterTglMulai, filterTglSelesai);
     }, 400);
     return () => clearTimeout(jeda);
-  }, [isAdmin, fetchData, filterTglMulai, filterTglSelesai]);
+  }, [bolehLihat, fetchData, filterTglMulai, filterTglSelesai]);
 
   // Periode yang cocok dengan rentang tanggal saat ini (kalau ada). Rentang
   // tanggal tetap satu-satunya sumber kebenaran; pilihan periode hanya
@@ -1373,6 +1379,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         keterangan: ''
       });
     }
+    if (!isAdmin) { alert('Koreksi hanya bisa dibuat atau diubah oleh Admin. HRD dapat melihat saja.'); return; }
     setShowKoreksiModal(true);
   };
 
@@ -1427,8 +1434,9 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         keterangan: ''
       });
     }
+    if (!isAdmin) { alert('Koreksi hanya bisa dibuat atau diubah oleh Admin. HRD dapat melihat saja.'); return; }
     setShowKoreksiModal(true);
-  }, [cariKoreksiCocok]);
+  }, [cariKoreksiCocok, isAdmin]);
 
   // Submit Koreksi
   const handleSaveKoreksi = async (e) => {
@@ -1485,6 +1493,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
   // Delete Koreksi
   const handleDeleteKoreksi = async (id) => {
+    if (!isAdmin) return;
     if (!window.confirm('Yakin ingin menghapus data koreksi ini?')) return;
     setDeletingId(id);
     try {
@@ -1617,13 +1626,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     XLSX.writeFile(wb, filename);
   };
 
-  if (!isAdmin) {
+  if (!bolehLihat) {
     return (
       <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
         <ShieldAlert className="w-16 h-16 text-rose-500 mb-4" />
         <h2 className="text-2xl font-black mb-2">Akses Terbatas</h2>
         <p className="text-slate-400 text-sm max-w-sm mb-6">
-          Menu Rekapitulasi, Koreksi, dan Export Excel hanya dapat diakses oleh Administrator.
+          Menu Rekapitulasi, Koreksi, dan Export Excel hanya dapat diakses oleh Administrator dan HRD.
         </p>
         <button
           onClick={() => setView('dashboard')}
@@ -1755,7 +1764,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[9px] leading-none font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-1.5 py-0.5 rounded-full border border-cyan-400/20">Admin Area</span>
+                <span className="text-[9px] leading-none font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-1.5 py-0.5 rounded-full border border-cyan-400/20">{isAdmin ? 'Admin Area' : 'HRD · Lihat saja'}</span>
+                {!isAdmin && <span className="text-[9px] leading-none font-bold text-amber-300 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20">Lokasi: {String(cakupanLokasi).toLowerCase() === 'all' ? 'Semua' : cakupanLokasi}</span>}
                 <span className="hidden sm:inline text-[9px] leading-none text-slate-400 font-mono">DATABASE ABSENSI</span>
               </div>
               <h1 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight mt-0.5 truncate">
@@ -1849,7 +1859,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <span className="hidden sm:inline">Tabel Data (DB_FIX)</span>
           </button>
 
-          <button
+          {isAdmin && <button
             onClick={() => setActiveTab('gsheet')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'gsheet'
@@ -1860,7 +1870,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <UploadCloud className="w-4 h-4" />
             <span className="sm:hidden">GSheet</span>
             <span className="hidden sm:inline">Sinkron GSheet</span>
-          </button>
+          </button>}
 
           <button
             onClick={() => setActiveTab('absenemail')}
@@ -2569,7 +2579,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
           <AbsensiEmailPanel doApiCall={doApiCall} onBukaSetelan={() => setActiveTab('gsheet')} />
         )}
 
-        {activeTab === 'gsheet' && (
+        {activeTab === 'gsheet' && isAdmin && (
           <SinkronGsheetPanel doApiCall={doApiCall} user={user} kelasKartu="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col" />
         )}
 
@@ -2668,7 +2678,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                             <td className="p-3 text-slate-600 max-w-xs truncate">{k.keterangan || '-'}</td>
                             <td className="p-3 font-mono text-[11px] text-slate-500">{k.createdAt || '-'}</td>
                             <td className="p-3 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
+                              {isAdmin ? <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   onClick={() => handleOpenKoreksi(k)}
                                   className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition"
@@ -2688,7 +2698,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                                     <Trash2 className="w-3.5 h-3.5" />
                                   )}
                                 </button>
-                              </div>
+                              </div> : <span className="text-[10px] text-slate-400">—</span>}
                             </td>
                           </tr>
                         );

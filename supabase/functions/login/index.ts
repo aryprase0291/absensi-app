@@ -26,6 +26,7 @@
 
 import { klienAdmin, jawab, CORS } from "../_bersama/util.ts";
 import { buatToken, buatSesiId } from "../_bersama/token.ts";
+import { peranDari, cakupanLokasi } from "../_bersama/peran.ts";
 
 // =====================================================================
 // PENCATAT LOG LOGIN
@@ -157,6 +158,13 @@ Deno.serve(async (req) => {
       periodeAktif.find((p) => p.mulai <= hariIni && hariIni <= p.selesai) ||
       periodeAktif[0] || null;
 
+    // Master role: token tetap membawa KODE role apa adanya (Apps Script
+    // menerjemahkannya sendiri); layar menerima tingkat & cakupannya.
+    const peran = await peranDari(db, u.role || "").catch(() => ({
+      kode: String(u.role || "").toLowerCase(), nama: String(u.role || ""),
+      tingkat: String(u.role || "").toLowerCase(), lokasi: [] as string[], menu: [] as string[], terdaftar: false,
+    }));
+
     const token = await buatToken({
       id: u.id,
       sesiId,
@@ -185,6 +193,11 @@ Deno.serve(async (req) => {
         nama: u.nama,
         divisi: u.divisi,
         role: u.role,
+        tingkat: peran.tingkat,
+        roleKode: peran.kode,
+        roleNama: peran.nama,
+        lokasiAkses: cakupanLokasi(peran, u.lokasi || "All"),
+        menuAkses: peran.menu,
         akses: u.akses ? String(u.akses).split(",") : [],
         noPayroll: u.no_payroll || "-",
         sisaCuti: Number(u.cuti_tersedia || 0),

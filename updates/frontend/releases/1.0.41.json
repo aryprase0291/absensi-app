@@ -1,0 +1,11 @@
+{
+  "version": "1.0.41",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Admin Panel > Pengguna > Master role & lokasi akses: satu layar untuk mengatur role (kode, tingkat, lokasi yang dilihat, menu) dan master lokasi (nama baku + ejaan lain). Datanya di Supabase.",
+    "Role baru HRD Surabaya (hrd_sby) dan HRD Jakarta (hrd_jkt): hanya melihat karyawan lokasinya di Riwayat, Approval, Respon Laporan, daftar karyawan, serta Rekap/Board/DB_FIX/ABSEN-EMAIL.",
+    "HRD kini bisa membuka Panel (Rekap & Info HRD). Rekap untuk HRD bersifat lihat saja; koreksi dan sinkron GSheet tetap khusus Admin.",
+    "Form Tambah User: pilihan Role diambil dari Master role."
+  ]
+}

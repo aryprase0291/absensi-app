@@ -15,6 +15,7 @@ import GpsDashboardScreen from './screens/GpsDashboardScreen';
 import DashboardKerani from './screens/DashboardKerani';
 import GpsGateScreen from './screens/GpsGateScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
+import MasterRolePanel, { ambilDaftarRoleMaster } from './screens/MasterRolePanel';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
 import ImportNotifier from './components/ImportNotifier';
@@ -73,6 +74,33 @@ const ACTION_AMAN_DIULANG = [
 const APPROVAL_ROLES = ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
 const isApprovalRole = (role) => APPROVAL_ROLES.includes(String(role || '').toLowerCase());
 const approvalMenuHidden = (role) => !isApprovalRole(role);
+
+// MASTER ROLE (24 Okt 2026). Kolom Role sheet Users berisi KODE role
+// (mis. "hrd_sby"). Server menerjemahkannya lewat master role menjadi
+// `tingkat` (admin/hrd/.../karyawan) + cakupan lokasi + menu. Seluruh
+// pengecekan `user.role` di layar bekerja dengan TINGKAT, jadi di sini
+// `role` diganti tingkat dan kode aslinya disimpan di `roleKode`.
+// Login lewat jalur yang belum membawa `tingkat` dibiarkan apa adanya;
+// respons buka_aplikasi (field `peran`) melengkapinya beberapa detik kemudian.
+export const normalisasiPeran = (u, peran) => {
+  if (!u) return u;
+  const p = peran || u;
+  if (!p.tingkat) return u;
+  return {
+    ...u,
+    roleKode: String(p.roleKode || u.roleKode || u.role || '').toLowerCase(),
+    roleNama: p.roleNama || u.roleNama || '',
+    role: String(p.tingkat).toLowerCase(),
+    tingkat: String(p.tingkat).toLowerCase(),
+    lokasiAkses: p.lokasiAkses || u.lokasiAkses || u.lokasi || 'All',
+    menuAkses: Array.isArray(p.menuAkses) ? p.menuAkses : (u.menuAkses || []),
+  };
+};
+// Menu boleh tampil? menuAkses kosong = semua menu yang memang boleh untuk tingkatnya.
+export const menuDiizinkan = (u, kunci) => {
+  const m = (u && Array.isArray(u.menuAkses)) ? u.menuAkses : [];
+  return m.length === 0 || m.includes(kunci);
+};
 // Subset APPROVAL_ROLES yang boleh dijadikan admin sebagai "kepala divisi baru"
 // lewat layar Tim Approval (admin & hrd tidak termasuk — sudah diatur di tempat lain).
 const APPROVAL_HEAD_ROLES = ['manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'];
@@ -541,7 +569,7 @@ useEffect(() => {
   // UBAH: localStorage menjadi sessionStorage
   const u = sessionStorage.getItem('app_user'), m = sessionStorage.getItem('app_master_data'); 
   if (u) { 
-    setUser(JSON.parse(u)); 
+    setUser(normalisasiPeran(JSON.parse(u))); 
     if (m) setMasterData(JSON.parse(m)); 
     setView(viewTersimpan()); 
   } 
@@ -583,6 +611,19 @@ useEffect(() => {
       if (data.result === 'success') {
         cekVersi(data.version);
         setBootAwal(data);
+        // Peran efektif dari server (master role). Diterapkan hanya bila
+        // berbeda, supaya tidak memicu render ulang yang sia-sia.
+        if (data.peran && data.peran.tingkat) {
+          setUser((lama) => {
+            if (!lama) return lama;
+            const baru = normalisasiPeran(lama, data.peran);
+            const sama = baru.role === lama.role && baru.lokasiAkses === lama.lokasiAkses
+              && JSON.stringify(baru.menuAkses || []) === JSON.stringify(lama.menuAkses || []) && baru.roleNama === lama.roleNama;
+            if (sama) return lama;
+            try { sessionStorage.setItem('app_user', JSON.stringify(baru)); } catch (e) { /* abaikan */ }
+            return baru;
+          });
+        }
       }
     })
     .catch(() => { /* jaringan gagal: layar di bawah mengambil sendiri seperti dulu */ })
@@ -721,6 +762,7 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
 
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift'), sheetImport: rawMasterData.filter(m => m.kategori === 'SheetImport') };
   setMasterData(p);
+  userData = normalisasiPeran(userData);
   setUser(userData);
   setApprovalNotice(null);
   setView('dashboard');
@@ -1415,10 +1457,12 @@ const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter
 const userRole = (user.role || '').toLowerCase();
 
     // PENENTUAN HAK AKSES (FLAGS)
-const canApprove = isApprovalRole(userRole);
-const canAccessPanel = userRole === 'admin' && userRole !== 'hrd';
+const canApprove = isApprovalRole(userRole) && menuDiizinkan(user, 'approval');
+// Panel: admin penuh; HRD melihat Panel versi terbatas (Rekap & Info HRD)
+// kecuali master role-nya mencabut menu `panel_admin`.
+const canAccessPanel = userRole === 'admin' || (userRole === 'hrd' && menuDiizinkan(user, 'panel_admin'));
 const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
-const isShiftWorker = userRole === 'karyawan_shift';
+const isShiftWorker = String(user.roleKode || userRole).toLowerCase() === 'karyawan_shift';
 
     // LOGIKA SAPAAN BERDASARKAN WAKTU
 const hour = time.getHours();
@@ -4753,7 +4797,7 @@ function AttendanceForm({ user, setUser, setView, editItem, setEditItem, masterD
   // KUNCI PERIODE LALU (Okt 2026): tanggal di periode yang sudah ditutup
   // tidak bisa dipilih. '' = daftar periode belum diketahui -> server yang menilai.
   const batasTanggalForm = batasPengajuanMundur(bacaPeriodeAktifTersimpan(), tglLokal());
-  const isShiftWorker = user.role === 'karyawan_shift'; 
+  const isShiftWorker = String(user.roleKode || user.role || '').toLowerCase() === 'karyawan_shift'; 
   const isClockIn = type === 'Hadir';
   // DUA ATURAN YANG BERBEDA, SENGAJA DIPISAH.
   //
@@ -7343,7 +7387,17 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
 // --- 6. ADMIN PANEL (FIX: MENAMBAHKAN MENU ANALISA DATA) ---
 function AdminPanel({ user, setView, masterData, setMasterData }) {
-  const [activeTab, setActiveTab] = useState('user'); 
+  // HRD tidak punya tab "Tambah user" (khusus admin) -> mulai di Info HRD.
+  const [activeTab, setActiveTab] = useState(user && user.role !== 'admin' ? 'news' : 'user'); 
+  // Pilihan Role di form Tambah User diambil dari Master Role (Supabase);
+  // bila gagal, kembali ke kategori Role di Master Data seperti dulu.
+  const [rolesMaster, setRolesMaster] = useState(null);
+  useEffect(() => {
+    if (activeTab !== 'user' || !user || user.role !== 'admin' || rolesMaster) return undefined;
+    let batal = false;
+    ambilDaftarRoleMaster(user).then((d) => { if (!batal && d && d.length) setRolesMaster(d); });
+    return () => { batal = true; };
+  }, [activeTab, user, rolesMaster]);
   const [loading, setLoading] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
   
@@ -8119,8 +8173,9 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     {
       judul: 'Pengguna',
       item: [
-        { tab: 'user', label: 'Tambah user baru', ikon: UserRoundPlus },
-        { tab: 'master_user', label: 'Reset password user', ikon: KeyRound },
+        { tab: 'user', label: 'Tambah user baru', ikon: UserRoundPlus, adminSaja: true },
+        { tab: 'master_user', label: 'Reset password user', ikon: KeyRound, adminSaja: true },
+        { tab: 'master_role', label: 'Master role & lokasi akses', ikon: ShieldCheck, adminSaja: true },
       ]
     },
     {
@@ -8141,22 +8196,27 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     },
     {
       judul: 'Laporan & Monitoring',
-      adminSaja: true,
       item: [
-        { view: 'rekap_admin', label: 'Rekap, Koreksi & Export Excel', ikon: FileSpreadsheet, warna: 'emerald' },
-        { view: 'gps_dashboard', label: 'Dashboard GPS Karyawan', ikon: MapPin, warna: 'sky' },
-        { view: 'gps_audit', label: 'Monitoring Integritas GPS', ikon: Shield, warna: 'amber' },
-        { view: 'dashboard_kerani', label: 'Absen Online Kerani Pabrik', ikon: ClipboardList, warna: 'emerald' },
-        { view: 'log_login', label: 'Log Login Pengguna', ikon: KeyRound, warna: 'sky' },
+        // `hrd: <kunci menu>` = boleh tampil untuk HRD bila menu itu diizinkan master role.
+        { view: 'rekap_admin', label: 'Rekap, Koreksi & Export Excel', ikon: FileSpreadsheet, warna: 'emerald', hrd: 'rekap' },
+        { view: 'gps_dashboard', label: 'Dashboard GPS Karyawan', ikon: MapPin, warna: 'sky', adminSaja: true },
+        { view: 'gps_audit', label: 'Monitoring Integritas GPS', ikon: Shield, warna: 'amber', adminSaja: true },
+        { view: 'dashboard_kerani', label: 'Absen Online Kerani Pabrik', ikon: ClipboardList, warna: 'emerald', adminSaja: true },
+        { view: 'log_login', label: 'Log Login Pengguna', ikon: KeyRound, warna: 'sky', adminSaja: true },
       ]
     },
     {
       judul: 'Komunikasi',
       item: [
-        { tab: 'news', label: 'Info HRD', ikon: Megaphone },
+        { tab: 'news', label: 'Info HRD', ikon: Megaphone, hrd: 'info_hrd' },
       ]
     },
   ];
+
+  // Admin melihat semuanya; HRD hanya item bertanda `hrd` yang menunya
+  // diizinkan master role (lihat normalisasiPeran / menuDiizinkan).
+  const panelAdmin = user.role === 'admin';
+  const itemBolehTampil = (it) => panelAdmin || (!it.adminSaja && !!it.hrd && menuDiizinkan(user, it.hrd));
 
   // Fungsi biasa, BUKAN komponen React. Komponen yang didefinisikan di
   // dalam render akan di-mount ulang setiap kali panel ini render, dan
@@ -8198,6 +8258,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'board': return 'Board Absensi';
           case 'perangkat': return 'Perangkat & Sesi Login';
           case 'wajah': return 'Wajah Karyawan';
+          case 'master_role': return 'Master Role & Lokasi Akses';
           default: return 'Admin Panel';
       }
   };
@@ -8228,14 +8289,17 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-4">
-          {menuKelompok.map((k) => (
-            (k.adminSaja && user.role !== 'admin') ? null : (
+          {menuKelompok.map((k) => {
+            if (k.adminSaja && !panelAdmin) return null;
+            const item = k.item.filter(itemBolehTampil);
+            if (!item.length) return null;
+            return (
               <div key={k.judul}>
                 <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{k.judul}</p>
-                <div className="space-y-0.5">{k.item.map(renderItemMenu)}</div>
+                <div className="space-y-0.5">{item.map(renderItemMenu)}</div>
               </div>
-            )
-          ))}
+            );
+          })}
         </nav>
 
         <div className="px-2.5 py-3 border-t border-slate-100 shrink-0">
@@ -8266,7 +8330,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         </div>
 
       {/* KONTEN TAB: MASTER USER */}
-      {activeTab === 'master_user' && (
+      {activeTab === 'master_user' && user.role === 'admin' && (
         <div className="animate-in fade-in duration-300">
            <div className="relative mb-3">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} />
@@ -8294,7 +8358,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       )}
 
       {/* KONTEN TAB: TAMBAH USER */}
-      {activeTab === 'user' && (
+      {activeTab === 'user' && user.role === 'admin' && (
         <div className="animate-in fade-in duration-300">
           {/* Setiap kolom kini punya label tetap. Sebelumnya nama kolom hanya ada
               di placeholder, jadi hilang begitu kolomnya diisi. */}
@@ -8338,7 +8402,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                     </div>
                     <div>
                         <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Role</label>
-                        <select className={inputCls} value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>{masterData.roles.map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}</select>
+                        <select className={inputCls} value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>{(rolesMaster || masterData.roles).map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}</select>
+                        {rolesMaster && <p className="mt-1 text-[10.5px] text-slate-400">Daftar dari Master role &amp; lokasi akses.</p>}
                     </div>
                 </div>
             </div>
@@ -8384,7 +8449,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       )}
 
       {/* KONTEN TAB: MASTER DATA */}
-      {activeTab === 'master' && (
+      {activeTab === 'master' && user.role === 'admin' && (
         <div className="animate-in fade-in duration-300">
           <form onSubmit={handleAddMaster} className="bg-white rounded-2xl border border-slate-200/70 overflow-hidden">
             <div className="p-4 space-y-3.5">
@@ -8692,6 +8757,10 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           Yang benar-benar menjaga isinya adalah izin berbagi di Google Drive —
           spreadsheet itu harus dibagikan hanya ke akun admin, bukan
           "siapa saja yang memiliki link". */}
+      {activeTab === 'master_role' && user.role === 'admin' && (
+        <MasterRolePanel user={user} fetchApi={fetchApi} />
+      )}
+
       {activeTab === 'board' && user.role === 'admin' && (
         <div className="animate-in fade-in duration-300">
           <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white">

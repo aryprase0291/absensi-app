@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.40";
+const APP_VERSION = "1.0.41";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -341,12 +341,22 @@ function handleGetLogLogin(data) {
     if (action === 'upload_profile') return handleUploadProfile(data);
 
     // --- REKAP & KOREKSI ADMIN (DASHBOARD & EXPORT) ---
-    if (action === 'get_koreksi_list') return handleGetKoreksiList(data);
+    if (action === 'get_koreksi_list') return _saringKoreksiCakupan_(handleGetKoreksiList(data), data);
     if (action === 'save_koreksi') return handleSaveKoreksi(data);
     if (action === 'delete_koreksi') return handleDeleteKoreksi(data);
-    if (action === 'get_rekap_admin') return handleGetRekapAdmin(data);
+    if (action === 'get_rekap_admin') {
+      const _rk = handleGetRekapAdmin(data);
+      return (data._auth && data._auth.r !== 'admin') ? rekapUntukCakupan_(_rk, data._auth.l) : _rk;
+    }
     // --- SINKRON TABEL DATA -> GSHEET DB ABSEN (lihat SinkronGsheet.gs) ---
-    if (action === 'get_sinkron_gsheet') return handleGetSinkronGsheet(data);
+    if (action === 'get_sinkron_gsheet') {
+      if (data._auth && data._auth.r !== 'admin') {
+        if (String(data.bagian || '') !== 'absensi_email') return responseJSON({ result: 'error', message: 'Bagian ini hanya untuk admin.' });
+        return absensiEmailUntukCakupan_(handleGetSinkronGsheet(data), data._auth.l);
+      }
+      return handleGetSinkronGsheet(data);
+    }
+    if (action === 'segarkan_master_role') return handleSegarkanMasterRole(data);
     if (action === 'set_sinkron_gsheet') return handleSetSinkronGsheet(data);
     if (action === 'sinkron_gsheet') return handleSinkronGsheet(data);
     if (action === 'sinkron_gsheet_bot') return handleSinkronGsheetBot(data);
@@ -1188,6 +1198,8 @@ function handleGetRemarks(data) {
   const muatSemua = data.muatSemua === true;
   const batas = muatSemua ? Infinity : REMARKS_BATAS_DEFAULT;
   const sisaKuotaMap = hitungSisaKuotaLaporan_();
+  // HRD bercakupan lokasi (mis. HRD SBY) hanya melihat laporan karyawan lokasinya.
+  const _idCakupanRemark = (typeof idUserDalamCakupan_ === 'function') ? idUserDalamCakupan_(data) : null;
 
   let total = 0; // jumlah baris hak-akses user ini, sebelum dipotong batas
 
@@ -1201,7 +1213,7 @@ function handleGetRemarks(data) {
     const rowUserId = String(row[2]);
     let include = false;
 
-    if (userRole === 'admin' || userRole === 'hrd') include = true;
+    if (userRole === 'admin' || userRole === 'hrd') include = !_idCakupanRemark || !!_idCakupanRemark[rowUserId.trim()] || rowUserId === userId;
     else if (rowUserId === userId) include = true;
 
     if (include) {
@@ -2591,6 +2603,10 @@ function handleLogin(data) {
       console.warn('Status pelacakan gagal dibaca saat login: ' + e.message);
     }
 
+    const _peranLogin = (typeof peranEfektif_ === 'function')
+      ? peranEfektif_(foundUser[5], foundUser[13] || 'All')
+      : { kode: String(foundUser[5] || '').toLowerCase(), nama: foundUser[5], tingkat: String(foundUser[5] || '').toLowerCase(), cakupan: foundUser[13] || 'All', menu: [] };
+
     return responseJSON({
       result: 'success',
       user: { 
@@ -2599,6 +2615,13 @@ function handleLogin(data) {
           nama: foundUser[3], 
           divisi: foundUser[4], 
           role: foundUser[5], 
+          // Master role (MasterRole.gs): frontend memakai `tingkat` untuk
+          // gerbang menu, `roleKode` untuk pembeda khusus (karyawan_shift).
+          tingkat: _peranLogin.tingkat,
+          roleKode: _peranLogin.kode,
+          roleNama: _peranLogin.nama,
+          lokasiAkses: _peranLogin.cakupan,
+          menuAkses: _peranLogin.menu || [],
           akses: foundUser[6] ? foundUser[6].toString().split(',') : [], 
           noPayroll: noPayroll, 
           
@@ -2919,7 +2942,7 @@ function handleGetUserListSimple(data) {
     const rawLokasi = rows[i][13];
     if (!rawLokasi || String(rawLokasi).trim() === '') continue; 
     const userLokasi = String(rawLokasi);
-    const isPermitted = (requestorLokasi === 'All' || userLokasi.toLowerCase() === String(requestorLokasi).toLowerCase());
+    const isPermitted = cocokLokasi_(requestorLokasi, userLokasi);
     const isMatchFilter = (filterLokasi === 'All' || userLokasi.toLowerCase() === String(filterLokasi).toLowerCase());
     if (isPermitted && isMatchFilter) {
       list.push({ id: rows[i][0], nama: rows[i][3], lokasi: userLokasi });
@@ -3050,6 +3073,17 @@ function handleBukaAplikasi(data) {
     if (typeof notifKaryawanRingkas_ === 'function') hasil.notifKaryawan = notifKaryawanRingkas_(String(data.userId));
   } catch (e) {
     console.warn('Notifikasi karyawan gagal saat buka aplikasi: ' + e.message);
+  }
+
+  // Master role: peran efektif peminta (dihitung authorizeRequest dari
+  // kode role + master). Layar memperbarui user-nya dari sini, sehingga
+  // login lewat jalur cepat Supabase pun tetap mendapat tingkat & cakupan.
+  if (data._auth) {
+    hasil.peran = {
+      tingkat: data._auth.r, roleKode: data._auth.rk || data._auth.r,
+      roleNama: (typeof peranEfektif_ === 'function') ? peranEfektif_(data._auth.rk || data._auth.r, '').nama : (data._auth.rk || data._auth.r),
+      lokasiAkses: data._auth.l, menuAkses: data._auth.menu || []
+    };
   }
 
   return responseJSON(hasil);
@@ -3466,7 +3500,10 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
 }
 
 function _isApprovalRoleValue(role) {
-  return APPROVAL_ROLE_VALUES.indexOf(String(role || '').trim().toLowerCase()) !== -1;
+  // Kode role dari sheet (mis. "hrd_sby") diterjemahkan ke tingkat lewat master role.
+  const r = String(role || '').trim().toLowerCase();
+  const t = (typeof tingkatRole_ === 'function') ? tingkatRole_(r) : r;
+  return APPROVAL_ROLE_VALUES.indexOf(t) !== -1 || APPROVAL_ROLE_VALUES.indexOf(r) !== -1;
 }
 
 function _pastikanSheetApprovalTeams() {
@@ -3656,7 +3693,7 @@ function _susunApprovalList_(data) {
       if (!dataPemohon || !dataPemohon.lokasi || dataPemohon.lokasi === '') continue;
 
       let isEligible = false;
-      const isLokasiMatch = (adminLokasi === 'All') || (adminLokasi === dataPemohon.lokasi);
+      const isLokasiMatch = cocokLokasi_(adminLokasi, dataPemohon.lokasi);
       
       if (isLokasiMatch) {
           if (role === 'admin' || role === 'hrd') isEligible = true;
@@ -3785,7 +3822,7 @@ function handleGetTeamHistory(data) {
     if (!dataPemohon || !dataPemohon.lokasi) continue;
 
     let isEligible = false;
-    const isLokasiMatch = (adminLokasi === 'All') || (adminLokasi === dataPemohon.lokasi);
+    const isLokasiMatch = cocokLokasi_(adminLokasi, dataPemohon.lokasi);
     if (isLokasiMatch) {
       if (role === 'admin' || role === 'hrd') isEligible = true;
       else if (hasTeamMapping) isEligible = !!teamMemberMap[userIdPemohon];
@@ -3858,7 +3895,7 @@ function _bolehApproveRowManual(row, data, rowsUsers) {
   }
   if (!dataPemohon) return false;
 
-  const isLokasiMatch = (data.lokasi === 'All') || (data.lokasi === dataPemohon.lokasi);
+  const isLokasiMatch = cocokLokasi_(data.lokasi, dataPemohon.lokasi);
   if (!isLokasiMatch) return false;
 
   const teamMemberMap = _approvalMemberMapForKepala(data.userId);
@@ -4317,7 +4354,7 @@ function handleGetHistory(data) {
 
     if (isTargeted(rowUserId)) {
       if (data.canViewAll && requestorLokasi !== 'All') {
-         if (String(userData.lokasi).toLowerCase() !== String(requestorLokasi).toLowerCase()) continue;
+         if (!cocokLokasi_(requestorLokasi, userData.lokasi)) continue;
       }
 
       const tanggalMulai = formatDateYMD_Strict(rowsAbsen[i][8] && rowsAbsen[i][8] !== '-' ? rowsAbsen[i][8] : rowsAbsen[i][1]);
@@ -4389,13 +4426,14 @@ function handleGetShiftHistory(data) {
   const reqUserId = String(data.userId);
   const userRole = data.role ? String(data.role).toLowerCase() : '';
   const canViewAll = ['admin', 'hrd', 'manager'].includes(userRole);
+  const _idCakupanShift = (typeof idUserDalamCakupan_ === 'function') ? idUserDalamCakupan_(data) : null;
 
   for (let i = 1; i < values.length; i++) {
     const rowUserId = String(values[i][2]);
     let include = false;
 
     if (canViewAll) {
-      include = true;
+      include = !_idCakupanShift || !!_idCakupanShift[rowUserId.trim()] || rowUserId === reqUserId;
     } else {
       if (rowUserId === reqUserId) include = true;
     }

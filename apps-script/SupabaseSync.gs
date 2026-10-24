@@ -217,6 +217,10 @@ function SUPABASE_SINKRON_MASTER() {
   // Perawatan yang menumpang jadwal yang sudah ada, supaya tidak perlu
   // trigger tersendiri. Lihat SUPABASE_BERSIHKAN_LOG_LOGIN.
   if (typeof SUPABASE_BERSIHKAN_LOG_LOGIN === 'function') SUPABASE_BERSIHKAN_LOG_LOGIN();
+  // Master role & lokasi akses: segarkan simpanan Script Properties.
+  // Gagal di sini tidak boleh menggagalkan sinkron master.
+  try { if (typeof MASTER_ROLE_SEGARKAN === 'function') MASTER_ROLE_SEGARKAN(); }
+  catch (e) { console.warn('MASTER_ROLE_SEGARKAN gagal: ' + e.message); }
 
   const ms = new Date().getTime() - t0;
   console.log('Sinkron master selesai dalam ' + ms + ' ms — '
