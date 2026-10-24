@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.38",
+    "currentVersion": "1.0.39",
     "history": [
+      {
+        "file": "1.0.39.json",
+        "version": "1.0.39",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Tidak ada perubahan frontend; menyamakan nomor versi dengan backend 1.0.39."
+        ]
+      },
       {
         "file": "1.0.38.json",
         "version": "1.0.38",
@@ -278,8 +287,18 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.38",
+    "currentVersion": "1.0.39",
     "history": [
+      {
+        "file": "1.0.39.json",
+        "version": "1.0.39",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "SinkronGsheet.gs: Sinkron Absensi kini mengisi rumus ringkasan (KETIDAKHADIRAN DL/CT/SK/EO/A, SISA CUTI, TIDAK ABSEN, POTONGAN, LEBIH CUTI, TOTAL) di baris pegawai ABSENSI-email yang belum punya rumus (GMS BWI, GMS JKT, OUT) — disalin dari baris pegawai terdekat di atasnya, rumus + format, referensi relatif ikut baris. Kolom isian manual tidak disentuh.",
+          "Fungsi editor baru SINKRON_ISI_RINGKASAN() untuk menjalankannya manual."
+        ]
+      },
       {
         "file": "1.0.38.json",
         "version": "1.0.38",

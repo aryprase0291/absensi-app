@@ -1,0 +1,8 @@
+{
+  "version": "1.0.39",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Tidak ada perubahan frontend; menyamakan nomor versi dengan backend 1.0.39."
+  ]
+}

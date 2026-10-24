@@ -599,9 +599,78 @@ function _sgPindahAbsensi_(ss) {
   }
   dRange.setValues(out);
   SpreadsheetApp.flush();
-  const pesan = 'periode ' + p.label + ' (' + nHari + ' hari), baris ' + startRow + '-' + endRow + ' tersalin ke ABSENSI-email.';
+  let ringkasan = { diisi: 0 };
+  try { ringkasan = _saIsiRingkasan_(dst, startRow, endRow); } catch (eR) { console.warn('Isi rumus ringkasan gagal: ' + eR.message); }
+  const pesan = 'periode ' + p.label + ' (' + nHari + ' hari), baris ' + startRow + '-' + endRow + ' tersalin ke ABSENSI-email.' +
+    (ringkasan.diisi ? ' Rumus ringkasan (DL/CT/SK/EO/A…TOTAL) diisi di ' + ringkasan.diisi + ' baris baru.' : '');
   _saToast_(ss, pesan, 'Sinkron absensi selesai');
   return { ok: true, pesan: pesan, periode: p.label, baris: nRows, diisiO: filledO, namaMerah: redRows, rumusDilewati: skippedF };
+}
+
+// ================================================================
+// RUMUS RINGKASAN BARIS BARU (24 Okt 2026)
+//
+// Kolom di kanan area tanggal (KETIDAKHADIRAN DL/CT/SK/EO/A, SISA CUTI,
+// TIDAK ABSEN, POTONGAN, LEBIH CUTI, TOTAL, …) di ABSENSI-email berisi
+// RUMUS per baris, bukan hasil salinan dari ABSENSI. Baris pegawai yang
+// ditambahkan belakangan (GMS BWI, GMS JKT, OUT) tidak ikut punya rumusnya,
+// sehingga kosong di sheet, di tab ABSEN-EMAIL, dan di export Excel.
+//
+// Di sini: baris pegawai (kolom C/PAYROLL terisi) yang SAMA SEKALI tidak
+// punya rumus di area ringkasan diisi dengan rumus + format dari baris
+// pegawai terdekat di atasnya yang punya rumus (copyTo = sama seperti
+// salin-tempel di GSheet, referensi relatif ikut menyesuaikan baris).
+// Hanya kolom yang di baris contoh berisi RUMUS yang disalin — kolom
+// isian manual (mis. KETERANGAN) tidak disentuh.
+// ================================================================
+function _saIsiRingkasan_(dst, startRow, endRow) {
+  const c0 = SA_DATE_START + SA_N_DAYS * 2; // kolom pertama sesudah area tanggal (BV)
+  const lastCol = dst.getLastColumn();
+  if (lastCol < c0 || endRow < startRow) return { diisi: 0 };
+  const w = lastCol - c0 + 1, n = endRow - startRow + 1;
+  const rumus = dst.getRange(startRow, c0, n, w).getFormulas();
+  const payroll = dst.getRange(startRow, 3, n, 1).getDisplayValues();
+  const adaRumus = rumus.map(function (r) { return r.some(function (f) { return !!f; }); });
+  let contoh = -1, diisi = 0;
+  for (let i = 0; i < n; i++) {
+    const pegawai = String(payroll[i][0]).trim() !== '';
+    if (!pegawai) continue;
+    if (adaRumus[i]) { contoh = i; continue; }
+    if (contoh < 0) continue;
+    // Blok baris pegawai berurutan yang sama-sama belum punya rumus.
+    let j = i;
+    while (j + 1 < n && String(payroll[j + 1][0]).trim() !== '' && !adaRumus[j + 1]) j++;
+    // Salin per rangkaian kolom berumus di baris contoh.
+    const fc = rumus[contoh];
+    let k = 0;
+    while (k < w) {
+      if (!fc[k]) { k++; continue; }
+      let e = k;
+      while (e + 1 < w && fc[e + 1]) e++;
+      dst.getRange(startRow + contoh, c0 + k, 1, e - k + 1)
+        .copyTo(dst.getRange(startRow + i, c0 + k, j - i + 1, e - k + 1), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+      k = e + 1;
+    }
+    diisi += j - i + 1;
+    i = j;
+  }
+  if (diisi) SpreadsheetApp.flush();
+  return { diisi: diisi };
+}
+
+/**
+ * Jalankan manual dari editor: isi rumus ringkasan baris baru di
+ * ABSENSI-email file DB_ABSEN yang diatur di tab Sinkron GSheet.
+ */
+function SINKRON_ISI_RINGKASAN() {
+  const cfg = _sgBacaCfg_() || {};
+  if (!cfg.id) throw new Error('File DB_ABSEN belum diatur di tab Sinkron GSheet.');
+  const ss = SpreadsheetApp.openById(cfg.id);
+  const dst = ss.getSheetByName(SA_DST);
+  const src = ss.getSheetByName(SA_SRC);
+  const akhir = Math.max(dst.getLastRow(), src ? _saLastDataRow_(src) : 0);
+  const h = _saIsiRingkasan_(dst, SA_FIRST_ROW, akhir);
+  Logger.log('Rumus ringkasan diisi di ' + h.diisi + ' baris (' + ss.getName() + ').');
 }
 
 // ================================================================
