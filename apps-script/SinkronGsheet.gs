@@ -333,9 +333,10 @@ function _sgJalankan_(asal, oleh) {
     t0 = Date.now();
     const hasil = _sgTulis_(cfg, rec);
     tahap.db1 = Date.now() - t0;
-    st.baris = rec.length;
+    st.baris = hasil.baris;
     st.namaFile = hasil.namaFile;
-    st.pesan = rec.length + ' baris periode ' + dari + ' s/d ' + sampai + ' tertulis ke "' + hasil.namaFile + '" / ' + cfg.sheet + '.';
+    st.pesan = hasil.baris + ' baris periode ' + dari + ' s/d ' + sampai + ' tertulis ke "' + hasil.namaFile + '" / ' + cfg.sheet + '.' +
+      (hasil.sebelumMasuk ? ' ' + hasil.sebelumMasuk + ' hari sebelum TGL MASUK (Alpa dari mesin) tidak ditulis.' : '');
     // Lanjut: "Sinkron Absensi" di file tujuan (ABSENSI -> ABSENSI-email),
     // supaya ABSENSI-email & tab ABSEN-EMAIL langsung ikut data terbaru.
     try {
@@ -381,10 +382,80 @@ function _sgNilai_(r, field) {
   return v === undefined || v === null ? '' : v;
 }
 
+// ================================================================
+// HARI SEBELUM TGL MASUK (24 Okt 2026)
+//
+// Mesin fingerprint menandai karyawan baru Alpa (A) untuk SETIAP hari
+// kerja periode, termasuk hari-hari SEBELUM ia mulai bekerja. Di sheet
+// ABSENSI, kolom HARI KERJA riil = HARI KERJA - (A + ...), sehingga
+// karyawan yang masuk 16-10 dengan 4 hari kerja tampil -18.
+//
+// TGL MASUK hanya ada di file DB_ABSEN (sheet ABSENSI kolom J, PAYROLL
+// kolom F). Baris db1-absen sebelum TGL MASUK yang TIDAK punya scan dan
+// bukan koreksi dibuang, sehingga hari itu kosong di ABSENSI (bukan A),
+// dan di ABSENSI-email dibiarkan kosong (tidak diisi O).
+// ================================================================
+const SA_SRC_TGLMASUK_COL = 10; // J = TGL MASUK di ABSENSI
+const _SG_BLN_ = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, MEI: 5, JUN: 6, JUL: 7, AUG: 8, AGU: 8, AGS: 8, SEP: 9, OCT: 10, OKT: 10, NOV: 11, DEC: 12, DES: 12 };
+
+/** Nilai sel TGL MASUK (Date, '16-10-2026', '7-Sep-09', '2026-10-16') -> 'YYYY-MM-DD' | ''. */
+function _sgYmdTglMasuk_(v, tz) {
+  if (v instanceof Date && !isNaN(v.getTime())) return Utilities.formatDate(v, tz, 'yyyy-MM-dd');
+  const t = String(v || '').trim();
+  if (!t) return '';
+  let m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+  m = t.match(/^(\d{1,2})[-\/. ](\d{1,2}|[A-Za-z]{3,})[-\/. ](\d{2,4})$/);
+  if (!m) return '';
+  const bln = /^\d+$/.test(m[2]) ? Number(m[2]) : (_SG_BLN_[m[2].slice(0, 3).toUpperCase()] || 0);
+  if (!bln) return '';
+  const th = m[3].length === 2 ? (Number(m[3]) > 50 ? 1900 : 2000) + Number(m[3]) : Number(m[3]);
+  return th + '-' + ('0' + bln).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+}
+
+/** Peta PAYROLL (huruf besar) -> TGL MASUK 'YYYY-MM-DD' dari sheet ABSENSI file tujuan. */
+function _sgPetaTglMasuk_(ss) {
+  const peta = {};
+  const src = ss.getSheetByName(SA_SRC);
+  if (!src) return peta;
+  const akhir = _saLastDataRow_(src);
+  if (akhir < SA_FIRST_ROW) return peta;
+  const tz = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Jakarta';
+  const n = akhir - SA_FIRST_ROW + 1;
+  const pay = src.getRange(SA_FIRST_ROW, SA_SRC_ID_COL, n, 1).getDisplayValues();
+  const tgl = src.getRange(SA_FIRST_ROW, SA_SRC_TGLMASUK_COL, n, 1).getValues();
+  for (let i = 0; i < n; i++) {
+    const p = String(pay[i][0] || '').trim().toUpperCase();
+    const y = _sgYmdTglMasuk_(tgl[i][0], tz);
+    if (p && y) peta[p] = y;
+  }
+  return peta;
+}
+
+/** Baris sebelum TGL MASUK tanpa scan & bukan koreksi -> dibuang. */
+function _sgBuangSebelumMasuk_(rec, peta) {
+  let dibuang = 0;
+  const kosong = function (x) { const t = String(x == null ? '' : x).trim(); return t === '' || t === '-'; };
+  const sisa = rec.filter(function (r) {
+    const masukKerja = peta[String(r.payroll || '').trim().toUpperCase()] || peta[String(r.noAkun || '').trim().toUpperCase()];
+    if (!masukKerja || !(String(r.tanggalYMD) < masukKerja)) return true;
+    if (r.isKoreksi || !kosong(r.masuk) || !kosong(r.pulang)) return true;
+    dibuang++;
+    return false;
+  });
+  return { rec: sisa, dibuang: dibuang };
+}
+
 function _sgTulis_(cfg, rec) {
   const ss = SpreadsheetApp.openById(cfg.id);
   const sh = ss.getSheetByName(cfg.sheet);
   if (!sh) throw new Error('Sheet "' + cfg.sheet + '" tidak ada di file "' + ss.getName() + '".');
+
+  let sebelumMasuk = 0;
+  try {
+    const b = _sgBuangSebelumMasuk_(rec, _sgPetaTglMasuk_(ss));
+    rec = b.rec; sebelumMasuk = b.dibuang;
+  } catch (eTm) { console.warn('TGL MASUK tidak terbaca, semua baris ditulis: ' + eTm.message); }
 
   const lebar = Math.max(sh.getLastColumn(), 1);
   const header = sh.getRange(1, 1, 1, lebar).getDisplayValues()[0];
@@ -423,7 +494,7 @@ function _sgTulis_(cfg, rec) {
   }
   if (akhirLama > n + 1) sh.getRange(n + 2, 1, akhirLama - n - 1, lebar).clearContent();
   SpreadsheetApp.flush();
-  return { namaFile: ss.getName(), ss: ss };
+  return { namaFile: ss.getName(), ss: ss, baris: n, sebelumMasuk: sebelumMasuk };
 }
 
 // ================================================================
@@ -577,11 +648,16 @@ function _sgPindahAbsensi_(ss) {
   const nameBg = src.getRange(startRow, 1 + SA_OFFSET + 4, nRows, 1).getBackgrounds();
   let redRows = 0, filledO = 0, skippedF = 0;
   const out = [];
+  const tzTm = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Jakarta';
+  const ymdHari = [];
+  for (let i = 0; i < nHari; i++) ymdHari.push(_saFmtTgl_(ss, dH[i * 2]));
 
   for (let r = 0; r < nRows; r++) {
     const isEmployee = String(sVals[r][2]).trim() !== '';
     const isRed = isEmployee && _saIsRed_(nameBg[r][0]);
     if (isRed) redRows++;
+    // sVals kolom 0 = ABSENSI kolom D, jadi TGL MASUK (J) = indeks 6.
+    const masukKerja = isEmployee ? _sgYmdTglMasuk_(sVals[r][SA_SRC_TGLMASUK_COL - 1 - SA_OFFSET], tzTm) : '';
     const o = [];
     for (let c = 0; c < nCols; c++) {
       const col = c + 1;
@@ -592,7 +668,11 @@ function _sgPindahAbsensi_(ss) {
       if (isRed && isAbsen) { o.push('A'); continue; }
       if (dForm[r][c]) { o.push(dForm[r][c]); skippedF++; continue; }
       let v = sVals[r][c];
-      if (isEmployee && isAbsen && String(v).trim() === '') { v = 'O'; filledO++; }
+      if (isEmployee && isAbsen && String(v).trim() === '') {
+        const hariKe = Math.floor((col - SA_DATE_START) / 2);
+        // Hari sebelum TGL MASUK dibiarkan kosong (belum bekerja), bukan O.
+        if (!(masukKerja && ymdHari[hariKe] && ymdHari[hariKe] < masukKerja)) { v = 'O'; filledO++; }
+      }
       o.push(v);
     }
     out.push(o);

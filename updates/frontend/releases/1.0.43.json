@@ -1,0 +1,8 @@
+{
+  "version": "1.0.43",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Sinkron GSheet: hari SEBELUM TGL MASUK karyawan (dibaca dari sheet ABSENSI file DB_ABSEN) yang oleh mesin ditandai Alpa tanpa scan tidak lagi ditulis ke db1-absen, dan di ABSENSI-email dibiarkan kosong (bukan O). Karyawan baru tidak lagi mendapat HARI KERJA minus (mis. -18 menjadi 4)."
+  ]
+}

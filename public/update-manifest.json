@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.42",
+    "currentVersion": "1.0.43",
     "history": [
+      {
+        "file": "1.0.43.json",
+        "version": "1.0.43",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Sinkron GSheet: hari SEBELUM TGL MASUK karyawan (dibaca dari sheet ABSENSI file DB_ABSEN) yang oleh mesin ditandai Alpa tanpa scan tidak lagi ditulis ke db1-absen, dan di ABSENSI-email dibiarkan kosong (bukan O). Karyawan baru tidak lagi mendapat HARI KERJA minus (mis. -18 menjadi 4)."
+        ]
+      },
       {
         "file": "1.0.42.json",
         "version": "1.0.42",
@@ -318,8 +327,17 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.42",
+    "currentVersion": "1.0.43",
     "history": [
+      {
+        "file": "1.0.43.json",
+        "version": "1.0.43",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Sinkron GSheet: hari SEBELUM TGL MASUK karyawan (dibaca dari sheet ABSENSI file DB_ABSEN) yang oleh mesin ditandai Alpa tanpa scan tidak lagi ditulis ke db1-absen, dan di ABSENSI-email dibiarkan kosong (bukan O). Karyawan baru tidak lagi mendapat HARI KERJA minus (mis. -18 menjadi 4)."
+        ]
+      },
       {
         "file": "1.0.42.json",
         "version": "1.0.42",
