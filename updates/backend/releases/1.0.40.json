@@ -1,0 +1,8 @@
+{
+  "version": "1.0.40",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Code.gs (get_stats): Alpa dari mesin untuk tanggal hari ini tidak lagi dihitung di angka Alpa dashboard — harinya belum selesai. Masuk hitungan mulai besok."
+  ]
+}

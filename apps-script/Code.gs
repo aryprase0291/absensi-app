@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.39";
+const APP_VERSION = "1.0.40";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -3397,7 +3397,16 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
             stats.total_hadir        = e.hadir + hadirOnlineTambahan;
             stats.total_sakit       += e.sakit;   // ditambahkan ke hitungan sheet Absensi
             let alpaMesin = e.alpa;
+            // Hari ini belum selesai: mesin sudah menandai 'A' untuk karyawan
+            // yang belum scan (misal import dini hari sebelum jam kerja).
+            // Itu belum Alpa, jadi tidak dihitung. Besok, saat tanggalnya
+            // sudah lewat, baru masuk hitungan.
+            const hariIniStats = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
             Object.keys(e.alpa_by_date || {}).forEach((tanggal) => {
+                if (tanggal >= hariIniStats) alpaMesin -= e.alpa_by_date[tanggal];
+            });
+            Object.keys(e.alpa_by_date || {}).forEach((tanggal) => {
+                if (tanggal >= hariIniStats) return;
                 if (onlineHadirByDate[tanggal]) {
                     alpaMesin -= Math.min(e.alpa_by_date[tanggal], onlineHadirByDate[tanggal]);
                 }

@@ -1,0 +1,8 @@
+{
+  "version": "1.0.40",
+  "releasedAt": "2026-10-24",
+  "required": false,
+  "notes": [
+    "Data Mesin Fingerprint: hari ini yang di mesin masih tertulis Alpa tanpa scan masuk/pulang kini tampil sebagai \"Belum Absen\" (BLM, abu-abu), bukan Alpa. Setelah harinya lewat, status Alpa dari mesin kembali dipakai."
+  ]
+}

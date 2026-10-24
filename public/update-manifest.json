@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.39",
+    "currentVersion": "1.0.40",
     "history": [
+      {
+        "file": "1.0.40.json",
+        "version": "1.0.40",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Data Mesin Fingerprint: hari ini yang di mesin masih tertulis Alpa tanpa scan masuk/pulang kini tampil sebagai \"Belum Absen\" (BLM, abu-abu), bukan Alpa. Setelah harinya lewat, status Alpa dari mesin kembali dipakai."
+        ]
+      },
       {
         "file": "1.0.39.json",
         "version": "1.0.39",
@@ -287,8 +296,17 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.39",
+    "currentVersion": "1.0.40",
     "history": [
+      {
+        "file": "1.0.40.json",
+        "version": "1.0.40",
+        "releasedAt": "2026-10-24",
+        "required": false,
+        "notes": [
+          "Code.gs (get_stats): Alpa dari mesin untuk tanggal hari ini tidak lagi dihitung di angka Alpa dashboard — harinya belum selesai. Masuk hitungan mulai besok."
+        ]
+      },
       {
         "file": "1.0.39.json",
         "version": "1.0.39",

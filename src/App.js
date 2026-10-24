@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -10065,6 +10065,10 @@ const GAYA_KALENDER = {
   // ketiadaan jadwal. Memberinya warna sendiri membuatnya tampak setara
   // dengan status yang perlu diperhatikan.
   O:    { dot: 'bg-slate-300',   tint: 'bg-slate-50',    teks: 'text-slate-400'   },
+
+  // Hari ini yang di mesin masih tertulis Alpa karena memang belum ada scan.
+  // Netral juga: harinya belum selesai, jadi belum ada yang perlu dicek.
+  BLM:  { dot: 'bg-slate-300',   tint: 'bg-slate-50',    teks: 'text-slate-500'   },
 };
 const GAYA_KAL_LAIN = { dot: 'bg-slate-400', tint: 'bg-slate-100', teks: 'text-slate-600' };
 const gayaKalender = (sym) => GAYA_KALENDER[sym] || GAYA_KAL_LAIN;
@@ -10088,8 +10092,25 @@ const GRUP_RINGKAS = {
 const kunciHari = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+/**
+ * Mesin (Att) menandai hari berjalan sebagai 'A' (Alpa) begitu tanggal itu
+ * ikut ter-export, padahal karyawan mungkin memang belum waktunya absen —
+ * contoh: import jam 01:00, jam kerja mulai 08:30. Hari ini (dan tanggal
+ * sesudahnya) yang masih Alpa TANPA scan masuk/pulang ditampilkan sebagai
+ * 'BLM' (Belum Absen). Begitu harinya lewat, simbol aslinya kembali dipakai.
+ *
+ * Data mentah tidak diubah; simbol asli tetap ada di `symbolAsli`.
+ */
+const kosongScan = (v) => v === undefined || v === null || String(v).trim() === '' || String(v).trim() === '-';
+function tandaiBelumAbsen(item, kunciHariIni, kunciItem) {
+  if (!item || item.symbol !== 'A' || !kunciItem) return item;
+  if (kunciItem < kunciHariIni) return item;
+  if (!kosongScan(item.masuk) || !kosongScan(item.pulang)) return item;
+  return { ...item, symbol: 'BLM', symbolAsli: item.symbol };
+}
+
 function DbAbsenScreen({ user, setView }) {
-  const [list, setList] = useState(() => {
+  const [listMentah, setList] = useState(() => {
     try {
       const raw = sessionStorage.getItem('app_db_absen_' + (user ? user.id : ''));
       if (raw) return JSON.parse(raw);
@@ -10129,6 +10150,24 @@ function DbAbsenScreen({ user, setView }) {
 
   const { libur, status: statusLibur, tahunAda } = useHariLibur();
 
+  // Lihat tandaiBelumAbsen(): hari ini yang masih 'A' tanpa scan bukan Alpa.
+  // Harus didefinisikan sebelum pemakaian `list` pertama (opsi filter dll).
+  const list = useMemo(() => {
+    const hariIni = kunciHari(new Date());
+    return listMentah.map((it) => {
+      let k = '';
+      if (it && it.tanggalRaw && /^\d{4}-\d{2}-\d{2}$/.test(it.tanggalRaw)) {
+        k = it.tanggalRaw;
+      } else if (it && it.tanggal) {
+        const m = String(it.tanggal).match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (m) k = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+        else if (/^\d{4}-\d{2}-\d{2}$/.test(it.tanggal)) k = it.tanggal;
+      }
+      return tandaiBelumAbsen(it, hariIni, k);
+    });
+  }, [listMentah]);
+
+
   const pilihHari = (k) => {
     if (!k) return;
     setHariDipilih(k);
@@ -10154,7 +10193,7 @@ function DbAbsenScreen({ user, setView }) {
       'DL': 'Dinas Luar', 'ONL': 'Absen online', 'STB': 'Standby', 'TPC': 'Telat & Pulang Cepat', 'TSo': 'Telat & Tdk Absen OUT',
       'TSi': 'Telat & No Scan In', 'SiSo': 'Tdk Absen IN & OUT',
       'SiPC': 'Tdk Absen IN & Pulang Cepat', 'AC': 'Alpa (Lebih Cuti)',
-      'EO': 'Extra Ordinary', 'NF': 'Tidak Absen'
+      'EO': 'Extra Ordinary', 'NF': 'Tidak Absen', 'BLM': 'Belum Absen'
   };
   
   const availableStatusOptions = [...new Set(list.flatMap(item => [item.symbol, ...(Array.isArray(item.onlineRecords) && item.onlineRecords.length > 0 ? ['ONL'] : [])]))]
@@ -10416,6 +10455,7 @@ function DbAbsenScreen({ user, setView }) {
   const getStatusStyle = (sym) => {
       if(!sym) return { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' };
       const s = sym.toUpperCase();
+      if(s === 'BLM') return { bg: 'bg-slate-50', text: 'text-slate-500', border: 'border-slate-200' };
       if(['H', 'A'].includes(s)) return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
       if(s.includes('T') || s.includes('SI') || s.includes('SO')) return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
       return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
