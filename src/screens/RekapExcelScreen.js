@@ -339,6 +339,31 @@ const gayaFreeze = (i, extra) => (i < DBFIX_JUMLAH_FREEZE
       ...(i === DBFIX_JUMLAH_FREEZE - 1 ? { boxShadow: '4px 0 6px -3px rgba(15,23,42,0.18)' } : {}) }
   : undefined);
 
+// Pil tanda proses di bawah header: label + detik berjalan, supaya admin
+// tahu sistem sedang bekerja (dan sudah berapa lama) — bukan macet.
+function TandaProses({ label }) {
+  const [detik, setDetik] = useState(0);
+  useEffect(() => {
+    setDetik(0);
+    const t = setInterval(() => setDetik((d) => d + 1), 1000);
+    return () => clearInterval(t);
+  }, [label]);
+  return (
+    <div className="fixed inset-x-0 bottom-20 z-[75] flex justify-center pointer-events-none px-3" style={{ marginBottom: 'env(safe-area-inset-bottom)' }} role="status" aria-live="polite">
+      <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white/95 px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 shadow-lg shadow-blue-900/10 backdrop-blur">
+        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+        <span>{label}</span>
+        {detik >= 2 && <span className="tabular-nums font-medium text-slate-400">{detik} dtk</span>}
+      </div>
+    </div>
+  );
+}
+
+// Pengganti angka KPI selama data belum datang (bukan 0 yang menyesatkan).
+function AngkaMemuat() {
+  return <span className="inline-block h-[1.1em] w-10 rounded-md bg-slate-200 animate-pulse align-middle" aria-label="memuat" />;
+}
+
 export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard' }) {
   // Tab yang sedang dibuka diingat di sessionStorage, jadi refresh halaman
   // kembali ke tab yang sama (bukan selalu ke Dashboard).
@@ -437,6 +462,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const [semuaKoreksi, setSemuaKoreksi] = useState(null); // null = belum dimuat
   const [memuatSemuaKoreksi, setMemuatSemuaKoreksi] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  // TANDA PROSES (25 Okt 2026): sebelum jawaban pertama datang, layar
+  // dulu menampilkan angka 0 tanpa tanda apa pun — admin mengira datanya
+  // memang kosong. `sudahDimuat` membedakan "belum ada jawaban" dari
+  // "jawabannya kosong".
+  const [sudahDimuat, setSudahDimuat] = useState(false);
 
   // Modal Kartu Detail View
   const [detailModalEmployee, setDetailModalEmployee] = useState(null);
@@ -547,6 +577,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, [doApiCall]);
 
   const terapkanData = useCallback((data) => {
+    setSudahDimuat(true);
     setRawRecords(data.rawRecords || []);
     setDashboardData(data.dashboardData || []);
     setKoreksiList(data.koreksiList || []);
@@ -1740,6 +1771,15 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     ? 'overflow-auto isolate w-full flex-1 min-h-0'
     : 'overflow-auto isolate w-full max-h-[calc(100vh-150px)] min-h-[420px]';
 
+  // Satu tanda proses untuk semua pekerjaan yang membuat admin menunggu.
+  const prosesLabel = savingKoreksi ? 'Menyimpan koreksi…'
+    : deletingId ? 'Menghapus koreksi…'
+    : (loading || (!sudahDimuat && !serverError)) ? 'Memuat data rekap…'
+    : menyegarkan ? 'Memperbarui angka rekap…'
+    : memuatSemuaKoreksi ? 'Memuat histori koreksi…'
+    : '';
+  const sedangMemuatAwal = loading || (!sudahDimuat && !serverError);
+
   return (
     <div className="min-h-screen bg-slate-100 pb-20 font-sans w-full">
       {toast && (
@@ -1748,11 +1788,6 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         }`}>
           {toast.jenis === 'galat' ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
           <span>{toast.teks}</span>
-        </div>
-      )}
-      {menyegarkan && (
-        <div className="fixed top-3 right-3 z-[80] px-3 py-1.5 rounded-full bg-white/95 border border-slate-200 shadow text-[11px] font-semibold text-slate-600 flex items-center gap-1.5">
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" /> Memperbarui angka rekap…
         </div>
       )}
       
@@ -1783,7 +1818,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
               className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-[11px] font-bold text-white flex items-center gap-1.5 transition active:scale-95 disabled:opacity-50"
               title="Refresh data dari server"
             >
-              <RefreshCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCcw className={`w-4 h-4 ${(loading || menyegarkan) ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Refresh Data</span>
             </button>
 
@@ -1886,7 +1921,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <span className="hidden sm:inline">ABSEN-EMAIL</span>
           </button>
         </div>
+        {prosesLabel && (
+          <div className="absolute left-0 right-0 bottom-0 h-[3px] overflow-hidden bg-blue-500/20" aria-hidden="true">
+            <div className="h-full w-1/2 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-shimmer-bar" />
+          </div>
+        )}
       </header>
+      {prosesLabel && <TandaProses label={prosesLabel} />}
 
       {/* MAIN CONTAINER - FULL WIDTH DESKTOP */}
       <main className="w-full px-2 sm:px-3 lg:px-4 pt-4 space-y-4">
@@ -2002,43 +2043,43 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-4 w-full">
               <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
                 <p className="text-[9.5px] sm:text-[11px] font-semibold text-slate-400 uppercase tracking-wide sm:tracking-wider truncate">Total Pegawai</p>
-                <p className="text-lg sm:text-2xl font-black text-slate-900 mt-0.5 sm:mt-1 leading-tight">{metrics.karyawan}</p>
+                <p className="text-lg sm:text-2xl font-black text-slate-900 mt-0.5 sm:mt-1 leading-tight">{sedangMemuatAwal ? <AngkaMemuat /> : metrics.karyawan}</p>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Pegawai terdata</p>
               </div>
 
               <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
                 <p className="text-[9.5px] sm:text-[11px] font-semibold text-teal-600 uppercase tracking-wide sm:tracking-wider truncate">Cuti Diambil</p>
-                <p className="text-lg sm:text-2xl font-black text-teal-600 mt-0.5 sm:mt-1 leading-tight">{metrics.cuti}</p>
+                <p className="text-lg sm:text-2xl font-black text-teal-600 mt-0.5 sm:mt-1 leading-tight">{sedangMemuatAwal ? <AngkaMemuat /> : metrics.cuti}</p>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Hari cuti</p>
               </div>
 
               <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
                 <p className="text-[9.5px] sm:text-[11px] font-semibold text-fuchsia-600 uppercase tracking-wide sm:tracking-wider truncate">Sakit</p>
-                <p className="text-lg sm:text-2xl font-black text-fuchsia-600 mt-0.5 sm:mt-1 leading-tight">{metrics.sakit}</p>
+                <p className="text-lg sm:text-2xl font-black text-fuchsia-600 mt-0.5 sm:mt-1 leading-tight">{sedangMemuatAwal ? <AngkaMemuat /> : metrics.sakit}</p>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Hari sakit</p>
               </div>
 
               <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
                 <p className="text-[9.5px] sm:text-[11px] font-semibold text-blue-600 uppercase tracking-wide sm:tracking-wider truncate">Ijin</p>
-                <p className="text-lg sm:text-2xl font-black text-blue-600 mt-0.5 sm:mt-1 leading-tight">{metrics.ijin}</p>
+                <p className="text-lg sm:text-2xl font-black text-blue-600 mt-0.5 sm:mt-1 leading-tight">{sedangMemuatAwal ? <AngkaMemuat /> : metrics.ijin}</p>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Hari izin</p>
               </div>
 
               <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
                 <p className="text-[9.5px] sm:text-[11px] font-semibold text-rose-600 uppercase tracking-wide sm:tracking-wider truncate">Alpa</p>
-                <p className="text-lg sm:text-2xl font-black text-rose-600 mt-0.5 sm:mt-1 leading-tight">{metrics.alpa}</p>
+                <p className="text-lg sm:text-2xl font-black text-rose-600 mt-0.5 sm:mt-1 leading-tight">{sedangMemuatAwal ? <AngkaMemuat /> : metrics.alpa}</p>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Tanpa ket.</p>
               </div>
 
               <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm">
                 <p className="text-[9.5px] sm:text-[11px] font-semibold text-amber-600 uppercase tracking-wide sm:tracking-wider truncate">Terlambat</p>
-                <p className="text-lg sm:text-2xl font-black text-amber-600 mt-0.5 sm:mt-1 leading-tight">{metrics.telat}</p>
+                <p className="text-lg sm:text-2xl font-black text-amber-600 mt-0.5 sm:mt-1 leading-tight">{sedangMemuatAwal ? <AngkaMemuat /> : metrics.telat}</p>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Total telat</p>
               </div>
 
               <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-sm col-span-3 sm:col-span-2 lg:col-span-1 flex items-center justify-between sm:block">
                 <p className="text-[9.5px] sm:text-[11px] font-semibold text-orange-600 uppercase tracking-wide sm:tracking-wider truncate">Koreksi Aktif</p>
-                <p className="text-lg sm:text-2xl font-black text-orange-600 mt-0.5 sm:mt-1 leading-tight">{metrics.koreksiCount}</p>
+                <p className="text-lg sm:text-2xl font-black text-orange-600 mt-0.5 sm:mt-1 leading-tight">{sedangMemuatAwal ? <AngkaMemuat /> : metrics.koreksiCount}</p>
                 <p className="hidden sm:block text-[10px] text-slate-400 mt-0.5">Data override</p>
               </div>
             </div>

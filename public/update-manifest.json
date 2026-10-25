@@ -1,7 +1,17 @@
 {
   "frontend": {
-    "currentVersion": "1.0.44",
+    "currentVersion": "1.0.45",
     "history": [
+      {
+        "file": "1.0.45.json",
+        "version": "1.0.45",
+        "releasedAt": "2026-10-25",
+        "required": false,
+        "notes": [
+          "Rekap Absensi: tanda proses yang jelas — garis berjalan di bawah header dan pil \"Memuat data rekap… N dtk\" selama data dimuat, diperbarui, koreksi disimpan/dihapus, atau histori koreksi dimuat.",
+          "Kartu angka (Total Pegawai, Cuti, Sakit, Ijin, Alpa, Terlambat, Koreksi) menampilkan penanda memuat, bukan angka 0, sebelum data datang. Tombol muat ulang ikut berputar saat penyegaran di belakang layar."
+        ]
+      },
       {
         "file": "1.0.44.json",
         "version": "1.0.44",
@@ -336,8 +346,17 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.44",
+    "currentVersion": "1.0.45",
     "history": [
+      {
+        "file": "1.0.45.json",
+        "version": "1.0.45",
+        "releasedAt": "2026-10-25",
+        "required": false,
+        "notes": [
+          "Tidak ada perubahan backend; versi disamakan dengan frontend 1.0.45."
+        ]
+      },
       {
         "file": "1.0.44.json",
         "version": "1.0.44",
