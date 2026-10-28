@@ -1,0 +1,8 @@
+{
+  "version": "1.0.46",
+  "releasedAt": "2026-10-28",
+  "required": false,
+  "notes": [
+    "Dashboard GPS: tinggi peta di tab Peta dikecilkan menjadi setengahnya (29% tinggi layar, minimal 220 px), sehingga daftar karyawan lebih cepat terlihat."
+  ]
+}

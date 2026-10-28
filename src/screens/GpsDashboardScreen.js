@@ -155,7 +155,7 @@ function Lencana({ status }) {
 // ke state akan memicu render ulang setiap kali peta digeser, dan React
 // akan mencoba membandingkan objek raksasa itu pada setiap perubahan.
 // ---------------------------------------------------------------------
-function PetaLive({ daftar, area, fokus, onPilih, tinggi = '58vh' }) {
+function PetaLive({ daftar, area, fokus, onPilih, tinggi = 'max(29vh, 220px)' }) {
   const wadahRef = useRef(null);
   const petaRef = useRef(null);
   const markerRef = useRef({});

@@ -1,7 +1,16 @@
 {
   "frontend": {
-    "currentVersion": "1.0.45",
+    "currentVersion": "1.0.46",
     "history": [
+      {
+        "file": "1.0.46.json",
+        "version": "1.0.46",
+        "releasedAt": "2026-10-28",
+        "required": false,
+        "notes": [
+          "Dashboard GPS: tinggi peta di tab Peta dikecilkan menjadi setengahnya (29% tinggi layar, minimal 220 px), sehingga daftar karyawan lebih cepat terlihat."
+        ]
+      },
       {
         "file": "1.0.45.json",
         "version": "1.0.45",
@@ -346,8 +355,17 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.45",
+    "currentVersion": "1.0.46",
     "history": [
+      {
+        "file": "1.0.46.json",
+        "version": "1.0.46",
+        "releasedAt": "2026-10-28",
+        "required": false,
+        "notes": [
+          "Tidak ada perubahan backend; versi disamakan dengan frontend 1.0.46."
+        ]
+      },
       {
         "file": "1.0.45.json",
         "version": "1.0.45",

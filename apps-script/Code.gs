@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.45";
+const APP_VERSION = "1.0.46";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
