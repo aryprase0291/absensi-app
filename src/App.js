@@ -271,6 +271,14 @@ const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return n
 const TIPE_DL_ONLINE = ['Dinas', 'Dinas Luar'];
 const KATEGORI_LUPA_DL = 'Lupa Pengajuan Dinas Luar (DL)';
 
+// MODE ABSEN PER KARYAWAN (Okt 2026). Cermin MODE_ABSEN_VALID di
+// apps-script/ModeAbsen.gs. 'gabungan' = bawaan untuk semua karyawan.
+const OPSI_MODE_ABSEN = [
+  { value: 'gabungan', label: 'Online + mesin', ket: 'Boleh absen lewat aplikasi maupun mesin. Semua absen terbaca: masuk = jam paling awal, pulang = jam paling akhir dari kedua sumber.' },
+  { value: 'online', label: 'Online saja', ket: 'Absen hanya lewat aplikasi. Scan mesin tidak dipakai untuk jam masuk/pulang maupun status.' },
+  { value: 'mesin', label: 'Mesin saja', ket: 'Tombol absen Masuk/Pulang di aplikasi ditutup (server juga menolak). Hanya scan mesin yang terbaca. Standby & DL tetap bisa.' }
+];
+
 const ICON_MAP = { 'Hadir': CheckCircle, 'Pulang': LogOut, 'Ijin': ClipboardList, 'Sakit': HeartPulse, 'Lembur': Timer, 'Dinas': PlaneTakeoff, 'Dinas Luar': PlaneTakeoff, 'Cuti': Palmtree, 'Cuti EO': Palmtree, 'Tukar Shift': ArrowLeftRight, 'Off': Coffee, 'Standby': Clock };
 // Tint lembut + ikon berwarna. Blok warna penuh bikin 4 kartu saling berebut perhatian.
 const COLOR_MAP = {'Hadir': 'bg-emerald-50 text-emerald-600', 'Pulang': 'bg-rose-50 text-rose-600', 'Ijin': 'bg-amber-50 text-amber-600', 'Sakit': 'bg-red-50 text-red-600', 'Lembur': 'bg-violet-50 text-violet-600', 'Dinas': 'bg-sky-50 text-sky-600', 'Cuti': 'bg-teal-50 text-teal-600', 'Tukar Shift': 'bg-indigo-50 text-indigo-600', 'Off': 'bg-slate-100 text-slate-500'};
@@ -1452,7 +1460,16 @@ if (!user) return null;
 const availableMenus = masterData.menus || [];
 
     // FILTER MENU BERDASARKAN HAK AKSES USER
-const allowedMenus = user.akses && user.akses.length > 0 ? availableMenus.filter(item => user.akses.includes(item.value)) : availableMenus;
+const menusSesuaiAkses = user.akses && user.akses.length > 0 ? availableMenus.filter(item => user.akses.includes(item.value)) : availableMenus;
+
+    // MODE ABSEN (ModeAbsen.gs): 'gabungan' | 'online' | 'mesin'.
+    // Nilai dari buka_aplikasi didahulukan supaya perubahan admin langsung
+    // berlaku tanpa logout. MESIN SAJA = tombol Masuk/Pulang online ditutup
+    // (server juga menolaknya).
+const modeAbsenUser = (bootAwal && bootAwal.modeAbsen) || user.modeAbsen || 'gabungan';
+const allowedMenus = modeAbsenUser === 'mesin'
+  ? menusSesuaiAkses.filter(item => item.value !== 'Hadir' && item.value !== 'Pulang')
+  : menusSesuaiAkses;
 
     // NORMALISASI ROLE USER
 const userRole = (user.role || '').toLowerCase();
@@ -7415,6 +7432,12 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   // untuk mencentang kotaknya saat karyawan dipilih.
   const [gpsBebasList, setGpsBebasList] = useState([]);
   const [gpsBebasUser, setGpsBebasUser] = useState(false);
+  // Mode absen per karyawan (ModeAbsen.gs): peta { userId: 'online'|'mesin' },
+  // karyawan yang tidak ada di peta = 'gabungan' (online + mesin).
+  const [modeAbsenMap, setModeAbsenMap] = useState({});
+  const [modeAbsenPilih, setModeAbsenPilih] = useState('gabungan');
+  const [modeDivisi, setModeDivisi] = useState('');
+  const [modeDivisiNilai, setModeDivisiNilai] = useState('gabungan');
   const [geofenceAreas, setGeofenceAreas] = useState([]);
   // Master lokasi geofence (sheet MasterGeofence) + pilihan lokasi per karyawan.
   const [geoMaster, setGeoMaster] = useState([]);
@@ -7776,9 +7799,10 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     finally { setSavingPeriod(false); }
   };
 
-  const applyGeofenceUser = (userId, configs = geofenceConfigs, bebasList = gpsBebasList) => {
+  const applyGeofenceUser = (userId, configs = geofenceConfigs, bebasList = gpsBebasList, modeMap = modeAbsenMap) => {
     const cfg = configs[String(userId)] || { required: false, areas: [] };
     setGeofenceUserId(String(userId || ''));
+    setModeAbsenPilih((modeMap || {})[String(userId || '')] || 'gabungan');
     setGeofenceRequired(!!cfg.required);
     setGpsBebasUser((bebasList || []).indexOf(String(userId || '')) !== -1);
     // Area bermasterID ditampilkan sebagai centang; sisanya area manual lama.
@@ -7798,11 +7822,12 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         const users = data.users || [];
         const configs = data.configs || {};
         const bebas = (data.gpsBebas || []).map(String);
-        setGeofenceUsers(users); setGeofenceConfigs(configs); setGpsBebasList(bebas);
+        const modeMap = data.modeAbsen || {};
+        setGeofenceUsers(users); setGeofenceConfigs(configs); setGpsBebasList(bebas); setModeAbsenMap(modeMap);
         const master = data.master || [];
         setGeoMaster(master);
         setGeoMasterDraft(master.map(m => ({ ...m })));
-        if (users.length) applyGeofenceUser(geofenceUserId || users[0].id, configs, bebas);
+        if (users.length) applyGeofenceUser(geofenceUserId || users[0].id, configs, bebas, modeMap);
       } else alert(data.message || 'Gagal memuat konfigurasi geofence.');
     } catch (e) { alert('Gagal koneksi saat memuat geofence.'); }
     finally { setLoadingGeofence(false); }
@@ -7843,6 +7868,19 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     } catch (e) { alert('Gagal koneksi saat menerapkan geofence.'); }
     finally { setLoading(false); }
   };
+  const handleApplyModeDivisi = async () => {
+    if (!modeDivisi) return alert('Pilih divisi terlebih dahulu.');
+    const label = (OPSI_MODE_ABSEN.find(o => o.value === modeDivisiNilai) || {}).label || modeDivisiNilai;
+    if (!window.confirm(`Atur mode absen "${label}" untuk SEMUA karyawan divisi "${modeDivisi}"?`)) return;
+    setLoading(true);
+    try {
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'apply_mode_absen_divisi', roleRequester: user.role, divisi: modeDivisi, modeAbsen: modeDivisiNilai }) });
+      const data = await res.json();
+      if (data.result === 'success') { alert(data.message); fetchGeofenceConfig(); }
+      else alert(data.message || 'Gagal menerapkan mode absen.');
+    } catch (e) { alert('Gagal koneksi saat menerapkan mode absen.'); }
+    finally { setLoading(false); }
+  };
   const handleSaveGeofence = async () => {
     if (!geofenceUserId) return alert('Pilih karyawan terlebih dahulu.');
     if (geofenceRequired && geofenceAreas.length === 0 && geofenceMasterIds.length === 0) return alert('Pilih minimal satu lokasi geofence.');
@@ -7852,7 +7890,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     try {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
         action: 'save_geofence_config', roleRequester: user.role, userId: geofenceUserId,
-        required: geofenceRequired, areas: geofenceAreas, masterIds: geofenceMasterIds, gpsGerbangBebas: gpsBebasUser
+        required: geofenceRequired, areas: geofenceAreas, masterIds: geofenceMasterIds, gpsGerbangBebas: gpsBebasUser,
+        modeAbsen: modeAbsenPilih
       }) });
       const data = await res.json();
       if (data.result === 'success') { alert(data.message); fetchGeofenceConfig(); }
@@ -8188,7 +8227,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         { tab: 'import_db', label: 'Import data mesin absen', ikon: FileUp },
         { tab: 'bebas_absen', label: 'Bebas absen & karyawan harian', ikon: UserCheck },
         { tab: 'geomaster', label: 'Master lokasi geofence', ikon: MapPin },
-        { tab: 'geofence', label: 'Geofence absen online', ikon: LocateFixed },
+        { tab: 'geofence', label: 'Akses absen & geofence', ikon: LocateFixed },
         { tab: 'period', label: 'Periode absensi', ikon: CalendarRange },
         { tab: 'approval_team', label: 'Tim approval', ikon: UsersRound },
         { tab: 'perangkat', label: 'Perangkat & sesi login', ikon: Smartphone },
@@ -8253,7 +8292,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'master': return 'Master Data';
           case 'import_db': return 'Import Data Mesin Absen';
           case 'news': return 'Broadcast Info HRD';
-          case 'geofence': return 'Area Geofence Absen Online';
+          case 'geofence': return 'Akses Absen & Geofence';
           case 'geomaster': return 'Master Lokasi Geofence';
           case 'period': return 'Periode Absensi';
           case 'approval_team': return 'Tim Approval';
@@ -8505,8 +8544,19 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                 <div>
                   <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Karyawan</label>
                   <select className={inputCls} value={geofenceUserId} onChange={handleGeofenceUserChange}>
-                    {geofenceUsers.map(u => <option key={u.id} value={u.id}>{u.nama} · {u.username}</option>)}
+                    {geofenceUsers.map(u => <option key={u.id} value={u.id}>{u.nama} · {u.username}{modeAbsenMap[String(u.id)] ? ` · ${(OPSI_MODE_ABSEN.find(o => o.value === modeAbsenMap[String(u.id)]) || {}).label}` : ''}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Akses absen</label>
+                  <div className="space-y-2">
+                    {OPSI_MODE_ABSEN.map(o => (
+                      <label key={o.value} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer ${modeAbsenPilih === o.value ? 'bg-blue-50 border-blue-200' : 'bg-slate-50 border-slate-100'}`}>
+                        <input type="radio" name="modeAbsen" value={o.value} checked={modeAbsenPilih === o.value} onChange={() => setModeAbsenPilih(o.value)} className="mt-0.5 w-4 h-4 border-slate-300 text-blue-600 focus:ring-blue-500/20" />
+                        <span><span className="block text-[13px] font-semibold text-slate-800">{o.label}</span><span className="block mt-0.5 text-[11px] leading-relaxed text-slate-500">{o.ket}</span></span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer">
                   <input type="checkbox" checked={geofenceRequired} onChange={e => setGeofenceRequired(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
@@ -8589,6 +8639,18 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                   ))}
                 </div>
                 <div className="p-4 pt-0"><button type="button" onClick={handleSaveGeoMaster} disabled={loading} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">{loading && <Loader2 className="w-4 h-4 animate-spin" />} {loading ? 'Menyimpan…' : 'Simpan master lokasi'}</button></div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3">
+                <div><p className="text-[13px] font-semibold text-slate-800">Akses absen untuk satu divisi</p><p className="text-[11px] text-slate-400 mt-0.5">Atur mode absen semua karyawan dalam satu divisi sekaligus. Pengaturan per karyawan di atas tetap bisa diubah sesudahnya.</p></div>
+                <select className={inputCls} value={modeDivisiNilai} onChange={e => setModeDivisiNilai(e.target.value)}>
+                  {OPSI_MODE_ABSEN.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <select className={inputCls} value={modeDivisi} onChange={e => setModeDivisi(e.target.value)}>
+                  <option value="">Pilih divisi…</option>
+                  {[...new Set(geofenceUsers.map(u => String(u.divisi || '').trim()).filter(Boolean))].sort().map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+                <button type="button" onClick={handleApplyModeDivisi} disabled={loading || !modeDivisi} className="w-full bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 disabled:opacity-50">Terapkan mode absen ke divisi</button>
               </div>
 
               <div className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3">
@@ -10979,11 +11041,19 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                 const adaMasukOnline = !!(item.onlineMasuk && item.onlineMasuk !== '-');
                 const adaPulangOnline = !!(item.onlinePulang && item.onlinePulang !== '-');
                 const simbolOnline = !adaMasukOnline && adaPulangOnline ? 'Si' : (adaMasukOnline && !adaPulangOnline ? 'So' : 'H');
-                const simbolTampil = isAbsenOnline ? simbolOnline : item.symbol;
+                // item.gabung = server sudah menggabungkan mesin + online
+                // (ModeAbsen.gs): simbol, masuk, pulang, telat sudah final.
+                // Tanpa flag itu (backend lama) aturan lama dipakai.
+                const gabungServer = item.gabung === true;
+                const simbolTampil = gabungServer
+                  ? (String(item.symbol || '').toUpperCase() === 'ONL' ? 'H' : item.symbol)
+                  : (isAbsenOnline ? simbolOnline : item.symbol);
                 const style = getStatusStyle(simbolTampil);
-                const keterangan = isAbsenOnline
-                  ? (simbolOnline === 'H' ? 'HADIR - Absen Online' : KETERANGAN_MAP[simbolOnline])
-                  : (KETERANGAN_MAP[item.symbol] || '-');
+                const keterangan = gabungServer
+                  ? (item.sumber === 'online' && simbolTampil === 'H' ? 'HADIR - Absen Online' : (KETERANGAN_MAP[simbolTampil] || simbolTampil || '-'))
+                  : isAbsenOnline
+                    ? (simbolOnline === 'H' ? 'HADIR - Absen Online' : KETERANGAN_MAP[simbolOnline])
+                    : (KETERANGAN_MAP[item.symbol] || '-');
                 
                 // Syaratnya pindah ke bolehAjukan() supaya panel detail di
                 // tampilan kalender memakai aturan yang sama persis.
@@ -11017,10 +11087,12 @@ const handleAjukanIjin = (item) => { let jMulai="", jSelesai="", jk=item.jamKerj
                                     <div className="relative pl-3 border-l-2 border-green-400">
                                         <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Masuk online' : 'Masuk'}</p>
                                         <p className="text-base font-black text-slate-800">{formatTimeOnly(item.masuk)}</p>
+                                        {gabungServer && item.sumber !== 'online' && item.masukSumber && <p className={`text-[9px] font-semibold ${item.masukSumber === 'online' ? 'text-indigo-500' : 'text-slate-400'}`}>{item.masukSumber === 'online' ? 'via aplikasi' : 'via mesin'}</p>}
                                     </div>
                                     <div className="relative pl-3 border-l-2 border-red-400">
                                         <p className="text-[9px] font-bold text-slate-400 uppercase">{item.sumber === 'online' ? 'Pulang online' : 'Pulang'}</p>
                                         <p className="text-base font-black text-slate-800">{formatTimeOnly(item.pulang)}</p>
+                                        {gabungServer && item.sumber !== 'online' && item.pulangSumber && <p className={`text-[9px] font-semibold ${item.pulangSumber === 'online' ? 'text-indigo-500' : 'text-slate-400'}`}>{item.pulangSumber === 'online' ? 'via aplikasi' : 'via mesin'}</p>}
                                     </div>
                                 </div>
                                 {adaOnline && (

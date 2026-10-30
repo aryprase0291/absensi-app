@@ -1,7 +1,18 @@
 {
   "frontend": {
-    "currentVersion": "1.0.46",
+    "currentVersion": "1.0.47",
     "history": [
+      {
+        "file": "1.0.47.json",
+        "version": "1.0.47",
+        "releasedAt": "2026-10-31",
+        "required": true,
+        "notes": [
+          "Admin Panel > Akses absen & geofence: pilihan akses absen per karyawan — Online + mesin (bawaan), Online saja, atau Mesin saja. Bisa juga diterapkan ke satu divisi sekaligus.",
+          "Mode Mesin saja: tombol absen Masuk/Pulang di aplikasi tidak ditampilkan.",
+          "Data Absen: absen online dan mesin kini dibaca bersama. Contoh: masuk lewat aplikasi 08:17 + pulang di mesin 12:32 tampil sebagai Masuk 08:17 / Pulang 12:32 (Hadir), bukan lagi 'Tidak Absen Pulang'. Di bawah jam ada keterangan 'via aplikasi' / 'via mesin'."
+        ]
+      },
       {
         "file": "1.0.46.json",
         "version": "1.0.46",
@@ -355,8 +366,21 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.46",
+    "currentVersion": "1.0.47",
     "history": [
+      {
+        "file": "1.0.47.json",
+        "version": "1.0.47",
+        "releasedAt": "2026-10-31",
+        "required": true,
+        "notes": [
+          "ModeAbsen.gs (file BARU): mode absen per karyawan disimpan di Script Properties MODE_ABSEN_PER_USER (JSON, hanya karyawan bermode 'online'/'mesin'; sisanya 'gabungan').",
+          "gabungAbsenMesinOnline_: masuk = jam paling awal, pulang = jam paling akhir dari mesin + online; Si/So/A/T/PC dihitung ulang dari jam kerja; simbol non-kehadiran (I, S, C, DL, O, ...) dan koreksi admin tidak disentuh.",
+          "Dipakai di get_db_absen (Data Absen karyawan) dan get_rekap_admin (Tabel Data/DB_FIX, Board, Dashboard). handleAbsen menolak Hadir/Pulang untuk mode 'mesin'; hitungStats mengabaikan absen online untuk mode 'mesin'.",
+          "Respons login & buka_aplikasi membawa modeAbsen. get/save_geofence_config membawa field modeAbsen. Action baru apply_mode_absen_divisi (admin, Auth.gs).",
+          "Urutan deploy: ModeAbsen.gs + Code.gs + Auth.gs bersamaan, lalu bundle frontend."
+        ]
+      },
       {
         "file": "1.0.46.json",
         "version": "1.0.46",

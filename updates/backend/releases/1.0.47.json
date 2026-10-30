@@ -1,0 +1,12 @@
+{
+  "version": "1.0.47",
+  "releasedAt": "2026-10-31",
+  "required": true,
+  "notes": [
+    "ModeAbsen.gs (file BARU): mode absen per karyawan disimpan di Script Properties MODE_ABSEN_PER_USER (JSON, hanya karyawan bermode 'online'/'mesin'; sisanya 'gabungan').",
+    "gabungAbsenMesinOnline_: masuk = jam paling awal, pulang = jam paling akhir dari mesin + online; Si/So/A/T/PC dihitung ulang dari jam kerja; simbol non-kehadiran (I, S, C, DL, O, ...) dan koreksi admin tidak disentuh.",
+    "Dipakai di get_db_absen (Data Absen karyawan) dan get_rekap_admin (Tabel Data/DB_FIX, Board, Dashboard). handleAbsen menolak Hadir/Pulang untuk mode 'mesin'; hitungStats mengabaikan absen online untuk mode 'mesin'.",
+    "Respons login & buka_aplikasi membawa modeAbsen. get/save_geofence_config membawa field modeAbsen. Action baru apply_mode_absen_divisi (admin, Auth.gs).",
+    "Urutan deploy: ModeAbsen.gs + Code.gs + Auth.gs bersamaan, lalu bundle frontend."
+  ]
+}

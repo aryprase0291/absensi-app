@@ -269,6 +269,7 @@ const ACTION_ROLES = {
   'save_geofence_config': ['admin'],
   'save_geofence_master': ['admin'],
   'apply_geofence_divisi': ['admin'],
+  'apply_mode_absen_divisi': ['admin'],   // ModeAbsen.gs
   'save_absence_period': ['admin'],
   'save_absence_periods': ['admin'],   // daftar periode (Agu 2026)
   'tambah_user': ['admin'],

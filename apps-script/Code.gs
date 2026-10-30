@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.46";
+const APP_VERSION = "1.0.47";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -266,6 +266,7 @@ function doPost(e) {
     if (action === 'save_geofence_config') return handleSaveGeofenceConfig(data);
     if (action === 'save_geofence_master') return handleSaveGeofenceMaster(data);
     if (action === 'apply_geofence_divisi') return handleApplyGeofenceDivisi(data);
+    if (action === 'apply_mode_absen_divisi') return handleApplyModeAbsenDivisi(data);
     if (action === 'reset_password_user') return handleResetPasswordUser(data); // Reset password
     if (action === 'set_approval_role') return handleSetApprovalRole(data); // Jadikan user sbg kepala divisi (approval)
     if (action === 'get_analysis_data') return handleGetAnalysisData(data);
@@ -401,6 +402,18 @@ function handleGetLogLogin(data) {
 }
 
 function handleAbsen(data) {
+  // MODE ABSEN (ModeAbsen.gs). Karyawan bermode MESIN SAJA tidak boleh
+  // absen online Hadir/Pulang. Dicek di server supaya tidak bisa dilewati
+  // dengan aplikasi versi lama atau request buatan sendiri.
+  if ((data.tipe === 'Hadir' || data.tipe === 'Pulang') && typeof modeAbsenUntuk === 'function'
+      && modeAbsenUntuk(data.userId) === 'mesin') {
+    return responseJSON({
+      result: 'error',
+      code: 'MODE_ABSEN_MESIN',
+      message: 'Akun Anda diatur absen lewat MESIN saja. Absen online Masuk/Pulang tidak tersedia — silakan scan di mesin absensi. Hubungi HRD/Admin bila pengaturan ini keliru.'
+    });
+  }
+
   // KUNCI PERIODE LALU (Okt 2026, lihat AbsencePeriod.gs). Dicek paling
   // awal: murah, dan pengajuan yang toh akan ditolak tidak perlu melewati
   // gerbang GPS/wajah atau mengunggah foto ke Drive. DL dilewati karena
@@ -1937,6 +1950,8 @@ function handleGetDbAbsen(data) {
   const onlineByDate = {};
   const standbyByDate = {};
   let latestOnlineTimestamp = 0;
+  // MODE ABSEN (ModeAbsen.gs): gabungan | online | mesin.
+  const modeAbsen = (typeof modeAbsenUntuk === 'function') ? modeAbsenUntuk(data.userId) : 'gabungan';
   const sheetOnline = SS.getSheetByName(SHEET_ABSENSI);
   // Lebar baca mengikuti posisi kolom "Alamat" yang dibuat Geocode.gs.
   // Dulu dipatok 17; kalau tetap dipatok, kolom Alamat tidak akan pernah
@@ -1954,6 +1969,8 @@ function handleGetDbAbsen(data) {
     // Hanya presensi online dan Standby yang diringkas di Data Absen.
     // Pengajuan Ijin/Cuti tetap berada di menu masing-masing.
     if (rowUserId !== String(data.userId) || status === 'Rejected' || !['Hadir', 'Pulang', 'Standby'].includes(tipe)) continue;
+    // Mode MESIN SAJA: absen online Hadir/Pulang tidak ikut terbaca.
+    if (modeAbsen === 'mesin' && tipe !== 'Standby') continue;
 
     const waktu = row[1];
     const tanggalRaw = formatDateYMD_Strict(waktu);
@@ -2020,9 +2037,31 @@ function handleGetDbAbsen(data) {
     const standby = standbyByDate[tanggalRaw];
 
     if (mesin) {
-      // Bila ada masuk online di tanggal yang sama, catatan mesin yang masih
-      // berstatus Alpa tidak lagi menjadi status utama. Tampilkan sebagai
-      // presensi online agar daftar Data Mesin konsisten dengan dashboard.
+      // GABUNG MESIN + ONLINE sesuai mode karyawan (ModeAbsen.gs).
+      // Masuk = jam paling awal, pulang = jam paling akhir dari kedua
+      // sumber; simbol & telat dihitung ulang. Contoh: masuk online 08:17
+      // + pulang mesin 12:32 = Hadir 08:17-12:32, bukan "Tidak Absen Pulang".
+      if (typeof gabungAbsenMesinOnline_ === 'function') {
+        const g = gabungAbsenMesinOnline_(mesin, online, modeAbsen);
+        return {
+          ...mesin,
+          sumber: online ? 'mesin+online' : (standby ? 'mesin+standby' : 'mesin'),
+          symbol: g.symbol,
+          masuk: g.berubah ? (g.masuk || '-') : mesin.masuk,
+          pulang: g.berubah ? (g.pulang || '-') : mesin.pulang,
+          telat: g.berubah ? g.telat : mesin.telat,
+          masukSumber: g.masukSumber,
+          pulangSumber: g.pulangSumber,
+          canRequestIjin: TARGET_SYMBOLS.includes(g.symbol),
+          gabung: true,
+          modeAbsen: modeAbsen,
+          onlineMasuk: online ? online.masuk : '',
+          onlinePulang: online ? online.pulang : '',
+          onlineRecords: online ? online.onlineRecords : [],
+          standbyRecords: standby ? standby.records : []
+        };
+      }
+      // Cadangan bila ModeAbsen.gs belum ter-deploy: aturan lama.
       const alpaTertutupOnline = online && simbolOnline(online) && ['A', 'AC'].includes(String(mesin.symbol));
       return {
         ...mesin,
@@ -2044,8 +2083,8 @@ function handleGetDbAbsen(data) {
       tanggal: formatDate((online || standby)._sortDate || tanggalRaw),
       tanggalRaw: tanggalRaw,
       jamKerja: '-',
-      masuk: online.masuk || '-',
-      pulang: online.pulang || '-',
+      masuk: online ? (online.masuk || '-') : '-',
+      pulang: online ? (online.pulang || '-') : '-',
       telat: '-',
       symbol: online ? (simbolOnline(online) || 'ONL') : 'STB',
       waktuScan: '-',
@@ -2055,6 +2094,10 @@ function handleGetDbAbsen(data) {
       shiftStart: '',
       shiftEnd: '',
       sumber: online ? 'online' : 'standby',
+      masukSumber: online && online.masuk ? 'online' : '',
+      pulangSumber: online && online.pulang ? 'online' : '',
+      gabung: true,
+      modeAbsen: modeAbsen,
       onlineMasuk: online ? online.masuk : '',
       onlinePulang: online ? online.pulang : '',
       onlineRecords: online ? online.onlineRecords : [],
@@ -2393,7 +2436,8 @@ function handleGetGeofenceConfig(data) {
     users: users,
     configs: _ambilKonfigurasiGeofence(),
     master: _bacaMasterGeofence_(),
-    gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : []
+    gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : [],
+    modeAbsen: (typeof modeAbsenPeta === 'function') ? modeAbsenPeta() : {}
   });
 }
 
@@ -2423,6 +2467,14 @@ function handleSaveGeofenceConfig(data) {
     if (typeof gpsBebasSet === 'function') gpsBebasSet(userId, gpsBebasBaru);
   }
 
+  // --- MODE ABSEN (ModeAbsen.gs) ------------------------------------
+  // undefined = klien lama yang belum tahu field ini; jangan disentuh.
+  let pesanMode = '';
+  if (data.modeAbsen !== undefined && data.modeAbsen !== null && typeof modeAbsenSet === 'function') {
+    modeAbsenSet(userId, data.modeAbsen);
+    pesanMode = ' Mode absen: ' + modeAbsenLabel_(data.modeAbsen) + '.';
+  }
+
   const incomingAreas = Array.isArray(data.areas) ? data.areas : [];
   const areas = incomingAreas.map(area => ({ nama: String(area.nama || 'Area kantor').trim() || 'Area kantor', lat: Number(area.lat), lng: Number(area.lng), radius: Number(area.radius), aktif: area.aktif !== false })).filter(area => area.aktif && isFinite(area.lat) && isFinite(area.lng) && area.lat >= -90 && area.lat <= 90 && area.lng >= -180 && area.lng <= 180 && isFinite(area.radius) && area.radius > 0).map(area => ({ nama: area.nama, lat: area.lat, lng: area.lng, radius: Math.min(Math.round(area.radius), 100000), aktif: true }));
   const masterAktif = {};
@@ -2444,9 +2496,10 @@ function handleSaveGeofenceConfig(data) {
 
   return responseJSON({
     result: 'success',
-    message: (required ? 'Geofence diwajibkan dan disimpan.' : 'Geofence opsional dan disimpan.') + pesanBebas,
+    message: (required ? 'Geofence diwajibkan dan disimpan.' : 'Geofence opsional dan disimpan.') + pesanBebas + pesanMode,
     config: { required: required, areas: areas, masterIds: masterIds },
-    gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : []
+    gpsBebas: (typeof gpsBebasDaftar === 'function') ? gpsBebasDaftar() : [],
+    modeAbsen: (typeof modeAbsenPeta === 'function') ? modeAbsenPeta() : {}
   });
 }
 
@@ -2641,6 +2694,10 @@ function handleLogin(data) {
           // Dipakai frontend untuk melewati GpsGateScreen DAN untuk tidak
           // menahan tombol Kirim pada form yang biasanya butuh koordinat.
           gpsGerbangBebas: gpsBebasUntuk(foundUser[0]),
+
+          // Mode absen: 'gabungan' | 'online' | 'mesin' (ModeAbsen.gs).
+          // Frontend menyembunyikan tombol Masuk/Pulang untuk 'mesin'.
+          modeAbsen: (typeof modeAbsenUntuk === 'function') ? modeAbsenUntuk(foundUser[0]) : 'gabungan',
 
           // TOKEN AUTENTIKASI (lihat Auth.gs)
           // Frontend menyimpannya bersama data user dan mengirimkannya
@@ -3066,6 +3123,15 @@ function handleBukaAplikasi(data) {
     console.warn('Ringkasan approval gagal saat buka aplikasi: ' + e.message);
   }
 
+  // --- Mode absen (ModeAbsen.gs) -------------------------------------
+  // Ikut di sini supaya perubahan oleh admin langsung berlaku tanpa
+  // karyawan perlu logout-login.
+  try {
+    if (typeof modeAbsenUntuk === 'function') hasil.modeAbsen = modeAbsenUntuk(String(data.userId));
+  } catch (e) {
+    console.warn('Mode absen gagal saat buka aplikasi: ' + e.message);
+  }
+
   // --- Notifikasi status pengajuan untuk karyawan (NotifKaryawan.gs) --
   // Hanya yang BELUM dibaca, maks beberapa baris — dibaca dari ekor sheet.
   hasil.notifKaryawan = null;
@@ -3247,6 +3313,10 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
     const tzSkrip = Session.getScriptTimeZone();
     const tglHariIni = Utilities.formatDate(new Date(), tzSkrip, 'yyyy-MM-dd');
 
+    // MODE ABSEN (ModeAbsen.gs): MESIN SAJA -> absen online Hadir/Pulang
+    // tidak dihitung sama sekali (hari hadir, pembatal Alpa, jam hari ini).
+    const modeMesinSaja = (typeof modeAbsenUntuk === 'function') && modeAbsenUntuk(targetId) === 'mesin';
+
     // Tanggal dengan absen masuk online menjadi hari hadir. Jika dbabsen
     // masih memiliki simbol Alpa pada tanggal yang sama, Alpa tersebut tidak
     // dihitung lagi agar sumber presensi online dan mesin tidak bertentangan.
@@ -3285,7 +3355,7 @@ function hitungStats(targetId, role, nikDiketahui, petaCutiDiketahui, periodeDip
             // Diambil dari kolom B (Waktu Input) — waktu saat tombol kirim
             // ditekan, yaitu yang sama dengan yang dilihat karyawan.
             // Baris Rejected tetap diabaikan, sama seperti hitungan lain.
-            if (status !== 'Rejected' && (tipe === 'Hadir' || tipe === 'Pulang')) {
+            if (status !== 'Rejected' && !modeMesinSaja && (tipe === 'Hadir' || tipe === 'Pulang')) {
                 const wkt = rowsAbsensi[i][1];
                 const tanggalOnline = formatDateYMD_Strict(wkt);
                 if (tipe === 'Hadir' && tanggalOnline && masukPeriode) {
@@ -5941,6 +6011,9 @@ function handleGetRekapAdmin(data) {
   //     dicacah di Dashboard.
   // Koreksi admin tetap menang atas keduanya.
   const online = _rekapKumpulkanOnline_(rowsUsers, dariYMD, sampaiYMD);
+  // Mode absen per karyawan (ModeAbsen.gs), dicari lewat payroll/nama.
+  const petaModeRekap = (typeof modeAbsenPetaRekap_ === 'function') ? modeAbsenPetaRekap_(rowsUsers) : {};
+  const adaGabung = typeof gabungAbsenMesinOnline_ === 'function';
   if (online.daftar.length) {
     const deptOrang = {};
     for (let i = 1; i < rowsDb.length; i++) {
@@ -6040,7 +6113,33 @@ function handleGetRekapAdmin(data) {
     let onlinePulang = '';
     const barisOnline = r[20] === 'ONLINE';
     const onl = barisOnline ? r[21] : _rekapCariOnline_(online, payroll, nama, tglYMD);
-    if (onl) {
+    const modeOrang = adaGabung ? modeAbsenCariRekap_(petaModeRekap, payroll, nama) : 'gabungan';
+    if (adaGabung && !barisOnline && !isKoreksi && (onl || modeOrang === 'online')) {
+      // GABUNG MESIN + ONLINE (ModeAbsen.gs): masuk paling awal, pulang
+      // paling akhir, simbol & telat dihitung ulang. Koreksi admin tetap
+      // menang (blok ini dilewati untuk baris terkoreksi).
+      const g = gabungAbsenMesinOnline_({ symbol: id2, masuk: masuk, pulang: pulang, telat: telat, jamKerja: jamKerja }, onl, modeOrang);
+      if (g.berubah) {
+        const simbolLama = id2;
+        const telatLama = telat;
+        id2 = g.symbol;
+        masuk = g.masuk;
+        pulang = g.pulang;
+        telat = g.telat || '';
+        if (telat !== telatLama) nominal = _hitungNominalDenda(telat, '');
+        if (!telat) nominal = 0;
+        sumber = onl ? (simbolLama !== id2 ? 'online' : 'mesin+online') : 'mesin';
+      }
+      if (onl) {
+        onlineMasuk = onl.masuk || '';
+        onlinePulang = onl.pulang || '';
+        if (!g.berubah) {
+          sumber = 'mesin+online';
+          if (!masuk && onl.masuk) masuk = onl.masuk;
+          if (!pulang && onl.pulang) pulang = onl.pulang;
+        }
+      }
+    } else if (onl) {
       onlineMasuk = onl.masuk || '';
       onlinePulang = onl.pulang || '';
       if (barisOnline) {
@@ -6366,6 +6465,9 @@ function _rekapKumpulkanOnline_(rowsUsers, dariYMD, sampaiYMD) {
     };
   }
 
+  // Karyawan bermode MESIN SAJA (ModeAbsen.gs): absen online-nya tidak dibaca.
+  const modePeta = (typeof modeAbsenPeta === 'function') ? modeAbsenPeta() : {};
+
   // Sheet Absensi append-only: kalau ada batas bawah, cukup baca ekornya
   // (JendelaAbsensi.gs). Mundur 2 hari sebagai pengaman zona waktu.
   let baris;
@@ -6391,6 +6493,7 @@ function _rekapKumpulkanOnline_(rowsUsers, dariYMD, sampaiYMD) {
     if (sampaiYMD && ymd > sampaiYMD) continue;
 
     const userId = String(row[2] || '').trim();
+    if (modePeta[userId] === 'mesin') continue;
     const u = petaUser[userId] || {};
     const payroll = u.payroll || '';
     const nama = u.nama || String(row[3] || '').trim();
