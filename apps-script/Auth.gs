@@ -236,6 +236,8 @@ const ACTION_ROLES = {
   'get_approval_list': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
   'process_approval': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
   'get_team_history': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
+  // Histori absensi tim untuk atasan (TimAtasan.gs) — lihat saja.
+  'get_rekap_tim': ['admin', 'hrd', 'manager', 'kepala', 'kepala_divisi', 'supervisor', 'spv', 'pimpinan'],
 
   // --- Admin & HRD ---
   'get_user_list_admin': ['admin', 'hrd'],

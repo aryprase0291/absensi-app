@@ -393,6 +393,7 @@ function handleGetLogLogin(data) {
     if (action === 'baca_notif_karyawan') return handleBacaNotifKaryawan(data);
     if (action === 'get_approval_list') return handleGetApprovalList(data);
     if (action === 'get_team_history') return handleGetTeamHistory(data);
+    if (action === 'get_rekap_tim') return handleGetRekapTim(data); // TimAtasan.gs
     if (action == 'update_status_absen') return handleUpdateStatusAbsen(data);
 
     // --- FITUR REMARK (LAPORAN) ---

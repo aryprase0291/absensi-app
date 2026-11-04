@@ -17,6 +17,7 @@ import GpsGateScreen from './screens/GpsGateScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import MasterRolePanel from './screens/MasterRolePanel';
 import MasterUserPanel from './screens/MasterUserPanel';
+import MasterTimApproval from './screens/MasterTimApproval';
 import BebasAbsenPanel from './screens/BebasAbsenPanel';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
@@ -446,7 +447,7 @@ const TombolKembaliKeAtas = () => {
 // Menu yang boleh dibuka ulang setelah refresh. 'form' sengaja tidak ikut:
 // isinya bergantung pada data yang sedang diedit, yang hilang saat refresh.
 const VIEW_BISA_DIPULIHKAN = ['dashboard', 'history', 'db_absen', 'admin', 'approval', 'ganti_password',
-  'remark', 'input_shift', 'analysis', 'rekap_admin', 'gps_audit', 'gps_dashboard', 'log_login', 'dashboard_kerani'];
+  'remark', 'input_shift', 'analysis', 'rekap_admin', 'histori_tim', 'gps_audit', 'gps_dashboard', 'log_login', 'dashboard_kerani'];
 const viewTersimpan = () => {
   try {
     const v = sessionStorage.getItem('app_view');
@@ -1043,7 +1044,7 @@ useEffect(() => {
 return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login' ? 'bg-slate-950' : 'bg-slate-100'}`}><div className={view === 'login' ? 'w-full min-h-screen' : 'w-full max-w-md md:max-w-none mx-auto min-h-screen px-3 sm:px-4 md:px-8 lg:px-12 py-3 sm:py-4 md:py-6 relative transition-all duration-300'}>{updateAvailable&&(<div className="fixed inset-0 z-[9999] bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300"><div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full"><div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce"><RefreshCcw className="w-10 h-10 text-blue-600"/></div><h2 className="text-2xl font-black text-slate-800 mb-2">Update Tersedia!</h2><p className="text-slate-500 text-sm mb-2">Versi aplikasi Anda usang (v{CLIENT_VERSION}).<br/>Aplikasi akan diperbarui ke <strong>versi {newVersion}</strong>.</p>{!updateGagalBerulang&&(<p className="text-[12px] font-semibold mb-5">{view === 'form' ? (<span className="text-amber-600">Menunggu Anda menyelesaikan form absen. Update berjalan otomatis setelah keluar dari form.</span>) : (<span className="text-blue-600">Memuat ulang otomatis dalam {updateHitungMundur === null ? 5 : updateHitungMundur} detik…</span>)}</p>)}{updateGagalBerulang&&(<div className="mb-5" />)}<button onClick={performUpdate} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"><RefreshCcw className="w-5 h-5 animate-spin"/>Update Sekarang</button>{updateGagalBerulang ? (<><p className="text-[11px] text-amber-600 font-semibold mt-4 leading-relaxed">Sudah beberapa kali dimuat ulang tetapi versinya tetap sama. Kemungkinan besar file aplikasi versi baru belum diunggah ke server — bukan kesalahan HP Anda.</p><button onClick={lanjutTanpaUpdate} className="w-full mt-3 border border-slate-300 text-slate-600 font-bold py-3 rounded-xl active:scale-95 transition-all">Lanjutkan dengan versi ini</button><p className="text-[10px] text-slate-400 mt-3">Absensi tetap dapat dipakai. Laporkan pesan ini ke Admin.</p></>) : (<p className="text-[10px] text-slate-400 mt-4">*Cache aplikasi dibersihkan lalu halaman dimuat ulang otomatis.</p>)}</div></div>)}{/* Bar biru generik. 'form' dikecualikan (Agu 2026): layar itu sekarang
        punya kepala sendiri yang menyebutkan jenis pengajuannya, jadi bar ini
        hanya menghasilkan judul dobel — "Menu Form" di atas "Form Ijin". */}
-    {view !== 'login' && view !== 'dashboard' && view !== 'form' && view !== 'ganti_password' && view !== 'rekap_admin' && (
+    {view !== 'login' && view !== 'dashboard' && view !== 'form' && view !== 'ganti_password' && view !== 'rekap_admin' && view !== 'histori_tim' && (
       <header className="bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 text-white border border-slate-800/80 shadow-lg shadow-slate-950/20 backdrop-blur-xl p-3.5 sm:p-4 md:px-6 md:py-4 flex justify-between items-center z-10 relative rounded-2xl mb-4 md:mb-6">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 p-2 shadow-md shadow-blue-500/20 ring-1 ring-white/20">
@@ -1075,7 +1076,7 @@ return (<div className={`min-h-screen font-sans text-slate-800 ${view === 'login
           <span className="sm:hidden">Kembali</span>
         </button>
       </header>
-    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice} bootAwal={bootAwal} bootMenunggu={bootMenunggu} notifKaryawan={notifKaryawan.notif} tandaiNotif={notifKaryawan.tandaiDibaca}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='log_login'&&<LogLoginScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='dashboard_kerani'&&<DashboardKerani user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
+    )}<div className="p-0">{view==='login'&&<LoginScreen onLogin={handleLogin}/>}{view==='dashboard'&&<Dashboard user={user} setUser={setUser} setView={setView} handleLogout={handleLogout} masterData={masterData} approvalNotice={approvalNotice} setApprovalNotice={setApprovalNotice} bootAwal={bootAwal} bootMenunggu={bootMenunggu} notifKaryawan={notifKaryawan.notif} tandaiNotif={notifKaryawan.tandaiDibaca}/>}{view==='form'&&<AttendanceForm user={user} setUser={setUser} setView={setView} editItem={editItem} setEditItem={setEditItem} masterData={masterData}/>}{view==='history'&&<HistoryScreen user={user} setView={setView} setEditItem={setEditItem} masterData={masterData}/>}{view==='db_absen'&&<DbAbsenScreen user={user} setView={setView}/>}{view==='admin'&&<AdminPanel user={user} setView={setView} masterData={masterData} setMasterData={setMasterData}/>}{view==='approval'&&<ApprovalScreen user={user} setView={setView}/>}{view==='ganti_password'&&<ChangePasswordScreen user={user} setView={setView}/>}{view==='remark'&&<RemarkScreen user={user} setView={setView}/>}{view==='input_shift'&&<ShiftScheduleScreen user={user} setView={setView} masterData={masterData}/>}{view==='analysis'&&<AnalysisScreen user={user} setView={setView}/>}{view==='rekap_admin'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='histori_tim'&&<RekapExcelScreen user={user} setView={setView} fetchApi={fetchApi} modeTim/>}{view==='gps_audit'&&<GpsAuditScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='gps_dashboard'&&<GpsDashboardScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='log_login'&&<LogLoginScreen user={user} setView={setView} fetchApi={fetchApi}/>}{view==='dashboard_kerani'&&<DashboardKerani user={user} setView={setView} fetchApi={fetchApi}/>}</div>{user&&<ImportNotifier/>}{user && !gpsGate.lolos && (
       <GpsGateScreen
         status={gpsGate.status}
         pesan={gpsGate.pesan}
@@ -1494,6 +1495,9 @@ const canApprove = isApprovalRole(userRole) && menuDiizinkan(user, 'approval');
 // kecuali master role-nya mencabut menu `panel_admin`.
 const canAccessPanel = (userRole === 'admin' || userRole === 'hrd') && menuDiizinkan(user, 'panel_admin');
 const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
+// Histori Tim: atasan (role approval selain Admin/HRD) melihat laporan absensi timnya.
+const canHistoriTim = isApprovalRole(userRole) && !isHRDOrAdmin;
+const jumlahTombolAksi = 3 + (canApprove ? 1 : 0) + (canAccessPanel ? 1 : 0) + (canHistoriTim ? 1 : 0);
 const isShiftWorker = String(user.roleKode || userRole).toLowerCase() === 'karyawan_shift';
 
     // LOGIKA SAPAAN BERDASARKAN WAKTU
@@ -1868,7 +1872,7 @@ const Skeleton = ({ className }) => (
           Posisinya dinaikkan ke atas kartu Statistik (Agu 2026): ini navigasi, dan
           navigasi tidak boleh berada di bawah blok angka setinggi satu layar. */}
       <div className={`overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_10px_30px_-24px_rgba(15,23,42,0.65)] flex flex-col justify-center ${adaTombolAbsen ? (canAccessPanel || canApprove ? "md:col-span-6 lg:col-span-7" : "md:col-span-6") : "col-span-12"}`}>
-        <div className={`grid divide-x divide-slate-100 ${canApprove && canAccessPanel ? 'grid-cols-5' : (canApprove || canAccessPanel ? 'grid-cols-4' : 'grid-cols-3')}`}>
+        <div className={`grid divide-x divide-slate-100 ${({ 3: 'grid-cols-3', 4: 'grid-cols-4', 5: 'grid-cols-5', 6: 'grid-cols-6' })[jumlahTombolAksi] || 'grid-cols-3'}`}>
 
             <button onClick={() => setView('history')} className="group relative flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-blue-100 group-hover:text-blue-600"><History className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
@@ -1900,6 +1904,13 @@ const Skeleton = ({ className }) => (
                       </span>
                     )}
                     <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Approval</span>
+                </button>
+            )}
+
+            {canHistoriTim && (
+                <button onClick={() => setView('histori_tim')} className="group flex flex-col items-center gap-2 px-1 py-3.5 transition-colors hover:bg-blue-50/50 active:bg-slate-100">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-500 transition-colors group-hover:bg-indigo-100 group-hover:text-indigo-600"><ClipboardList className="w-[17px] h-[17px]" strokeWidth={1.75} /></span>
+                    <span className="text-[10.5px] font-medium text-slate-600 leading-tight text-center">Histori Tim</span>
                 </button>
             )}
 
@@ -8317,7 +8328,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         { tab: 'geomaster', label: 'Master lokasi geofence', ikon: MapPin, pusat: true },
         { tab: 'geofence', label: 'Akses absen & geofence', ikon: LocateFixed, pusat: true },
         { tab: 'period', label: 'Periode absensi', ikon: CalendarRange, pusat: true },
-        { tab: 'approval_team', label: 'Tim approval', ikon: UsersRound, pusat: true },
+        { tab: 'approval_team', label: 'Master Tim Approval', ikon: UsersRound, pusat: true },
         { tab: 'perangkat', label: 'Perangkat & sesi login', ikon: Smartphone, pusat: true },
         { tab: 'wajah', label: 'Wajah karyawan', ikon: ScanFace, pusat: true },
         { tab: 'board', label: 'Board absensi', ikon: FileSpreadsheet, pusat: true },
@@ -8408,7 +8419,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'geofence': return 'Akses Absen & Geofence';
           case 'geomaster': return 'Master Lokasi Geofence';
           case 'period': return 'Periode Absensi';
-          case 'approval_team': return 'Tim Approval';
+          case 'approval_team': return 'Master Tim Approval';
           case 'board': return 'Board Absensi';
           case 'perangkat': return 'Perangkat & Sesi Login';
           case 'wajah': return 'Wajah Karyawan';
@@ -8891,9 +8902,21 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
             <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin" /></div>
           ) : (
             <>
-              <div className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3">
+              <MasterTimApproval users={approvalTeamUsers} assignments={approvalTeamAssignments}
+                onKelola={(id, departemen, rows) => {
+                  handlePilihKepalaTeam(id);
+                  handleEditGrupApproval(departemen, rows);
+                  setTimeout(() => { const el = document.getElementById('editor-tim-approval'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+                }}
+                onTambah={() => {
+                  handlePilihKepalaTeam('');
+                  setTimeout(() => { const el = document.getElementById('editor-tim-approval'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+                }} />
+
+              <div id="editor-tim-approval" className="bg-white rounded-2xl border border-slate-200/70 p-4 space-y-3 scroll-mt-4">
+                <p className="text-[13px] font-semibold text-slate-900">{atKepalaId ? 'Kelola tim atasan' : 'Tambah / kelola tim atasan'}</p>
                 <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Kepala divisi</label>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Kepala divisi / atasan</label>
                   <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">Pilih siapapun — kalau rolenya belum "approval", akan ada opsi untuk langsung menjadikannya kepala divisi di bawah.</p>
                   <div className="relative mb-2">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} />

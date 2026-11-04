@@ -5,7 +5,7 @@ import {
   Building, RefreshCcw, Check, X, Loader2,
   ShieldAlert, Layers, PieChart, Sparkles, Tag, AlertTriangle,
   Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays,
-  Maximize2, Minimize2, UploadCloud, Mail, MapPin, ChevronDown
+  Maximize2, Minimize2, UploadCloud, Mail, MapPin, ChevronDown, Users
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
@@ -364,15 +364,25 @@ function AngkaMemuat() {
   return <span className="inline-block h-[1.1em] w-10 rounded-md bg-slate-200 animate-pulse align-middle" aria-label="memuat" />;
 }
 
-export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard' }) {
+// modeTim: Histori Tim untuk ATASAN (TimAtasan.gs) — data dari get_rekap_tim
+// (hanya anggota timnya), lihat saja: tab Dashboard & Tabel Data, tanpa
+// koreksi / export / sinkron.
+export default function RekapExcelScreen({ user, setView, fetchApi: customFetchApi, initialTab = 'dashboard', modeTim = false }) {
   // Tab yang sedang dibuka diingat di sessionStorage, jadi refresh halaman
   // kembali ke tab yang sama (bukan selalu ke Dashboard).
   const [activeTab, setActiveTab] = useState(() => {
+    if (modeTim) return 'dashboard';
     try { return sessionStorage.getItem('rekap_tab') || initialTab; } catch (e) { return initialTab; }
   });
+  // Mode tim: hanya Dashboard & Tabel Data.
   useEffect(() => {
+    if (modeTim && activeTab !== 'dashboard' && activeTab !== 'tabel') setActiveTab('dashboard');
+  }, [modeTim, activeTab]);
+  const [infoTim, setInfoTim] = useState(null);
+  useEffect(() => {
+    if (modeTim) return;
     try { sessionStorage.setItem('rekap_tab', activeTab); } catch (e) { /* abaikan */ }
-  }, [activeTab]);
+  }, [activeTab, modeTim]);
   // Mode layar penuh: tabel aktif menutupi seluruh layar (Esc untuk keluar).
   const [layarPenuh, setLayarPenuh] = useState(false);
   // LAYAR HP (24 Okt 2026): kolom yang dibekukan di Board (No+Payroll+HRD+Nama
@@ -488,13 +498,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
 
-  const isAdmin = user && (String(user.role).toLowerCase() === 'admin');
+  const isAdmin = !modeTim && user && (String(user.role).toLowerCase() === 'admin');
   // MASTER ROLE (24 Okt 2026): HRD boleh MELIHAT rekap — server menyaring
   // datanya ke cakupan lokasinya (mis. HRD SBY -> Surabaya). Menulis
   // (koreksi, sinkron GSheet, setelan) tetap khusus admin (`isAdmin`).
   const menuRekap = !user || !Array.isArray(user.menuAkses) || user.menuAkses.length === 0 || user.menuAkses.includes('rekap');
   // Menu per user (Master user) juga berlaku untuk admin.
-  const bolehLihat = (isAdmin && menuRekap) || (user && String(user.role).toLowerCase() === 'hrd' && menuRekap);
+  const bolehLihat = modeTim || (isAdmin && menuRekap) || (user && String(user.role).toLowerCase() === 'hrd' && menuRekap);
   const cakupanLokasi = (user && (user.lokasiAkses || user.lokasi)) || 'All';
   // Admin bercakupan lokasi (mis. Admin Jakarta, kode admin_jkt): boleh
   // koreksi karyawan lokasinya, tetapi Sinkron GSheet tetap Admin pusat.
@@ -587,12 +597,12 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // kosong dengan pesan gagal.
   const ambilRekap = useCallback(async (payload) => {
     try {
-      return await doApiCall('get_rekap_admin', payload);
+      return await doApiCall(modeTim ? 'get_rekap_tim' : 'get_rekap_admin', payload);
     } catch (e) {
       await new Promise(r => setTimeout(r, 1500));
-      return await doApiCall('get_rekap_admin', payload);
+      return await doApiCall(modeTim ? 'get_rekap_tim' : 'get_rekap_admin', payload);
     }
-  }, [doApiCall]);
+  }, [doApiCall, modeTim]);
 
   const terapkanData = useCallback((data) => {
     setSudahDimuat(true);
@@ -601,6 +611,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     setRawRecords(kapital(data.rawRecords));
     setDashboardData(kapital(data.dashboardData));
     setKoreksiList(kapital(data.koreksiList));
+    if (data.tim) setInfoTim(data.tim);
     if (Array.isArray(data.periodeAktif)) setPeriodeList(data.periodeAktif);
     if (data.hariIni) setHariIniServer(data.hariIni);
 
@@ -1021,7 +1032,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // sakit, alpa, ijin, tidak absen masuk/pulang, telat, dan nominal.
   // Sisa cuti tidak dihitung — itu saldo, bukan pengajuan. Kartu KPI
   // (Total Pegawai dll.) tetap dihitung dari semua pegawai.
-  const [tampilSemuaPegawai, setTampilSemuaPegawai] = useState(false);
+  // Mode tim: semua anggota tampil (bukan hanya yang punya pengajuan).
+  const [tampilSemuaPegawai, setTampilSemuaPegawai] = useState(modeTim);
   const dashboardAdaPengajuan = useMemo(() => {
     if (tampilSemuaPegawai) return filteredDashboard;
     return filteredDashboard.filter(d =>
@@ -1864,13 +1876,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[9px] leading-none font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-1.5 py-0.5 rounded-full border border-cyan-400/20">{isAdmin ? 'Admin Area' : 'HRD · Lihat saja'}</span>
-                {!adminPusat && <span className="text-[9px] leading-none font-bold text-amber-300 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20">Lokasi: {String(cakupanLokasi).toLowerCase() === 'all' ? 'Semua' : cakupanLokasi}</span>}
+                <span className="text-[9px] leading-none font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-1.5 py-0.5 rounded-full border border-cyan-400/20">{modeTim ? 'Atasan · Lihat saja' : isAdmin ? 'Admin Area' : 'HRD · Lihat saja'}</span>
+                {!adminPusat && !modeTim && <span className="text-[9px] leading-none font-bold text-amber-300 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20">Lokasi: {String(cakupanLokasi).toLowerCase() === 'all' ? 'Semua' : cakupanLokasi}</span>}
                 <span className="hidden sm:inline text-[9px] leading-none text-slate-400 font-mono">DATABASE ABSENSI</span>
               </div>
               <h1 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight mt-0.5 truncate">
-                <span className="sm:hidden">Rekap Absensi</span>
-                <span className="hidden sm:inline">Rekapitulasi, Koreksi & Export Excel</span>
+                <span className="sm:hidden">{modeTim ? 'Histori Tim' : 'Rekap Absensi'}</span>
+                <span className="hidden sm:inline">{modeTim ? 'Histori Absensi Tim Saya' : 'Rekapitulasi, Koreksi & Export Excel'}</span>
               </h1>
             </div>
           </div>
@@ -1888,6 +1900,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
             <button
               onClick={() => exportToExcel('all')}
+                  style={modeTim ? { display: 'none' } : undefined}
               className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] font-bold text-white flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 transition active:scale-95"
               title="Download Excel Semua Sheet (DASHBOARD, KOREKSI, DB_FIX)"
             >
@@ -1917,6 +1930,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('koreksi')}
+            style={modeTim ? { display: 'none' } : undefined}
             className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'koreksi'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
@@ -1935,6 +1949,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('board')}
+            style={modeTim ? { display: 'none' } : undefined}
             className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'board'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
@@ -1974,6 +1989,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
           <button
             onClick={() => setActiveTab('absenemail')}
+            style={modeTim ? { display: 'none' } : undefined}
             className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'absenemail'
                 ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
@@ -2099,6 +2115,28 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
           </div>
         </div>
 
+        {/* MODE TIM: daftar anggota tim atasan (dari Master Tim Approval). */}
+        {modeTim && infoTim && (
+          <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-4">
+            <div className="flex flex-wrap items-center gap-2 mb-2.5">
+              <Users className="w-4 h-4 text-indigo-600" />
+              <p className="text-sm font-black text-slate-900">Anggota Tim</p>
+              <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-bold tabular-nums">{(infoTim.anggota || []).length} orang</span>
+              <span className="text-[11px] text-slate-400">
+                {infoTim.sumber === 'master' ? '· dari Master Tim Approval' : '· satu divisi & lokasi dengan Anda (belum ada di Master Tim Approval)'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(infoTim.anggota || []).map(a => (
+                <span key={`${a.payroll}-${a.nama}`} className="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-700" title={`${a.divisi || ''}${a.lokasi ? ' · ' + a.lokasi : ''}`}>
+                  <span className="font-bold">{a.nama}</span>{a.payroll ? <span className="font-mono text-slate-400"> · {a.payroll}</span> : null}
+                </span>
+              ))}
+            </div>
+            <p className="mt-2.5 text-[10.5px] text-slate-400">Lihat saja — koreksi data absensi hanya dilakukan HRD/Admin.</p>
+          </div>
+        )}
+
         {/* TAB 1: DASHBOARD REKAPITULASI (WITH SISA CUTI, CUTI DIAMBIL, NOMINAL TELAT & VIEW BUTTON) */}
         {activeTab === 'dashboard' && (
           <div className="space-y-5 w-full">
@@ -2176,6 +2214,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 </div>
                 <button
                   onClick={() => exportToExcel('dashboard')}
+                  style={modeTim ? { display: 'none' } : undefined}
                   className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1.5 sm:gap-2 shadow-md transition active:scale-95 shrink-0"
                 >
                   <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -2314,6 +2353,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 </div>
                 <button
                   onClick={() => exportToExcel('board')}
+                  style={modeTim ? { display: 'none' } : undefined}
                   disabled={boardData.baris.length === 0}
                   className="self-start lg:self-auto px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-[11px] sm:text-xs font-bold text-white flex items-center gap-1.5 sm:gap-2 shadow-sm transition active:scale-95 shrink-0"
                   title="Download Excel berisi sheet DASHBOARD dan sheet BOARD"
@@ -2512,6 +2552,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   {adminPusat && <TombolSinkronGsheet doApiCall={doApiCall} user={user} onBukaSetelan={() => setActiveTab('gsheet')} />}
                   <button
                     onClick={() => exportToExcel('tabel')}
+                  style={modeTim ? { display: 'none' } : undefined}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition active:scale-95 shrink-0"
                   >
                     <Download className="w-4 h-4" />
