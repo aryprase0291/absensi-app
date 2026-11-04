@@ -15,7 +15,7 @@ import GpsDashboardScreen from './screens/GpsDashboardScreen';
 import DashboardKerani from './screens/DashboardKerani';
 import GpsGateScreen from './screens/GpsGateScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
-import MasterRolePanel, { ambilDaftarRoleMaster } from './screens/MasterRolePanel';
+import MasterRolePanel from './screens/MasterRolePanel';
 import MasterUserPanel from './screens/MasterUserPanel';
 import BebasAbsenPanel from './screens/BebasAbsenPanel';
 import { ImportJobProvider } from './context/ImportJobContext';
@@ -7417,17 +7417,9 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
 // --- 6. ADMIN PANEL (FIX: MENAMBAHKAN MENU ANALISA DATA) ---
 function AdminPanel({ user, setView, masterData, setMasterData }) {
-  // HRD tidak punya tab "Tambah user" (khusus admin) -> mulai di Info HRD.
-  const [activeTab, setActiveTab] = useState(user && user.role !== 'admin' ? 'news' : 'user'); 
-  // Pilihan Role di form Tambah User diambil dari Master Role (Supabase);
-  // bila gagal, kembali ke kategori Role di Master Data seperti dulu.
-  const [rolesMaster, setRolesMaster] = useState(null);
-  useEffect(() => {
-    if (activeTab !== 'user' || !user || user.role !== 'admin' || rolesMaster) return undefined;
-    let batal = false;
-    ambilDaftarRoleMaster(user).then((d) => { if (!batal && d && d.length) setRolesMaster(d); });
-    return () => { batal = true; };
-  }, [activeTab, user, rolesMaster]);
+  // Admin mulai di Master User; HRD (tanpa menu itu) mulai di Info HRD.
+  const [subMasterUser, setSubMasterUser] = useState('akses');
+  const [activeTab, setActiveTab] = useState(user && user.role !== 'admin' ? 'news' : 'master_user'); 
   const [loading, setLoading] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
   
@@ -7486,12 +7478,6 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
 
   // State Lainnya
   const [newsInput, setNewsInput] = useState('');
-  const [userData, setUserData] = useState({ 
-    username: '', password: '', nama: '', email: '', 
-    divisi: 'Staff', role: 'karyawan', akses: [], 
-    noPayroll: '', sisaCuti: '', perusahaan: '', 
-    statusKaryawan: '', emailAtasan: '', lokasi: adminTerbatas(user) ? user.lokasiAkses : 'Surabaya' 
-  });
   const [masterInput, setMasterInput] = useState({ kategori: 'Menu', value: '', label: '' });
 
   // --- PENGUNCIAN PERANGKAT (lihat apps-script/Devices.gs) ---
@@ -7906,23 +7892,6 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
   };
 
-  const handleLocationChange = (loc) => {
-     let currentLocs = userData.lokasi ? userData.lokasi.split(',').map(l=>l.trim()).filter(l=>l!=='') : [];
-     if (currentLocs.includes(loc)) { currentLocs = currentLocs.filter(l => l !== loc); } 
-     else { if(loc === 'All') { currentLocs = ['All']; } else { currentLocs = currentLocs.filter(l => l !== 'All'); currentLocs.push(loc); } }
-     setUserData({ ...userData, lokasi: currentLocs.join(', ') });
-  };
-  const handleCheckboxChange = (val) => { 
-    setUserData(prev => { const current = prev.akses; return current.includes(val) ? { ...prev, akses: current.filter(i => i !== val) } : { ...prev, akses: [...current, val] }; });
-  };
-  const handleAddUser = async (e) => {
-    e.preventDefault(); setLoading(true);
-    try {
-      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_user', roleRequester: user.role, ...userData }) }).then(r => r.json());
-      if(res.result === 'success') { alert('User Ditambahkan!'); setUserData({ username: '', password: '', nama: '', email: '', divisi: 'Staff', role: 'karyawan', akses: [], noPayroll: '', sisaCuti: '', perusahaan: '', statusKaryawan: '', emailAtasan: '', lokasi: adminTerbatas(user) ? user.lokasiAkses : 'Surabaya' }); } 
-      else { alert(res.message); }
-    } catch(e) { alert('Error koneksi'); } finally { setLoading(false); }
-  };
   const handleAddMaster = async (e) => { 
     e.preventDefault(); setLoading(true);
     try { const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_master', roleRequester: user.role, ...masterInput }) }).then(r=>r.json());
@@ -8205,9 +8174,9 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     {
       judul: 'Pengguna',
       item: [
-        { tab: 'user', label: 'Tambah user baru', ikon: UserRoundPlus, adminSaja: true },
-        { tab: 'master_user', label: 'Master user (role, lokasi, akses)', ikon: KeyRound, adminSaja: true },
-        { tab: 'master_role', label: 'Master role & lokasi akses', ikon: ShieldCheck, adminSaja: true, pusat: true },
+        // Satu menu: User & Akses (termasuk Tambah User) + Role & Lokasi.
+        // Tampil bila salah satu dari tiga kunci menu lamanya diizinkan.
+        { tab: 'master_user', label: 'Master User', ikon: UserRoundPlus, adminSaja: true, menuSalahSatu: ['master_user', 'user', 'master_role'] },
       ]
     },
     {
@@ -8252,7 +8221,10 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const panelAdmin = user.role === 'admin';
   const adminLokasi = adminTerbatas(user);
   // MENU PER USER (Master user): kunci menu item = `menu`, atau tab/view-nya.
-  const itemBolehTampil = (it) => (panelAdmin && !(adminLokasi && it.pusat) && menuDiizinkan(user, it.menu || it.tab || it.view))
+  const kunciBoleh = (it) => (it.menuSalahSatu
+    ? it.menuSalahSatu.some((k) => menuDiizinkan(user, k))
+    : menuDiizinkan(user, it.menu || it.tab || it.view));
+  const itemBolehTampil = (it) => (panelAdmin && !(adminLokasi && it.pusat) && kunciBoleh(it))
     || (!it.adminSaja && !!it.hrd && menuDiizinkan(user, it.hrd));
   // Tab pembuka (mis. "Tambah user") bisa saja tidak diizinkan untuk user
   // ini -> pindah ke tab pertama yang boleh tampil.
@@ -8294,7 +8266,6 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
 
   const getPageTitle = () => {
       switch(activeTab) {
-          case 'user': return 'Tambah User Baru';
           case 'master_user': return 'Master User';
           case 'master': return 'Master Data';
           case 'import_db': return 'Import Data Mesin Absen';
@@ -8306,7 +8277,6 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
           case 'board': return 'Board Absensi';
           case 'perangkat': return 'Perangkat & Sesi Login';
           case 'wajah': return 'Wajah Karyawan';
-          case 'master_role': return 'Master Role & Lokasi Akses';
           case 'bebas_absen': return 'Bebas Absen Mesin & Karyawan Harian';
           default: return 'Admin Panel';
       }
@@ -8379,102 +8349,34 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         </div>
 
       {/* KONTEN TAB: MASTER USER */}
-      {activeTab === 'master_user' && user.role === 'admin' && (
-        <MasterUserPanel user={user} fetchApi={fetchApi} masterData={masterData}
-          listLokasi={LIST_LOKASI.filter(l => !adminTerbatas(user) || l === user.lokasiAkses)}
-          terbatas={adminTerbatas(user)} onResetPassword={handleResetPassword} />
-      )}
+      {activeTab === 'master_user' && user.role === 'admin' && (() => {
+        // MASTER USER = User & Akses (+ Tambah User) dan Role & Lokasi.
+        const bolehAkses = menuDiizinkan(user, 'master_user') || menuDiizinkan(user, 'user');
+        const bolehRole = menuDiizinkan(user, 'master_role') && !adminTerbatas(user);
+        const sub = !bolehAkses ? 'role' : (!bolehRole ? 'akses' : subMasterUser);
+        return (
+          <div className="space-y-4">
+            {bolehAkses && bolehRole && (
+              <div className="inline-flex p-1 rounded-xl bg-slate-200/60">
+                {[['akses', 'User & Akses', UsersRound], ['role', 'Role & Lokasi', ShieldCheck]].map(([k, l, Ikon]) => (
+                  <button key={k} onClick={() => setSubMasterUser(k)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium transition ${sub === k ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                    <Ikon className="w-4 h-4" strokeWidth={1.75} />{l}
+                  </button>
+                ))}
+              </div>
+            )}
+            {sub === 'akses' && (
+              <MasterUserPanel user={user} fetchApi={fetchApi} masterData={masterData}
+                listLokasi={LIST_LOKASI.filter(l => !adminTerbatas(user) || l === user.lokasiAkses)}
+                terbatas={adminTerbatas(user)} onResetPassword={handleResetPassword}
+                bolehTambah={menuDiizinkan(user, 'user')} bolehEdit={menuDiizinkan(user, 'master_user')} />
+            )}
+            {sub === 'role' && <MasterRolePanel user={user} fetchApi={fetchApi} />}
+          </div>
+        );
+      })()}
 
-      {/* KONTEN TAB: TAMBAH USER */}
-      {activeTab === 'user' && user.role === 'admin' && (
-        <div className="animate-in fade-in duration-300">
-          {/* Setiap kolom kini punya label tetap. Sebelumnya nama kolom hanya ada
-              di placeholder, jadi hilang begitu kolomnya diisi. */}
-          <form onSubmit={handleAddUser} className="bg-white rounded-2xl border border-slate-200/70 divide-y divide-slate-100 overflow-hidden">
-
-            <div className="p-4 space-y-3.5">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Identitas</p>
-
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Nama karyawan</label>
-                        <input required type="text" className={inputCls} value={userData.nama} onChange={e => setUserData({...userData, nama: e.target.value})} placeholder="Budi Santoso" />
-                    </div>
-                    <div>
-                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Email</label>
-                        <input required type="email" className={inputCls} value={userData.email} onChange={e => setUserData({...userData, email: e.target.value})} placeholder="budi@jpt.co.id" />
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">ID finger</label>
-                        <input required type="text" className={`${inputCls} tabular-nums`} value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} placeholder="1024" />
-                    </div>
-                    <div>
-                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Password awal</label>
-                        <input required type="text" className={inputCls} value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} placeholder="Minimal 6 karakter" />
-                    </div>
-                </div>
-
-                <div>
-                    <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Email atasan untuk approval</label>
-                    <input type="email" className={inputCls} value={userData.emailAtasan} onChange={e => setUserData({...userData, emailAtasan: e.target.value})} placeholder="manager@jpt.co.id" />
-                    <p className="mt-1.5 text-[11px] text-slate-400">Kosongkan bila pengajuan user ini tidak perlu approval.</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Divisi</label>
-                        <select className={inputCls} value={userData.divisi} onChange={e => setUserData({...userData, divisi: e.target.value})}>{masterData.divisions.map((d, i) => <option key={i} value={d.value}>{d.label}</option>)}</select>
-                    </div>
-                    <div>
-                        <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Role</label>
-                        <select className={inputCls} value={userData.role} onChange={e => setUserData({...userData, role: e.target.value})}>{(rolesMaster || masterData.roles).map((r, i) => <option key={i} value={r.value}>{r.label}</option>)}</select>
-                        {rolesMaster && <p className="mt-1 text-[10.5px] text-slate-400">Daftar dari Master role &amp; lokasi akses.</p>}
-                    </div>
-                </div>
-            </div>
-
-            <div className="p-4">
-                <div className="flex items-baseline justify-between mb-2.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Akses lokasi</p>
-                    <span className="text-[11px] text-slate-400 tabular-nums">{(userData.lokasi || []).length} dipilih</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
-                  {LIST_LOKASI.map((loc) => (
-                    <label key={loc} className="flex items-center gap-2.5 py-1.5 text-[13px] text-slate-700 cursor-pointer">
-                        <input type="checkbox" checked={userData.lokasi && userData.lokasi.includes(loc)} onChange={() => handleLocationChange(loc)} className="w-4 h-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
-                        {loc}
-                    </label>
-                  ))}
-                </div>
-            </div>
-
-            <div className="p-4">
-                <div className="flex items-baseline justify-between mb-2.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Akses menu</p>
-                    <span className="text-[11px] text-slate-400 tabular-nums">{(userData.akses || []).length} dipilih</span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                  {masterData.menus.map(item => (
-                    <label key={item.value} className="flex items-center gap-2.5 py-1.5 text-[13px] text-slate-700 cursor-pointer">
-                        <input type="checkbox" checked={userData.akses.includes(item.value)} onChange={() => handleCheckboxChange(item.value)} className="w-4 h-4 shrink-0 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20" />
-                        {item.label}
-                    </label>
-                  ))}
-                </div>
-            </div>
-
-            <div className="p-4 bg-slate-50/60">
-                <button type="submit" disabled={loading} className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-3 rounded-xl text-[14px] font-medium hover:bg-slate-800 active:bg-slate-950 disabled:opacity-60 transition-colors">
-                    {loading && <Loader2 className="w-4 h-4 animate-spin"/>}
-                    {loading ? 'Menyimpan…' : 'Simpan user baru'}
-                </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {/* KONTEN TAB: MASTER DATA */}
       {activeTab === 'master' && user.role === 'admin' && (
@@ -8812,9 +8714,6 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         <BebasAbsenPanel user={user} fetchApi={fetchApi} />
       )}
 
-      {activeTab === 'master_role' && user.role === 'admin' && (
-        <MasterRolePanel user={user} fetchApi={fetchApi} />
-      )}
 
       {activeTab === 'board' && user.role === 'admin' && (
         <div className="animate-in fade-in duration-300">

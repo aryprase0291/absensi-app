@@ -31,9 +31,9 @@ export const KATALOG_MENU = [
     { k: 'approval', l: 'Approval pengajuan', d: 'Menyetujui / menolak cuti, ijin, sakit, DL', hrd: true, chip: 'Approval' },
   ] },
   { no: 2, grup: 'Pengguna', ikon: '👥', item: [
-    { k: 'user', l: 'Tambah user baru', d: 'Membuat akun karyawan baru', chip: 'Tambah user' },
-    { k: 'master_user', l: 'Kelola user & akses', d: 'Halaman ini: edit, reset password, atur menu', chip: 'Kelola user' },
-    { k: 'master_role', l: 'Master role & lokasi', d: 'Daftar role, tingkat & lokasi yang dilihat' },
+    { k: 'user', l: 'Tambah user', d: 'Tombol Tambah User di Master User', chip: 'Tambah user' },
+    { k: 'master_user', l: 'Kelola user & akses', d: 'Master User › User & Akses: edit, reset password, atur menu', chip: 'Kelola user' },
+    { k: 'master_role', l: 'Role & lokasi', d: 'Master User › Role & Lokasi: role, tingkat, lokasi' },
     { k: 'approval_team', l: 'Tim approval', d: 'Kepala divisi & anggota timnya' },
   ] },
   { no: 3, grup: 'Data Absensi', ikon: '🗂️', item: [
@@ -141,7 +141,8 @@ function Stat({ label, nilai, warna }) {
   );
 }
 
-export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi, terbatas, onResetPassword }) {
+// bolehTambah / bolehEdit: menu per user `user` & `master_user` (server juga menolak).
+export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi, terbatas, onResetPassword, bolehTambah = true, bolehEdit = true }) {
   const [list, setList] = useState([]);
   const [roles, setRoles] = useState([]);
   const [memuat, setMemuat] = useState(false);
@@ -180,6 +181,12 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
     finally { setMemuat(false); }
   }, [fetchApi, user.role, bukaUser]);
   useEffect(() => { muat(); }, [muat]);
+  const tambahBaru = () => {
+    setAsli(null); setForm(kosongUser(terbatas ? user.lokasiAkses : '')); setPilihId('baru');
+    setSalinDari(''); setCariMenu(''); setDipilihSaja(false); setLihatSandi(false);
+  };
+  // Hanya boleh menambah (tanpa menu Kelola user): langsung buka form Tambah.
+  useEffect(() => { if (!bolehEdit && bolehTambah && !form) tambahBaru(); });
 
   const opsiRole = useMemo(() => (roles.length ? roles
     : (masterData.roles || []).map((r) => ({ value: String(r.value).toLowerCase(), label: r.label, tingkat: String(r.value).toLowerCase(), lokasi: [], menu: [] }))), [roles, masterData.roles]);
@@ -214,10 +221,6 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
     });
   }, [list, cari, tabTingkat, filterLokasi]);
 
-  const tambahBaru = () => {
-    setAsli(null); setForm(kosongUser(terbatas ? user.lokasiAkses : '')); setPilihId('baru');
-    setSalinDari(''); setCariMenu(''); setDipilihSaja(false); setLihatSandi(false);
-  };
   const tutupForm = () => { setForm(null); setAsli(null); setPilihId(''); };
   const ubah = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -373,9 +376,9 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
           <button onClick={() => muat(pilihId && pilihId !== 'baru' ? pilihId : '')} disabled={memuat} title="Muat ulang" className="h-10 w-10 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCcw className={`w-4 h-4 ${memuat ? 'animate-spin' : ''}`} />
           </button>
-          <button onClick={tambahBaru} className="h-10 px-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700">
+          {bolehTambah && <button onClick={tambahBaru} className="h-10 px-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white text-[13px] font-medium hover:bg-blue-700">
             <UserPlus className="w-4 h-4" /> Tambah User
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -416,7 +419,7 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
               const tot = totalMenu(u.tingkat);
               const chips = SEMUA_MENU.filter((it) => it.chip && m.includes(it.k)).slice(0, 5);
               return (
-                <button key={u.uuid} onClick={() => bukaUser(u)} className={`w-full text-left flex gap-3 px-4 py-3 transition ${aktif ? 'bg-blue-50/70 shadow-[inset_3px_0_0_#2563eb]' : 'hover:bg-slate-50'}`}>
+                <button key={u.uuid} onClick={() => bolehEdit && bukaUser(u)} className={`w-full text-left flex gap-3 px-4 py-3 transition ${aktif ? 'bg-blue-50/70 shadow-[inset_3px_0_0_#2563eb]' : bolehEdit ? 'hover:bg-slate-50' : 'cursor-default'}`}>
                   <div className={`relative w-10 h-10 rounded-full ${hashWarna(u.nama)} text-white text-[13px] font-semibold flex items-center justify-center shrink-0`}>
                     {inisial(u.nama)}
                     {adaMenu && <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${Array.isArray(u.menu) ? 'bg-emerald-500' : 'bg-slate-300'}`} title={Array.isArray(u.menu) ? 'Menu khusus' : 'Ikut role'} />}
@@ -456,7 +459,7 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
             <div className="bg-white rounded-2xl border border-dashed border-slate-300 py-20 px-6 text-center">
               <ShieldCheck className="w-10 h-10 mx-auto text-slate-300" />
               <p className="mt-3 text-[14px] font-medium text-slate-700">Pilih user di sebelah kiri</p>
-              <p className="text-[12.5px] text-slate-400 mt-1">untuk mengatur role, lokasi, menu &amp; form yang bisa diakses — atau klik <b>Tambah User</b>.</p>
+              <p className="text-[12.5px] text-slate-400 mt-1">untuk mengatur role, lokasi, menu &amp; form yang bisa diakses{bolehTambah && <> — atau klik <b>Tambah User</b></>}.</p>
             </div>
           ) : (
             <div className="bg-white rounded-2xl border border-slate-200/70">
