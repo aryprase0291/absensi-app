@@ -98,9 +98,11 @@ function handleUpdateUser(data) {
   if (!role) return responseJSON({ result: 'error', message: 'Role wajib dipilih.' });
   if (!lokasi) return responseJSON({ result: 'error', message: 'Lokasi wajib dipilih.' });
 
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) return responseJSON({ result: 'error', message: 'Server sedang sibuk, coba lagi.' });
-  try {
+  // TANPA ScriptLock (4 Nov 2026). Kunci global itu juga dipegang proses
+  // panjang (Sinkron GSheet, Import mesin), sehingga simpan user sering
+  // gagal "Server sedang sibuk". Yang ditulis hanya SATU baris yang
+  // dicari ulang berdasarkan ID tepat sebelum ditulis — tidak butuh kunci.
+  {
     const sheet = SS.getSheetByName(SHEET_USERS);
     const rows = bacaSheet(sheet, MU_KOLOM);
     let idx = -1;
@@ -164,8 +166,6 @@ function handleUpdateUser(data) {
     const catatanSinkron = (typeof SUPABASE_SINKRON_SEGERA === 'function') ? SUPABASE_SINKRON_SEGERA('update_user') : '';
 
     return responseJSON({ result: 'success', message: 'Data ' + nama + ' tersimpan.' + catatanSesi + catatanSinkron });
-  } finally {
-    lock.releaseLock();
   }
 }
 
