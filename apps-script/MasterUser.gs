@@ -37,7 +37,7 @@ function _muDaftarRole_(auth) {
     .filter(function (k) { return !terbatas || _alRoleBoleh_(k, auth.l) === ''; })
     .map(function (k) {
       const r = roles[k];
-      return { value: k, label: r.nama || k, tingkat: r.tingkat, lokasi: r.lokasi || [] };
+      return { value: k, label: r.nama || k, tingkat: r.tingkat, lokasi: r.lokasi || [], menu: r.menu || [] };
     })
     .sort(function (a, b) { return String(a.label).localeCompare(String(b.label)); });
 }

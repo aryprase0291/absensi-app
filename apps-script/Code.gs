@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.50";
+const APP_VERSION = "1.0.51";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -2767,13 +2767,23 @@ function handleTambahUser(data) {
   }
   const sheet = SS.getSheetByName(SHEET_USERS);
   if (sheet.getDataRange().getValues().some(row => row[1] == data.username)) return responseJSON({ result: 'error', message: 'Username sudah ada!' });
+  const idBaru = 'USR-' + new Date().getTime();
+  // payrollUser: data.noPayroll selalu dihapus authorizeRequest (Auth.gs),
+  // jadi dulu payroll user baru tidak pernah tersimpan.
   sheet.appendRow([
-    'USR-' + new Date().getTime(), data.username, data.password, data.nama, 
+    idBaru, data.username, data.password, data.nama, 
     data.divisi, data.roleBaru || 'karyawan', Array.isArray(data.akses) ? data.akses.join(',') : '', 
-    data.noPayroll || '', data.sisaCuti || '', '', data.perusahaan || '', 
+    String(data.payrollUser || data.noPayroll || '').trim().toUpperCase(), data.sisaCuti || '', '', data.perusahaan || '', 
     data.statusKaryawan || '', data.emailAtasan || '',
     data.lokasi || 'Surabaya'
   ]);
+  // MENU PER USER (MasterUser.gs) — hanya untuk tingkat admin / HRD.
+  if (data.menuKustom === true && typeof _muSimpanMenu_ === 'function') {
+    const tingkatBaru = peranEfektif_(data.roleBaru || 'karyawan', data.lokasi).tingkat;
+    if (tingkatBaru === 'admin' || tingkatBaru === 'hrd') {
+      _muSimpanMenu_(idBaru, true, _muDaftarAkses_(data.menuUser).filter(function (k) { return MENU_KATALOG.indexOf(k) !== -1; }));
+    }
+  }
 
   // Selaraskan ke Postgres SEKARANG, jangan menunggu trigger 10 menitan:
   // sejak Fase 1, login memeriksa kata sandi di sana. Lihat
@@ -2783,7 +2793,8 @@ function handleTambahUser(data) {
 
   return responseJSON({
     result: 'success',
-    message: 'User berhasil ditambahkan' + _catatanSinkron
+    message: 'User berhasil ditambahkan' + _catatanSinkron,
+    id: idBaru
   });
 }
 

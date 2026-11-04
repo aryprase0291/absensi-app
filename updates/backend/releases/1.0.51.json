@@ -1,0 +1,9 @@
+{
+  "version": "1.0.51",
+  "releasedAt": "2026-11-04",
+  "required": true,
+  "notes": [
+    "tambah_user: menyimpan payroll (payrollUser — dulu data.noPayroll dihapus authorizeRequest sehingga payroll user baru selalu kosong), menu khusus (menuKustom/menuUser) untuk tingkat admin/HRD, dan mengembalikan id user baru.",
+    "get_user_list_admin: daftar role membawa menu bawaan role."
+  ]
+}

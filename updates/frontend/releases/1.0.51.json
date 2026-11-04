@@ -1,0 +1,10 @@
+{
+  "version": "1.0.51",
+  "releasedAt": "2026-11-04",
+  "required": true,
+  "notes": [
+    "Master user tampil baru: Kelola User & Akses — daftar user di kiri (cari, filter Admin/HRD/Lainnya & lokasi, progress jumlah menu, chip akses), form di kanan.",
+    "Form 4 bagian: Identitas, Role & lokasi, Akses menu (kartu per kelompok, centang grup, preset HRD / Admin lokasi, cari menu, dipilih saja), Akses form absen.",
+    "Tambah user langsung dari halaman ini (password + Acak), Salin akses dari user lain, Export Matriks akses ke CSV."
+  ]
+}
