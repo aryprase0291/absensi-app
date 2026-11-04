@@ -155,6 +155,10 @@ function _modeJam_(menit) {
 }
 
 /** "08:30-12:00" -> { mulai: 510, selesai: 720 } (null bila tak terbaca). */
+// Toleransi terlambat mesin absensi (menit). Dipakai saat telat dihitung
+// ulang dari jam masuk absen online, supaya hasilnya sama dengan mesin.
+const TOLERANSI_TELAT_MENIT = 10;
+
 function _modeShift_(jamKerja) {
   const s = String(jamKerja || '');
   const c = s.match(/(\d{1,2}[:.]\d{2})\s*-\s*(\d{1,2}[:.]\d{2})/);
@@ -281,7 +285,10 @@ function gabungAbsenMesinOnline_(m, onl, mode) {
     const selisih = masuk - shift.mulai;
     // Shift malam: masuk sebelum tengah malam vs mulai 20:00 tetap benar;
     // selisih negatif besar berarti masuk sangat awal, bukan telat.
-    f.t = selisih > 0 && selisih < 12 * 60;
+    // TOLERANSI (4 Nov 2026): samakan dengan mesin — masuk s.d. 10 menit
+    // setelah jam mulai masih Hadir (08:40 = H, 08:41 = T 00:11). Nilai
+    // telat tetap dihitung dari jam mulai, persis seperti data mesin.
+    f.t = selisih > TOLERANSI_TELAT_MENIT && selisih < 12 * 60;
     telat = f.t ? _modeJam_(selisih) : '';
   } else if (masuk === null) {
     f.t = false;
