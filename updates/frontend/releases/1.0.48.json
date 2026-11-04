@@ -1,0 +1,10 @@
+{
+  "version": "1.0.48",
+  "releasedAt": "2026-11-04",
+  "required": true,
+  "notes": [
+    "Role baru Admin Jakarta (admin_jkt): melihat & mengelola karyawan Jakarta saja — Rekap/Koreksi, Approval, Riwayat, Respon Laporan, Tambah/Reset user, Dashboard GPS. Menu pengaturan global (import mesin, master role, periode, geofence, perangkat, wajah, log login, sinkron GSheet) disembunyikan.",
+    "Tambah User: role yang dipilih di form kini benar-benar tersimpan (sebelumnya user baru tersimpan sebagai admin).",
+    "Absen online: telat memakai toleransi 10 menit seperti mesin (masuk 08:31–08:40 untuk jam mulai 08:30 tetap Hadir)."
+  ]
+}
