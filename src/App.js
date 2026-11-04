@@ -5964,6 +5964,50 @@ function ApprovalScreen({ user, setView }) {
   const [historyPeriod, setHistoryPeriod] = useState(null);
   const [expandedHistoryUuid, setExpandedHistoryUuid] = useState(null);
 
+  // PERIODE (4 Nov 2026): daftar Pending & Riwayat Tim hanya menampilkan
+  // pengajuan yang tanggalnya jatuh di periode terpilih (bawaan: periode
+  // berjalan). '' = semua tanggal.
+  const [periodeOpsi, setPeriodeOpsi] = useState([]);
+  const [periodePilih, setPeriodePilih] = useState(null);   // { mulai, selesai } | '' (semua)
+  useEffect(() => {
+    let batal = false;
+    fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_absence_period' }) })
+      .then(r => r.json())
+      .then(d => {
+        if (batal || d.result !== 'success') return;
+        const daftar = (Array.isArray(d.periodsAktif) && d.periodsAktif.length ? d.periodsAktif : (Array.isArray(d.periods) ? d.periods : []))
+          .filter(p => p && p.mulai && p.selesai)
+          .sort((a, b) => String(b.mulai).localeCompare(String(a.mulai)));
+        setPeriodeOpsi(daftar);
+        const bawaan = d.periodeDefault || d.period || daftar[0] || null;
+        setPeriodePilih(prev => (prev === null ? (bawaan && bawaan.mulai ? { mulai: bawaan.mulai, selesai: bawaan.selesai } : '') : prev));
+      })
+      .catch(() => { if (!batal) setPeriodePilih(prev => (prev === null ? '' : prev)); });
+    return () => { batal = true; };
+  }, []);
+  // Tanggal acara pengajuan (YYYY-MM-DD); jatuh ke tanggal input bila tidak ada.
+  const keYMD = (v) => {
+    if (!v || v === '-') return '';
+    const t = String(v);
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      // ISO dengan jam (mis. 2026-10-31T17:00:00.000Z) -> tanggal lokal.
+      if (t.length > 10) { const d = new Date(t); if (!isNaN(d)) return d.toLocaleDateString('en-CA'); }
+      return `${m[1]}-${m[2]}-${m[3]}`;
+    }
+    m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    const d = new Date(t);
+    return isNaN(d) ? '' : d.toLocaleDateString('en-CA');
+  };
+  const dalamPeriode = (item) => {
+    if (!periodePilih) return true;
+    const mulai = keYMD(item.tglMulai) || keYMD(item.waktu);
+    const selesai = keYMD(item.tglSelesai) || mulai;
+    if (!mulai) return true;
+    return selesai >= periodePilih.mulai && mulai <= periodePilih.selesai;
+  };
+
   // --- LOGIC FETCH (Sama seperti sebelumnya) ---
   const fetchApprovalList = useCallback(async () => {
     setLoading(true);
@@ -5995,7 +6039,8 @@ function ApprovalScreen({ user, setView }) {
           userId: user.id,
           divisi: user.divisi,
           role: user.role,
-          lokasi: user.lokasi || 'All'
+          lokasi: user.lokasi || 'All',
+          ...(periodePilih ? { filterStart: periodePilih.mulai, filterEnd: periodePilih.selesai } : { filterStart: '2000-01-01', filterEnd: '2100-12-31' })
         })
       });
       const data = await res.json();
@@ -6006,11 +6051,14 @@ function ApprovalScreen({ user, setView }) {
         setHistoryLoaded(true);
       } else alert(data.message || 'Gagal memuat riwayat tim');
     } catch (e) { alert('Gagal memuat riwayat tim'); } finally { setLoadingHistory(false); }
-  }, [user.id, user.divisi, user.role, user.lokasi]);
+  }, [user.id, user.divisi, user.role, user.lokasi, periodePilih]);
 
+  // Periode diganti -> riwayat tim dimuat ulang untuk periode itu.
+  useEffect(() => { setHistoryLoaded(false); }, [periodePilih]);
   useEffect(() => {
+    if (periodePilih === null) return;
     if (activeApprovalTab === 'riwayat' && !historyLoaded) fetchTeamHistory();
-  }, [activeApprovalTab, historyLoaded, fetchTeamHistory]);
+  }, [activeApprovalTab, historyLoaded, fetchTeamHistory, periodePilih]);
 
   // --- LOGIC APPROVE/REJECT ---
 const handleDecision = async (uuid, decision, namaUser) => {
@@ -6082,9 +6130,11 @@ const handleDecision = async (uuid, decision, namaUser) => {
   const statusFilteredHistory = activeApprovalTab === 'riwayat'
     ? historyList.filter(item => historyStatusFilter === 'All' || item.status === historyStatusFilter)
     : historyList;
+  const listPeriode = list.filter(dalamPeriode);
+  const tersembunyiPeriode = list.length - listPeriode.length;
   const filteredList = activeApprovalTab === 'riwayat'
     ? statusFilteredHistory.filter(item => filterType === 'All' || item.tipe === filterType)
-    : list.filter(item => filterType === 'All' || item.tipe === filterType);
+    : listPeriode.filter(item => filterType === 'All' || item.tipe === filterType);
 
   // --- COLORS HELPER ---
   const getTypeColor = (tipe) => {
@@ -6131,6 +6181,32 @@ const handleDecision = async (uuid, decision, namaUser) => {
             >
                 Riwayat Tim
             </button>
+        </div>
+
+        {/* --- PERIODE --- */}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[220px]">
+                <CalendarRange className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <select
+                    value={periodePilih ? `${periodePilih.mulai}|${periodePilih.selesai}` : ''}
+                    onChange={(e) => { const v = e.target.value; if (!v) { setPeriodePilih(''); return; } const [m, sl] = v.split('|'); setPeriodePilih({ mulai: m, selesai: sl }); }}
+                    className="w-full appearance-none pl-9 pr-8 py-2 rounded-xl border border-indigo-100 bg-indigo-50 text-xs font-bold text-indigo-800 outline-none cursor-pointer">
+                    {periodePilih === null && <option value="">Memuat periode…</option>}
+                    {periodeOpsi.map(p => (
+                        <option key={`${p.mulai}|${p.selesai}`} value={`${p.mulai}|${p.selesai}`}>
+                            Periode {formatDateShort(p.mulai)} – {formatDateShort(p.selesai)}
+                        </option>
+                    ))}
+                    {periodePilih !== null && <option value="">Semua tanggal</option>}
+                </select>
+                <ChevronDown className="w-3.5 h-3.5 text-indigo-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+            {activeApprovalTab === 'pending' && tersembunyiPeriode > 0 && (
+                <button type="button" onClick={() => setPeriodePilih('')}
+                    className="text-[11px] font-medium text-slate-500 underline decoration-dotted hover:text-indigo-700">
+                    {tersembunyiPeriode} pengajuan di luar periode ini disembunyikan
+                </button>
+            )}
         </div>
 
         {/* --- FILTER SECTION --- */}
