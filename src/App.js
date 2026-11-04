@@ -97,6 +97,17 @@ export const normalisasiPeran = (u, peran) => {
     menuAkses: Array.isArray(p.menuAkses) ? p.menuAkses : (u.menuAkses || []),
   };
 };
+// ADMIN BERCAKUPAN LOKASI (4 Nov 2026) — mis. Admin Jakarta (admin_jkt):
+// tingkat admin, kode bukan "admin", cakupan bukan All. Server
+// (AksesLokasi.gs) menyaring datanya & menolak pengaturan global; di sini
+// menu pengaturan global (`pusat: true`) cukup disembunyikan.
+// Cerminan adminTerbatas_() di apps-script/AksesLokasi.gs.
+export const adminTerbatas = (u) => {
+  if (!u || String(u.role || '').toLowerCase() !== 'admin') return false;
+  if (String(u.roleKode || 'admin').toLowerCase() === 'admin') return false;
+  const c = String(u.lokasiAkses || 'All').trim().toLowerCase();
+  return !(c === '' || c === 'all' || c === '*');
+};
 // Menu boleh tampil? menuAkses kosong = semua menu yang memang boleh untuk tingkatnya.
 export const menuDiizinkan = (u, kunci) => {
   const m = (u && Array.isArray(u.menuAkses)) ? u.menuAkses : [];
@@ -7481,7 +7492,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     username: '', password: '', nama: '', email: '', 
     divisi: 'Staff', role: 'karyawan', akses: [], 
     noPayroll: '', sisaCuti: '', perusahaan: '', 
-    statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya' 
+    statusKaryawan: '', emailAtasan: '', lokasi: adminTerbatas(user) ? user.lokasiAkses : 'Surabaya' 
   });
   const [masterInput, setMasterInput] = useState({ kategori: 'Menu', value: '', label: '' });
 
@@ -7923,7 +7934,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     e.preventDefault(); setLoading(true);
     try {
       const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'tambah_user', roleRequester: user.role, ...userData }) }).then(r => r.json());
-      if(res.result === 'success') { alert('User Ditambahkan!'); setUserData({ username: '', password: '', nama: '', email: '', divisi: 'Staff', role: 'karyawan', akses: [], noPayroll: '', sisaCuti: '', perusahaan: '', statusKaryawan: '', emailAtasan: '', lokasi: 'Surabaya' }); } 
+      if(res.result === 'success') { alert('User Ditambahkan!'); setUserData({ username: '', password: '', nama: '', email: '', divisi: 'Staff', role: 'karyawan', akses: [], noPayroll: '', sisaCuti: '', perusahaan: '', statusKaryawan: '', emailAtasan: '', lokasi: adminTerbatas(user) ? user.lokasiAkses : 'Surabaya' }); } 
       else { alert(res.message); }
     } catch(e) { alert('Error koneksi'); } finally { setLoading(false); }
   };
@@ -8215,24 +8226,24 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       item: [
         { tab: 'user', label: 'Tambah user baru', ikon: UserRoundPlus, adminSaja: true },
         { tab: 'master_user', label: 'Reset password user', ikon: KeyRound, adminSaja: true },
-        { tab: 'master_role', label: 'Master role & lokasi akses', ikon: ShieldCheck, adminSaja: true },
+        { tab: 'master_role', label: 'Master role & lokasi akses', ikon: ShieldCheck, adminSaja: true, pusat: true },
       ]
     },
     {
       judul: 'Data',
       adminSaja: true,
       item: [
-        { view: 'analysis', label: 'Analisa data', ikon: ChartColumn },
-        { tab: 'master', label: 'Master data', ikon: Database },
-        { tab: 'import_db', label: 'Import data mesin absen', ikon: FileUp },
-        { tab: 'bebas_absen', label: 'Bebas absen & karyawan harian', ikon: UserCheck },
-        { tab: 'geomaster', label: 'Master lokasi geofence', ikon: MapPin },
-        { tab: 'geofence', label: 'Akses absen & geofence', ikon: LocateFixed },
-        { tab: 'period', label: 'Periode absensi', ikon: CalendarRange },
-        { tab: 'approval_team', label: 'Tim approval', ikon: UsersRound },
-        { tab: 'perangkat', label: 'Perangkat & sesi login', ikon: Smartphone },
-        { tab: 'wajah', label: 'Wajah karyawan', ikon: ScanFace },
-        { tab: 'board', label: 'Board absensi', ikon: FileSpreadsheet },
+        { view: 'analysis', label: 'Analisa data', ikon: ChartColumn, pusat: true },
+        { tab: 'master', label: 'Master data', ikon: Database, pusat: true },
+        { tab: 'import_db', label: 'Import data mesin absen', ikon: FileUp, pusat: true },
+        { tab: 'bebas_absen', label: 'Bebas absen & karyawan harian', ikon: UserCheck, pusat: true },
+        { tab: 'geomaster', label: 'Master lokasi geofence', ikon: MapPin, pusat: true },
+        { tab: 'geofence', label: 'Akses absen & geofence', ikon: LocateFixed, pusat: true },
+        { tab: 'period', label: 'Periode absensi', ikon: CalendarRange, pusat: true },
+        { tab: 'approval_team', label: 'Tim approval', ikon: UsersRound, pusat: true },
+        { tab: 'perangkat', label: 'Perangkat & sesi login', ikon: Smartphone, pusat: true },
+        { tab: 'wajah', label: 'Wajah karyawan', ikon: ScanFace, pusat: true },
+        { tab: 'board', label: 'Board absensi', ikon: FileSpreadsheet, pusat: true },
       ]
     },
     {
@@ -8242,8 +8253,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
         { view: 'rekap_admin', label: 'Rekap, Koreksi & Export Excel', ikon: FileSpreadsheet, warna: 'emerald', hrd: 'rekap' },
         { view: 'gps_dashboard', label: 'Dashboard GPS Karyawan', ikon: MapPin, warna: 'sky', adminSaja: true },
         { view: 'gps_audit', label: 'Monitoring Integritas GPS', ikon: Shield, warna: 'amber', adminSaja: true },
-        { view: 'dashboard_kerani', label: 'Absen Online Kerani Pabrik', ikon: ClipboardList, warna: 'emerald', adminSaja: true },
-        { view: 'log_login', label: 'Log Login Pengguna', ikon: KeyRound, warna: 'sky', adminSaja: true },
+        { view: 'dashboard_kerani', label: 'Absen Online Kerani Pabrik', ikon: ClipboardList, warna: 'emerald', adminSaja: true, pusat: true },
+        { view: 'log_login', label: 'Log Login Pengguna', ikon: KeyRound, warna: 'sky', adminSaja: true, pusat: true },
       ]
     },
     {
@@ -8256,8 +8267,10 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
 
   // Admin melihat semuanya; HRD hanya item bertanda `hrd` yang menunya
   // diizinkan master role (lihat normalisasiPeran / menuDiizinkan).
+  // Admin bercakupan lokasi (mis. Admin Jakarta): item `pusat` disembunyikan.
   const panelAdmin = user.role === 'admin';
-  const itemBolehTampil = (it) => panelAdmin || (!it.adminSaja && !!it.hrd && menuDiizinkan(user, it.hrd));
+  const adminLokasi = adminTerbatas(user);
+  const itemBolehTampil = (it) => (panelAdmin && !(adminLokasi && it.pusat)) || (!it.adminSaja && !!it.hrd && menuDiizinkan(user, it.hrd));
 
   // Fungsi biasa, BUKAN komponen React. Komponen yang didefinisikan di
   // dalam render akan di-mount ulang setiap kali panel ini render, dan

@@ -420,6 +420,13 @@ function authorizeRequest(data) {
   data.userId = auth.u;
   data.id = auth.u;
 
+  // TAMBAH USER (4 Nov 2026): data.role dari form adalah role user BARU.
+  // Simpan dulu sebelum ditimpa — dulu user baru selalu tersimpan dengan
+  // role si pembuat (admin). handleTambahUser membaca data.roleBaru.
+  if (action === 'tambah_user') {
+    data.roleBaru = String(data.role || '').trim().toLowerCase();
+  }
+
   // Role: dulu dibaca dari data.role / data.roleRequester
   data.role = role;
   data.roleRequester = role;
@@ -462,6 +469,14 @@ function authorizeRequest(data) {
     if (!isSuperAdmin) {
       data.requestorLokasi = auth.l || 'All';
     }
+  }
+
+  // ADMIN BERCAKUPAN LOKASI (AksesLokasi.gs) — mis. Admin Jakarta.
+  // Tolak aksi pengaturan global & aksi terhadap karyawan lokasi lain.
+  if (typeof aksesLokasiGerbang_ === 'function') {
+    const tolakLokasi = aksesLokasiGerbang_(action, data, auth);
+    if (tolakLokasi) return { ok: false, message: tolakLokasi };
+    if (adminTerbatas_(auth)) _alPermintaan_ = data;
   }
 
   return { ok: true, auth: auth };

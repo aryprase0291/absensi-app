@@ -485,6 +485,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   const menuRekap = !user || !Array.isArray(user.menuAkses) || user.menuAkses.length === 0 || user.menuAkses.includes('rekap');
   const bolehLihat = isAdmin || (user && String(user.role).toLowerCase() === 'hrd' && menuRekap);
   const cakupanLokasi = (user && (user.lokasiAkses || user.lokasi)) || 'All';
+  // Admin bercakupan lokasi (mis. Admin Jakarta, kode admin_jkt): boleh
+  // koreksi karyawan lokasinya, tetapi Sinkron GSheet tetap Admin pusat.
+  // Sama dengan adminTerbatas() di App.js / adminTerbatas_() di AksesLokasi.gs.
+  const adminPusat = isAdmin && (
+    String((user && user.roleKode) || 'admin').toLowerCase() === 'admin'
+    || ['', 'all', '*'].includes(String(cakupanLokasi).trim().toLowerCase())
+  );
 
   // Reset pagination on filter / search change
   useEffect(() => {
@@ -1801,7 +1808,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[9px] leading-none font-bold text-cyan-400 uppercase tracking-widest bg-cyan-400/10 px-1.5 py-0.5 rounded-full border border-cyan-400/20">{isAdmin ? 'Admin Area' : 'HRD · Lihat saja'}</span>
-                {!isAdmin && <span className="text-[9px] leading-none font-bold text-amber-300 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20">Lokasi: {String(cakupanLokasi).toLowerCase() === 'all' ? 'Semua' : cakupanLokasi}</span>}
+                {!adminPusat && <span className="text-[9px] leading-none font-bold text-amber-300 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20">Lokasi: {String(cakupanLokasi).toLowerCase() === 'all' ? 'Semua' : cakupanLokasi}</span>}
                 <span className="hidden sm:inline text-[9px] leading-none text-slate-400 font-mono">DATABASE ABSENSI</span>
               </div>
               <h1 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight mt-0.5 truncate">
@@ -1895,7 +1902,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             <span className="hidden sm:inline">Tabel Data (DB_FIX)</span>
           </button>
 
-          {isAdmin && <button
+          {adminPusat && <button
             onClick={() => setActiveTab('gsheet')}
             className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap shrink-0 ${
               activeTab === 'gsheet'
@@ -2445,7 +2452,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   </p>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-start gap-2 shrink-0">
-                  {isAdmin && <TombolSinkronGsheet doApiCall={doApiCall} user={user} onBukaSetelan={() => setActiveTab('gsheet')} />}
+                  {adminPusat && <TombolSinkronGsheet doApiCall={doApiCall} user={user} onBukaSetelan={() => setActiveTab('gsheet')} />}
                   <button
                     onClick={() => exportToExcel('tabel')}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition active:scale-95 shrink-0"
@@ -2621,7 +2628,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
           <AbsensiEmailPanel doApiCall={doApiCall} onBukaSetelan={() => setActiveTab('gsheet')} />
         )}
 
-        {activeTab === 'gsheet' && isAdmin && (
+        {activeTab === 'gsheet' && adminPusat && (
           <SinkronGsheetPanel doApiCall={doApiCall} user={user} kelasKartu="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden w-full flex flex-col" />
         )}
 

@@ -21,7 +21,7 @@
 // =====================================================================
 import { klienAdmin, jawab, CORS, rahasiaSinkronSah } from "../_bersama/util.ts";
 import { bacaToken } from "../_bersama/token.ts";
-import { peranDari } from "../_bersama/peran.ts";
+import { peranDari, cakupanLokasi } from "../_bersama/peran.ts";
 
 const TINGKAT = ["admin", "hrd", "manager", "kepala", "kepala_divisi", "supervisor", "spv", "pimpinan", "karyawan"];
 const MENU = ["approval", "respon_laporan", "laporan_semua", "rekap", "info_hrd", "data_karyawan", "gps", "panel_admin"];
@@ -45,6 +45,11 @@ Deno.serve(async (req) => {
       if (!t) return jawab({ result: "error", code: "AUTH_REQUIRED", message: "SESI_HABIS" }, 401);
       const p = await peranDari(db, t.r);
       if (p.tingkat !== "admin") return jawab({ result: "error", message: "Hanya admin yang boleh mengatur master role." }, 403);
+      // Admin bercakupan lokasi (mis. admin_jkt) bukan Admin pusat — cermin adminTerbatas_() di AksesLokasi.gs.
+      const cak = cakupanLokasi(p, t.l).trim().toLowerCase();
+      if (p.kode !== "admin" && !(cak === "" || cak === "all" || cak === "*")) {
+        return jawab({ result: "error", message: "Master role khusus Admin pusat." }, 403);
+      }
       oleh = teks(body.oleh || t.u, 80);
     } else if (aksi !== "semua") {
       return jawab({ result: "error", message: "Apps Script hanya boleh membaca." }, 403);

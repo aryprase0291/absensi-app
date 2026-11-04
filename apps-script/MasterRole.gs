@@ -188,7 +188,7 @@ function absensiEmailUntukCakupan_(keluaran, cakupan) {
 /** Saring jawaban get_koreksi_list (per payroll) untuk peminta non-admin. */
 function _saringKoreksiCakupan_(keluaran, data) {
   const a = data && data._auth;
-  if (!a || a.r === 'admin') return keluaran;
+  if (!a || (a.r === 'admin' && !adminTerbatas_(a))) return keluaran;
   const set = payrollDalamCakupan_(a.l);
   if (!set) return keluaran;
   let j;
@@ -204,8 +204,9 @@ function _saringKoreksiCakupan_(keluaran, data) {
  */
 function idUserDalamCakupan_(data) {
   const a = data && data._auth;
-  // Hanya HRD yang dibatasi di sini; tingkat lain memakai aturan lamanya.
-  if (!a || a.r !== 'hrd') return null;
+  // Hanya HRD & admin bercakupan lokasi (AksesLokasi.gs) yang dibatasi di
+  // sini; tingkat lain memakai aturan lamanya.
+  if (!a || (a.r !== 'hrd' && !adminTerbatas_(a))) return null;
   const c = String(a.l || '').trim();
   if (!c || c.toLowerCase() === 'all' || c === '*') return null;
   const rows = bacaSheet(SS.getSheetByName(SHEET_USERS), 14);

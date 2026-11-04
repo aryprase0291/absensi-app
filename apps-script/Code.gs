@@ -186,7 +186,18 @@ function doGet(e) {
 }
 
 
+// Permintaan admin bercakupan lokasi yang sedang diproses (AksesLokasi.gs).
+// Diisi authorizeRequest; null untuk semua pemohon lain.
+let _alPermintaan_ = null;
+
 function doPost(e) {
+  const keluaran = _doPostInti_(e);
+  if (!_alPermintaan_) return keluaran;
+  try { return aksesLokasiSaring_(_alPermintaan_.action, keluaran, _alPermintaan_); }
+  catch (err) { return responseJSON({ result: 'error', message: 'Gagal menyaring data lokasi: ' + err.message }); }
+}
+
+function _doPostInti_(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     const action = data.action;
@@ -347,11 +358,11 @@ function handleGetLogLogin(data) {
     if (action === 'delete_koreksi') return handleDeleteKoreksi(data);
     if (action === 'get_rekap_admin') {
       const _rk = handleGetRekapAdmin(data);
-      return (data._auth && data._auth.r !== 'admin') ? rekapUntukCakupan_(_rk, data._auth.l) : _rk;
+      return (data._auth && (data._auth.r !== 'admin' || adminTerbatas_(data._auth))) ? rekapUntukCakupan_(_rk, data._auth.l) : _rk;
     }
     // --- SINKRON TABEL DATA -> GSHEET DB ABSEN (lihat SinkronGsheet.gs) ---
     if (action === 'get_sinkron_gsheet') {
-      if (data._auth && data._auth.r !== 'admin') {
+      if (data._auth && (data._auth.r !== 'admin' || adminTerbatas_(data._auth))) {
         if (String(data.bagian || '') !== 'absensi_email') return responseJSON({ result: 'error', message: 'Bagian ini hanya untuk admin.' });
         return absensiEmailUntukCakupan_(handleGetSinkronGsheet(data), data._auth.l);
       }
@@ -2757,7 +2768,7 @@ function handleTambahUser(data) {
   if (sheet.getDataRange().getValues().some(row => row[1] == data.username)) return responseJSON({ result: 'error', message: 'Username sudah ada!' });
   sheet.appendRow([
     'USR-' + new Date().getTime(), data.username, data.password, data.nama, 
-    data.divisi, data.role, Array.isArray(data.akses) ? data.akses.join(',') : '', 
+    data.divisi, data.roleBaru || 'karyawan', Array.isArray(data.akses) ? data.akses.join(',') : '', 
     data.noPayroll || '', data.sisaCuti || '', '', data.perusahaan || '', 
     data.statusKaryawan || '', data.emailAtasan || '',
     data.lokasi || 'Surabaya'
