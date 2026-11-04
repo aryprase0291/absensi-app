@@ -16,6 +16,7 @@ import DashboardKerani from './screens/DashboardKerani';
 import GpsGateScreen from './screens/GpsGateScreen';
 import ImportDbAbsen from './screens/ImportDbAbsen';
 import MasterRolePanel, { ambilDaftarRoleMaster } from './screens/MasterRolePanel';
+import MasterUserPanel from './screens/MasterUserPanel';
 import BebasAbsenPanel from './screens/BebasAbsenPanel';
 import { ImportJobProvider } from './context/ImportJobContext';
 import { useHariLibur } from './utils/hariLibur';
@@ -7431,9 +7432,6 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false); 
   
   // State Reset Password
-  const [adminUserList, setAdminUserList] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loadingList, setLoadingList] = useState(false);
   const [geofenceUsers, setGeofenceUsers] = useState([]);
   const [geofenceConfigs, setGeofenceConfigs] = useState({});
   const [geofenceUserId, setGeofenceUserId] = useState('');
@@ -7521,24 +7519,11 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const [wajahHanyaBelum, setWajahHanyaBelum] = useState(false);
   const [wajahBelumAda, setWajahBelumAda] = useState(false);
 
-  const LIST_LOKASI = ['Surabaya', 'Jakarta', 'Semarang', 'Cilegon', 'Citeureup', 'Makassar', 'Balikpapan', 'Medan', 'All'];
+  const LIST_LOKASI = ['Surabaya', 'Jakarta', 'Semarang', 'Banyuwangi', 'Cilegon', 'Citeureup', 'Makassar', 'Balikpapan', 'Medan', 'All'];
 
-  // Logic Fetch User
-  const fetchAdminUserList = async () => {
-    setLoadingList(true);
-    try {
-      const res = await fetchApi(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'get_user_list_admin', roleRequester: user.role })
-      });
-      const data = await res.json();
-      if (data.result === 'success') { setAdminUserList(data.list); }
-    } catch (e) { console.error("Gagal load user"); }
-    finally { setLoadingList(false); }
-  };
+
 
   useEffect(() => {
-    if (activeTab === 'master_user') fetchAdminUserList();
     if (activeTab === 'geofence' || activeTab === 'geomaster') fetchGeofenceConfig();
     if (activeTab === 'period') fetchAbsencePeriod();
     if (activeTab === 'approval_team') fetchApprovalTeamConfig();
@@ -7953,10 +7938,6 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     } catch (e) { alert("Gagal koneksi."); } finally { setLoading(false); }
   };
 
-  const filteredUsers = adminUserList.filter(u =>
-    u.nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(u.username).toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   // Turunan data Tim Approval — kepala divisi boleh dipilih dari SEMUA user
   // (bukan cuma yang rolenya sudah approval), karena admin bisa langsung
@@ -8225,7 +8206,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       judul: 'Pengguna',
       item: [
         { tab: 'user', label: 'Tambah user baru', ikon: UserRoundPlus, adminSaja: true },
-        { tab: 'master_user', label: 'Reset password user', ikon: KeyRound, adminSaja: true },
+        { tab: 'master_user', label: 'Master user (role, lokasi, akses)', ikon: KeyRound, adminSaja: true },
         { tab: 'master_role', label: 'Master role & lokasi akses', ikon: ShieldCheck, adminSaja: true, pusat: true },
       ]
     },
@@ -8301,7 +8282,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const getPageTitle = () => {
       switch(activeTab) {
           case 'user': return 'Tambah User Baru';
-          case 'master_user': return 'Master User (Reset)';
+          case 'master_user': return 'Master User';
           case 'master': return 'Master Data';
           case 'import_db': return 'Import Data Mesin Absen';
           case 'news': return 'Broadcast Info HRD';
@@ -8386,30 +8367,9 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
 
       {/* KONTEN TAB: MASTER USER */}
       {activeTab === 'master_user' && user.role === 'admin' && (
-        <div className="animate-in fade-in duration-300">
-           <div className="relative mb-3">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} />
-              <input type="text" placeholder="Cari nama atau ID finger" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`${inputCls} pl-9`} />
-           </div>
-           {loadingList ? ( <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 text-slate-400 animate-spin"/></div> ) : (
-             <div className="bg-white rounded-2xl border border-slate-200/70 divide-y divide-slate-100 overflow-hidden">
-               {filteredUsers.length === 0 && (
-                  <p className="px-4 py-10 text-center text-[13px] text-slate-400">Tidak ada user yang cocok.</p>
-               )}
-               {filteredUsers.map((u, idx) => (
-                 <div key={idx} className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                       <p className="text-[14px] font-medium text-slate-900 tracking-tight truncate">{u.nama}</p>
-                       <p className="text-[11px] text-slate-400 tabular-nums mt-0.5">ID {u.username}</p>
-                    </div>
-                    <button onClick={() => handleResetPassword(u.uuid, u.nama)} disabled={loading} className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-rose-600 hover:border-rose-200 active:bg-slate-100 disabled:opacity-50 transition-colors">
-                      <RefreshCcw className="w-3.5 h-3.5" strokeWidth={1.75} /> Reset
-                    </button>
-                 </div>
-               ))}
-             </div>
-           )}
-        </div>
+        <MasterUserPanel user={user} fetchApi={fetchApi} masterData={masterData}
+          listLokasi={LIST_LOKASI.filter(l => !adminTerbatas(user) || l === user.lokasiAkses)}
+          terbatas={adminTerbatas(user)} onResetPassword={handleResetPassword} />
       )}
 
       {/* KONTEN TAB: TAMBAH USER */}

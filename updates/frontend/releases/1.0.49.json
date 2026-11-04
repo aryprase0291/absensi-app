@@ -1,0 +1,10 @@
+{
+  "version": "1.0.49",
+  "releasedAt": "2026-11-04",
+  "required": true,
+  "notes": [
+    "Admin Panel > Pengguna > Master user (menggantikan Reset password user): daftar user dengan filter lokasi & role, badge role/lokasi/jumlah form.",
+    "Edit user: nama, ID finger, payroll, divisi, perusahaan, status, email atasan, ROLE (dari Master role), LOKASI, dan AKSES FORM. Reset password tetap di layar yang sama.",
+    "Admin Jakarta hanya melihat & mengubah user Jakarta; user bertingkat Admin terkunci (khusus Admin pusat)."
+  ]
+}

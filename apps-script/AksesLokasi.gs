@@ -87,6 +87,16 @@ function _alPemilikUuid_(namaSheet, uuid) {
   return '';
 }
 
+/** User sasaran bertingkat admin? (Admin lokasi tidak boleh menyentuhnya.) */
+function _alTargetAdmin_(userId) {
+  const id = String(userId || '').trim();
+  const rows = _alUsers_();
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === id) return peranEfektif_(rows[i][5], rows[i][13]).tingkat === 'admin';
+  }
+  return false;
+}
+
 /** Satu koreksi menurut id (null bila tidak ada). */
 function _alKoreksi_(id) {
   const k = String(id || '').trim();
@@ -137,7 +147,14 @@ function aksesLokasiGerbang_(action, data, auth) {
     case 'delete_remark':
       return _alIdBoleh_(c, _alPemilikUuid_(SHEET_REMARKS, data.uuid)) ? '' : luar;
     case 'reset_password_user':
-      return _alIdBoleh_(c, data.targetUuid) ? '' : luar;
+      if (!_alIdBoleh_(c, data.targetUuid)) return luar;
+      return _alTargetAdmin_(data.targetUuid) ? 'User bertingkat Admin hanya bisa diubah Admin pusat.' : '';
+    case 'update_user': {
+      if (!_alIdBoleh_(c, data.targetUuid)) return luar;
+      if (_alTargetAdmin_(data.targetUuid)) return 'User bertingkat Admin hanya bisa diubah Admin pusat.';
+      if (!cocokLokasi_(c, data.lokasiUser)) return 'Lokasi user harus ' + c + '.';
+      return _alRoleBoleh_(data.roleUser, c);
+    }
     case 'tambah_user': {
       if (!cocokLokasi_(c, data.lokasi)) return 'Lokasi user baru harus ' + c + '.';
       return _alRoleBoleh_(data.roleBaru, c);

@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.48";
+const APP_VERSION = "1.0.49";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -279,6 +279,7 @@ function _doPostInti_(e) {
     if (action === 'apply_geofence_divisi') return handleApplyGeofenceDivisi(data);
     if (action === 'apply_mode_absen_divisi') return handleApplyModeAbsenDivisi(data);
     if (action === 'reset_password_user') return handleResetPasswordUser(data); // Reset password
+    if (action === 'update_user') return handleUpdateUser(data); // Master user (MasterUser.gs)
     if (action === 'set_approval_role') return handleSetApprovalRole(data); // Jadikan user sbg kepala divisi (approval)
     if (action === 'get_analysis_data') return handleGetAnalysisData(data);
     if (action === 'import_db_absen') return handleImportDbAbsen(data); // lihat ImportDbAbsen.gs
@@ -4842,25 +4843,9 @@ function handleGetUserListAdmin(data) {
     return responseJSON({ result: 'error', message: 'Akses Ditolak.' });
   }
 
-  const sheet = SS.getSheetByName(SHEET_USERS);
-  const rows = sheet.getDataRange().getValues();
-  const list = [];
-
-  // Mulai loop dari baris ke-2 (index 1) karena baris 1 adalah Header
-  for (let i = 1; i < rows.length; i++) {
-    list.push({
-      uuid: rows[i][0],      // UUID
-      username: rows[i][1],  // ID Fingerprint / Username
-      nama: rows[i][3],      // Nama Lengkap
-      divisi: rows[i][4],    // Divisi
-      jabatan: rows[i][5]    // Role/Jabatan
-    });
-  }
-
-  // Sortir berdasarkan Nama A-Z
-  list.sort((a, b) => a.nama.localeCompare(b.nama));
-  
-  return responseJSON({ result: 'success', list: list });
+  // MASTER USER (4 Nov 2026): isi lengkap + daftar role, lihat MasterUser.gs.
+  const hasil = masterUserDaftar_(data);
+  return responseJSON({ result: 'success', list: hasil.list, roles: hasil.roles });
 }
 
 // 2. Proses Reset Password menjadi "123"

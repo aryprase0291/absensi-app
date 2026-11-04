@@ -266,6 +266,7 @@ const ACTION_ROLES = {
   'save_approval_team_config': ['admin'],
   'set_approval_role': ['admin'],
   'reset_password_user': ['admin'],
+  'update_user': ['admin'],   // MasterUser.gs
   'save_geofence_config': ['admin'],
   'save_geofence_master': ['admin'],
   'apply_geofence_divisi': ['admin'],
