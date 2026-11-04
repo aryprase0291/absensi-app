@@ -5999,7 +5999,8 @@ function handleGetRekapAdmin(data) {
         role: ur[5] || 'karyawan',
         sisaCuti: cutiInfo.tersedia !== undefined ? cutiInfo.tersedia : (Number(ur[8]) || 0),
         cutiAwal: cutiInfo.terpakai !== undefined ? cutiInfo.terpakai : 0,
-        perusahaan: ur[10] || '-'
+        perusahaan: ur[10] || '-',
+        lokasi: _rekapLokasiLabel_(ur[13])
       };
     }
   }
@@ -6196,6 +6197,8 @@ function handleGetRekapAdmin(data) {
         // Tanpa ini, karyawan yang koreksinya tercatat atas nama no.akun
         // tidak akan pernah cocok.
         noAkun: noAkun,
+        // Lokasi (kolom N Users, ejaan dibakukan) — filter lokasi di Dashboard.
+        lokasi: uInfo.lokasi || '(kosong)',
         sisaCuti: cutiInfo.tersedia !== undefined ? cutiInfo.tersedia : (uInfo.sisaCuti !== undefined ? uInfo.sisaCuti : 0),
         cutiDiambil: 0,
         cutiAwal: cutiInfo.terpakai !== undefined ? cutiInfo.terpakai : (uInfo.cutiAwal || 0),
@@ -6368,13 +6371,22 @@ function _rekapCacheKunci_(dari, sampai) {
     const versi = PropertiesService.getScriptProperties().getProperty('REKAP_VERSI') || '0';
     const sh = SS.getSheetByName(SHEET_ABSENSI);
     const barisAbsensi = sh ? sh.getLastRow() : 0;
-    return 'rekap1_' + versi + '_' + barisAbsensi + '_' + (dari || 'x') + '_' + (sampai || 'x');
+    return 'rekap2_' + versi + '_' + barisAbsensi + '_' + (dari || 'x') + '_' + (sampai || 'x');
   } catch (e) {
     return '';
   }
 }
 
 /** Panggil setiap kali data yang membentuk rekap berubah di luar sheet Absensi. */
+/** Lokasi untuk tampilan rekap: alias dibakukan (Sby -> Surabaya). */
+function _rekapLokasiLabel_(mentah) {
+  const asli = String(mentah || '').trim();
+  if (!asli) return '(kosong)';
+  const baku = (typeof lokasiBaku_ === 'function') ? lokasiBaku_(asli) : asli.toLowerCase();
+  if (!baku || baku.indexOf(',') !== -1) return asli;
+  return baku.charAt(0).toUpperCase() + baku.slice(1);
+}
+
 function rekapCacheBatalkan_() {
   try {
     PropertiesService.getScriptProperties().setProperty('REKAP_VERSI', String(new Date().getTime()));

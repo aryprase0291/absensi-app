@@ -5,7 +5,7 @@ import {
   Building, RefreshCcw, Check, X, Loader2,
   ShieldAlert, Layers, PieChart, Sparkles, Tag, AlertTriangle,
   Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays,
-  Maximize2, Minimize2, UploadCloud, Mail
+  Maximize2, Minimize2, UploadCloud, Mail, MapPin, ChevronDown
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
@@ -253,10 +253,10 @@ const isKoreksiRangeOverlaps = (kStart, kEnd, fStart, fEnd) => {
 const angka = (v) => Number(v) || 0;
 const KOLOM_DASHBOARD = [
   { key: 'no', lebar: 48, label: 'No', aksi: false, align: 'center', kelas: 'w-12' },
-  { key: 'dept', lebar: 150, label: 'Dept', nilai: d => d.dept || '' },
-  { key: 'nama', lebar: 210, label: 'Nama Pegawai', nilai: d => d.nama || '' },
-  { key: 'jabatan', lebar: 130, label: 'Jabatan', nilai: d => d.jabatan || '' },
+  { key: 'noAkun', lebar: 80, label: 'No Akun', align: 'center', nilai: d => d.noAkun || '' },
   { key: 'payroll', lebar: 90, label: 'Payroll', nilai: d => d.payroll || '' },
+  { key: 'nama', lebar: 220, label: 'Nama Pegawai', nilai: d => String(d.nama || '').toUpperCase() },
+  { key: 'dept', lebar: 150, label: 'Dept', nilai: d => d.dept || '' },
   { key: 'sisaCuti', lebar: 85, label: 'Sisa Cuti', align: 'center', kelas: 'text-slate-800', nilai: d => angka(d.sisaCuti) },
   { key: 'cutiDiambil', lebar: 100, label: 'Cuti Diambil', align: 'center', kelas: 'text-teal-700', nilai: d => angka(d.cutiDiambil) },
   { key: 'sakit', lebar: 70, label: 'Sakit', align: 'center', kelas: 'text-fuchsia-700', nilai: d => angka(d.sakit) },
@@ -416,6 +416,16 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDept, setFilterDept] = useState('ALL');
+  // Filter lokasi (checkbox) untuk Dashboard. Kosong = semua lokasi.
+  const [filterLokasi, setFilterLokasi] = useState([]);
+  const [bukaLokasi, setBukaLokasi] = useState(false);
+  const refLokasi = useRef(null);
+  useEffect(() => {
+    if (!bukaLokasi) return undefined;
+    const tutup = (e) => { if (refLokasi.current && !refLokasi.current.contains(e.target)) setBukaLokasi(false); };
+    document.addEventListener('mousedown', tutup);
+    return () => document.removeEventListener('mousedown', tutup);
+  }, [bukaLokasi]);
   const [filterSimbol, setFilterSimbol] = useState('ALL');
   const [filterSumber, setFilterSumber] = useState('ALL'); // 'ALL' | 'mesin' | 'online'
   // BAWAAN HARI INI (23 Okt 2026). Layar dibuka hanya dengan data hari
@@ -837,6 +847,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   }, [activeTab, lingkupKoreksi, semuaKoreksi, memuatSemuaKoreksi, muatSemuaKoreksi]);
 
   // Unique Departments
+  const lokasiList = useMemo(() => {
+    const h = {};
+    dashboardData.forEach(d => { const l = d.lokasi || '(kosong)'; h[l] = (h[l] || 0) + 1; });
+    return Object.keys(h).sort((a, b) => h[b] - h[a]).map(l => ({ lokasi: l, jumlah: h[l] }));
+  }, [dashboardData]);
+  const toggleLokasi = (l) => setFilterLokasi(prev => (prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l]));
+
   const deptList = useMemo(() => {
     const s = new Set();
     dashboardData.forEach(d => { if (d.dept) s.add(d.dept); });
@@ -955,18 +972,20 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
     return enrichedDashboardData.filter(d => {
       const matchDept = filterDept === 'ALL' || d.dept === filterDept;
       if (!matchDept) return false;
+      if (filterLokasi.length && !filterLokasi.includes(d.lokasi || '(kosong)')) return false;
       if (queryTokens.length === 0) return true;
 
       const searchableText = [
         d.nama || '',
         d.payroll || '',
+        d.noAkun || '',
         d.dept || '',
-        d.jabatan || ''
+        d.lokasi || ''
       ].join(' ').toLowerCase();
 
       return queryTokens.every(token => searchableText.includes(token));
     });
-  }, [enrichedDashboardData, filterDept, searchQuery]);
+  }, [enrichedDashboardData, filterDept, filterLokasi, searchQuery]);
 
   // Filtered Koreksi List with Multi-Token Comprehensive Search
   const filteredKoreksi = useMemo(() => {
@@ -1599,10 +1618,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
       const sumberDash = mode === 'dashboard' ? urutDashboard.rows : filteredDashboard;
       const dashRows = sumberDash.map((d, idx) => ({
         'NO': idx + 1,
-        'DEPT': d.dept || '',
-        'NAMA': d.nama || '',
-        'JABATAN': d.jabatan || '',
+        'NO AKUN': d.noAkun || '',
         'PAYROLL': d.payroll || '',
+        'NAMA': String(d.nama || '').toUpperCase(),
+        'DEPT': d.dept || '',
+        'LOKASI': d.lokasi || '',
         'SISA CUTI': d.sisaCuti,
         'CUTI DIAMBIL': d.cutiDiambil || '',
         'SAKIT': d.sakit || '',
@@ -1710,6 +1730,40 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
+              {activeTab === 'dashboard' && lokasiList.length > 0 && !(lokasiList.length === 1 && lokasiList[0].lokasi === '(kosong)') && (
+                <div className="relative" ref={refLokasi}>
+                  <button type="button" onClick={() => setBukaLokasi(v => !v)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition ${filterLokasi.length ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-white'}`}>
+                    <MapPin className={`w-4 h-4 ${filterLokasi.length ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    {filterLokasi.length === 0 ? `Semua Lokasi (${lokasiList.length})` : filterLokasi.length <= 2 ? filterLokasi.join(', ') : `${filterLokasi.length} lokasi`}
+                    <ChevronDown className={`w-3.5 h-3.5 transition ${bukaLokasi ? 'rotate-180' : ''}`} />
+                  </button>
+                  {bukaLokasi && (
+                    <div className="absolute right-0 top-full mt-1.5 z-40 w-60 rounded-xl border border-slate-200 bg-white shadow-xl p-2">
+                      <div className="flex items-center justify-between px-2 pb-2 mb-1 border-b border-slate-100">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tampilkan lokasi</span>
+                        <div className="flex gap-2 text-[11px] font-semibold">
+                          <button type="button" onClick={() => setFilterLokasi(lokasiList.map(x => x.lokasi))} className="text-blue-600 hover:underline">Semua</button>
+                          <button type="button" onClick={() => setFilterLokasi([])} className="text-slate-500 hover:underline">Reset</button>
+                        </div>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {lokasiList.map(({ lokasi, jumlah }) => {
+                          const on = filterLokasi.includes(lokasi);
+                          return (
+                            <label key={lokasi} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs text-slate-700">
+                              <input type="checkbox" checked={on} onChange={() => toggleLokasi(lokasi)} className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/20" />
+                              <span className="flex-1 font-medium">{lokasi}</span>
+                              <span className="text-[10px] text-slate-400 tabular-nums">{jumlah}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="px-2 pt-2 mt-1 border-t border-slate-100 text-[10px] text-slate-400">Tidak ada yang dicentang = semua lokasi.</p>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
                 <Building className="w-4 h-4 text-slate-400" />
                 <select
@@ -2164,14 +2218,14 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                       urutDashboard.rows.map((d, idx) => (
                         <tr key={idx} className="hover:bg-blue-50/40 transition-colors whitespace-nowrap">
                           <td className="p-3 text-center text-slate-400 font-mono border-r border-slate-100">{idx + 1}</td>
+                          <td className="p-3 text-center font-mono text-slate-500 border-r border-slate-100">{d.noAkun || '-'}</td>
+                          <td className="p-3 font-mono text-slate-600 border-r border-slate-100">{d.payroll || '-'}</td>
+                          <td className="p-3 font-bold text-slate-900 border-r border-slate-100 uppercase" title={d.lokasi ? `Lokasi: ${d.lokasi}` : undefined}>{String(d.nama || '-').toUpperCase()}</td>
                           <td className="p-3 font-semibold text-slate-800 border-r border-slate-100">
                             <span className="px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[11px]">
                               {d.dept || '-'}
                             </span>
                           </td>
-                          <td className="p-3 font-bold text-slate-900 border-r border-slate-100">{d.nama || '-'}</td>
-                          <td className="p-3 text-slate-500 border-r border-slate-100">{d.jabatan || '-'}</td>
-                          <td className="p-3 font-mono text-slate-600 border-r border-slate-100">{d.payroll || '-'}</td>
                           
                           {/* SISA CUTI */}
                           <td className="p-3 text-center font-bold text-slate-800 border-r border-slate-100 bg-slate-50/50">
