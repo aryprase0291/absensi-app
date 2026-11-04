@@ -346,6 +346,11 @@ function authorizeRequest(data) {
   auth.r = peran.tingkat;        // tingkat (mis. hrd)
   auth.l = peran.cakupan;        // cakupan lokasi (mis. Surabaya)
   auth.menu = peran.menu || [];
+  // MENU PER USER (MasterUser.gs) mengalahkan menu role.
+  if (typeof menuUser_ === 'function') {
+    const menuKhusus = menuUser_(auth.u);
+    if (menuKhusus) auth.menu = menuKhusus;
+  }
 
   const role = String(auth.r || '').trim().toLowerCase();
   if (rule !== '*' && rule.indexOf(role) === -1) {
@@ -470,6 +475,12 @@ function authorizeRequest(data) {
     if (!isSuperAdmin) {
       data.requestorLokasi = auth.l || 'All';
     }
+  }
+
+  // MENU PER USER (MasterUser.gs): aksi dari menu yang tidak diaktifkan ditolak.
+  if (typeof cekMenuAksi_ === 'function') {
+    const tolakMenu = cekMenuAksi_(action, auth);
+    if (tolakMenu) return { ok: false, message: tolakMenu };
   }
 
   // ADMIN BERCAKUPAN LOKASI (AksesLokasi.gs) — mis. Admin Jakarta.

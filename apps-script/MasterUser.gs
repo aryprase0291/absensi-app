@@ -66,7 +66,8 @@ function masterUserDaftar_(data) {
       perusahaan: String(r[10] || ''),
       statusKaryawan: String(r[11] || ''),
       emailAtasan: String(r[12] || ''),
-      lokasi: String(r[13] || '')
+      lokasi: String(r[13] || ''),
+      menu: (typeof menuUser_ === 'function') ? menuUser_(id) : null   // null = ikut role
     });
   }
   list.sort(function (a, b) { return a.nama.localeCompare(b.nama); });
@@ -122,6 +123,16 @@ function handleUpdateUser(data) {
       return responseJSON({ result: 'error', message: 'Role dan lokasi akun Anda sendiri tidak bisa diubah dari sini. Minta admin lain.' });
     }
 
+    // MENU PER USER: hanya berarti untuk tingkat admin / HRD.
+    const tingkatBaru = peranEfektif_(role, lokasi).tingkat;
+    const menuKustom = data.menuKustom === true && (tingkatBaru === 'admin' || tingkatBaru === 'hrd');
+    const menuLama = JSON.stringify(menuUser_(target));
+    const menuPilihan = _muDaftarAkses_(data.menuUser).filter(function (k) { return MENU_KATALOG.indexOf(k) !== -1; });
+    const menuBaru = JSON.stringify(menuKustom ? (menuPilihan.length ? menuPilihan : [MENU_TIDAK_ADA]) : null);
+    if (target === String(auth.u) && menuLama !== menuBaru) {
+      return responseJSON({ result: 'error', message: 'Menu akun Anda sendiri tidak bisa diubah dari sini. Minta admin lain.' });
+    }
+
     const r = sheet.getRange(idx + 1, 1, 1, MU_KOLOM);
     const baris = r.getValues()[0];   // kolom lain (password, cuti, foto) tetap
     baris[1] = username;
@@ -140,10 +151,12 @@ function handleUpdateUser(data) {
     sheet.getRange(idx + 1, 4, 1, 5).setValues([baris.slice(3, 8)]);
     sheet.getRange(idx + 1, 11, 1, 4).setValues([baris.slice(10, 14)]);
 
-    // Role / lokasi berubah -> hak di token lama sudah tidak berlaku.
+    if (menuLama !== menuBaru) _muSimpanMenu_(target, menuKustom, menuPilihan);
+
+    // Role / lokasi / menu berubah -> hak di token lama sudah tidak berlaku.
     // Cabut sesinya supaya user login ulang dengan hak yang baru.
     let catatanSesi = '';
-    if ((role !== roleLama || lokasi !== lokasiLama) && typeof deviceCabutSesi === 'function') {
+    if ((role !== roleLama || lokasi !== lokasiLama || menuLama !== menuBaru) && typeof deviceCabutSesi === 'function') {
       try { deviceCabutSesi(target); catatanSesi = ' User ini perlu login ulang.'; } catch (e) { console.warn(e.message); }
     }
     if (typeof _alUsersMemo_ !== 'undefined') _alUsersMemo_ = null;
@@ -154,4 +167,93 @@ function handleUpdateUser(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// =====================================================================
+// MENU PER USER (4 Nov 2026) — khusus user bertingkat Admin / HRD
+//
+// Disimpan di Script Properties MENU_PER_USER: { userId: [kunci menu] }.
+//   - user tidak ada di peta  -> ikut menu role-nya (master role)
+//   - user ada di peta        -> HANYA menu yang tercantum
+//     (daftar kosong disimpan sebagai [MENU_TIDAK_ADA] supaya tidak
+//      terbaca "semua menu")
+// Kunci menu sama dengan frontend (MasterUserPanel.js KATALOG_MENU).
+// Ditegakkan dua lapis: frontend menyembunyikan menunya, authorizeRequest
+// menolak aksinya (cekMenuAksi_).
+// =====================================================================
+
+const MU_MENU_PROP = 'MENU_PER_USER';
+const MENU_TIDAK_ADA = '_tidak_ada';
+const MENU_KATALOG = [
+  'panel_admin', 'approval',
+  'user', 'master_user', 'master_role',
+  'analysis', 'master', 'import_db', 'bebas_absen', 'geomaster', 'geofence', 'period',
+  'approval_team', 'perangkat', 'wajah', 'board',
+  'rekap', 'gps', 'gps_audit', 'dashboard_kerani', 'log_login',
+  'info_hrd'
+];
+
+// Aksi server -> kunci menu. Aksi yang tidak ada di sini tidak dibatasi menu.
+const AKSI_MENU = {
+  get_approval_list: 'approval', process_approval: 'approval',
+  tambah_user: 'user',
+  update_user: 'master_user', reset_password_user: 'master_user',
+  segarkan_master_role: 'master_role',
+  get_analysis_data: 'analysis',
+  tambah_master: 'master',
+  import_db_absen: 'import_db',
+  save_geofence_master: 'geomaster',
+  save_geofence_config: 'geofence', apply_geofence_divisi: 'geofence', apply_mode_absen_divisi: 'geofence',
+  save_absence_period: 'period', save_absence_periods: 'period',
+  get_approval_team_config: 'approval_team', save_approval_team_config: 'approval_team', set_approval_role: 'approval_team',
+  get_device_list: 'perangkat', get_device_audit: 'perangkat', save_device_config: 'perangkat',
+  lepas_device: 'perangkat', cabut_sesi_user: 'perangkat', set_device_mode: 'perangkat',
+  get_wajah_list: 'wajah', daftar_wajah: 'wajah', hapus_wajah: 'wajah', set_face_config: 'wajah',
+  get_rekap_admin: 'rekap', get_koreksi_list: 'rekap', save_koreksi: 'rekap', delete_koreksi: 'rekap',
+  get_sinkron_gsheet: 'rekap', set_sinkron_gsheet: 'rekap', sinkron_gsheet: 'rekap',
+  get_gps_live: 'gps', get_gps_trail: 'gps', get_gps_tracking_admin: 'gps',
+  save_gps_tracking_config: 'gps', buat_laporan_gps: 'gps',
+  get_gps_audit: 'gps_audit', run_gps_audit_historis: 'gps_audit',
+  get_log_login: 'log_login',
+  tambah_announcement: 'info_hrd'
+};
+
+let _muMenuMemo_ = null;
+function menuPerUserPeta_() {
+  if (_muMenuMemo_) return _muMenuMemo_;
+  let obj = {};
+  try { obj = JSON.parse(PropertiesService.getScriptProperties().getProperty(MU_MENU_PROP) || '{}') || {}; }
+  catch (e) { console.warn('MENU_PER_USER rusak, dianggap kosong: ' + e.message); obj = {}; }
+  _muMenuMemo_ = obj;
+  return obj;
+}
+
+/** Menu khusus user ini, atau null bila ikut role. */
+function menuUser_(userId) {
+  const m = menuPerUserPeta_()[String(userId || '').trim()];
+  if (!Array.isArray(m)) return null;
+  return m.length ? m : [MENU_TIDAK_ADA];
+}
+
+function _muSimpanMenu_(userId, kustom, menu) {
+  const id = String(userId || '').trim();
+  const peta = menuPerUserPeta_();
+  if (!kustom) delete peta[id];
+  else {
+    const bersih = _muDaftarAkses_(menu).filter(function (k) { return MENU_KATALOG.indexOf(k) !== -1; });
+    peta[id] = bersih.length ? bersih : [MENU_TIDAK_ADA];
+  }
+  PropertiesService.getScriptProperties().setProperty(MU_MENU_PROP, JSON.stringify(peta));
+  _muMenuMemo_ = peta;
+}
+
+/** '' = boleh. Hanya admin/HRD yang dibatasi menu; daftar kosong = semua. */
+function cekMenuAksi_(action, auth) {
+  const t = String((auth && auth.r) || '').toLowerCase();
+  if (t !== 'admin' && t !== 'hrd') return '';
+  const kunci = AKSI_MENU[action];
+  if (!kunci) return '';
+  const m = (auth && auth.menu) || [];
+  if (!m.length || m.indexOf(kunci) !== -1) return '';
+  return 'Menu ini tidak diaktifkan untuk akun Anda. Hubungi Admin (Master user).';
 }

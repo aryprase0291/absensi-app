@@ -1,7 +1,17 @@
 {
   "frontend": {
-    "currentVersion": "1.0.49",
+    "currentVersion": "1.0.50",
     "history": [
+      {
+        "file": "1.0.50.json",
+        "version": "1.0.50",
+        "releasedAt": "2026-11-04",
+        "required": true,
+        "notes": [
+          "Master user: untuk user ber-role Admin / HRD kini bisa dipilih menu apa saja yang diakses (Ikuti role, atau Pilih menu: Panel, Approval, Tambah user, Master user, Import mesin, Rekap, GPS, Info HRD, dll.).",
+          "Menu Admin Panel, tombol Panel & Approval di beranda, dan layar Rekap mengikuti menu per user. Daftar Master user menampilkan badge 'menu khusus'."
+        ]
+      },
       {
         "file": "1.0.49.json",
         "version": "1.0.49",
@@ -388,8 +398,19 @@
     ]
   },
   "backend": {
-    "currentVersion": "1.0.49",
+    "currentVersion": "1.0.50",
     "history": [
+      {
+        "file": "1.0.50.json",
+        "version": "1.0.50",
+        "releasedAt": "2026-11-04",
+        "required": true,
+        "notes": [
+          "MasterUser.gs: menu per user (Script Properties MENU_PER_USER) untuk tingkat admin/HRD; update_user menerima menuKustom & menuUser (kunci divalidasi MENU_KATALOG), menolak ubah menu akun sendiri, mencabut sesi bila menu berubah.",
+          "Auth.gs: auth.menu = menu per user bila ada (mengalahkan menu role); cekMenuAksi_ menolak aksi admin/HRD dari menu yang tidak diaktifkan (peta AKSI_MENU). Login & buka_aplikasi mengirim menuAkses per user.",
+          "Urutan deploy: MasterUser.gs + Auth.gs + Code.gs bersamaan, lalu frontend."
+        ]
+      },
       {
         "file": "1.0.49.json",
         "version": "1.0.49",

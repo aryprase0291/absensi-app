@@ -1,0 +1,9 @@
+{
+  "version": "1.0.50",
+  "releasedAt": "2026-11-04",
+  "required": true,
+  "notes": [
+    "Master user: untuk user ber-role Admin / HRD kini bisa dipilih menu apa saja yang diakses (Ikuti role, atau Pilih menu: Panel, Approval, Tambah user, Master user, Import mesin, Rekap, GPS, Info HRD, dll.).",
+    "Menu Admin Panel, tombol Panel & Approval di beranda, dan layar Rekap mengikuti menu per user. Daftar Master user menampilkan badge 'menu khusus'."
+  ]
+}

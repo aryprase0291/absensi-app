@@ -84,7 +84,7 @@ function getSymbolFromType(tipe) {
 }
 
 // --- VERSION CONTROL ---
-const APP_VERSION = "1.0.49";
+const APP_VERSION = "1.0.50";
 // (Angka di atas ditulis otomatis oleh `npm run update:prepare` dari
 //  updates/backend/releases/*.json — jangan disunting manual.)
 //
@@ -2686,7 +2686,7 @@ function handleLogin(data) {
           roleKode: _peranLogin.kode,
           roleNama: _peranLogin.nama,
           lokasiAkses: _peranLogin.cakupan,
-          menuAkses: _peranLogin.menu || [],
+          menuAkses: ((typeof menuUser_ === 'function') && menuUser_(foundUser[0])) || _peranLogin.menu || [],
           akses: foundUser[6] ? foundUser[6].toString().split(',') : [], 
           noPayroll: noPayroll, 
           

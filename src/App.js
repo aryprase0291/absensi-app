@@ -1490,7 +1490,7 @@ const userRole = (user.role || '').toLowerCase();
 const canApprove = isApprovalRole(userRole) && menuDiizinkan(user, 'approval');
 // Panel: admin penuh; HRD melihat Panel versi terbatas (Rekap & Info HRD)
 // kecuali master role-nya mencabut menu `panel_admin`.
-const canAccessPanel = userRole === 'admin' || (userRole === 'hrd' && menuDiizinkan(user, 'panel_admin'));
+const canAccessPanel = (userRole === 'admin' || userRole === 'hrd') && menuDiizinkan(user, 'panel_admin');
 const isHRDOrAdmin = ['admin', 'hrd'].includes(userRole);
 const isShiftWorker = String(user.roleKode || userRole).toLowerCase() === 'karyawan_shift';
 
@@ -8231,8 +8231,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
       judul: 'Laporan & Monitoring',
       item: [
         // `hrd: <kunci menu>` = boleh tampil untuk HRD bila menu itu diizinkan master role.
-        { view: 'rekap_admin', label: 'Rekap, Koreksi & Export Excel', ikon: FileSpreadsheet, warna: 'emerald', hrd: 'rekap' },
-        { view: 'gps_dashboard', label: 'Dashboard GPS Karyawan', ikon: MapPin, warna: 'sky', adminSaja: true },
+        { view: 'rekap_admin', label: 'Rekap, Koreksi & Export Excel', ikon: FileSpreadsheet, warna: 'emerald', hrd: 'rekap', menu: 'rekap' },
+        { view: 'gps_dashboard', label: 'Dashboard GPS Karyawan', ikon: MapPin, warna: 'sky', adminSaja: true, menu: 'gps' },
         { view: 'gps_audit', label: 'Monitoring Integritas GPS', ikon: Shield, warna: 'amber', adminSaja: true },
         { view: 'dashboard_kerani', label: 'Absen Online Kerani Pabrik', ikon: ClipboardList, warna: 'emerald', adminSaja: true, pusat: true },
         { view: 'log_login', label: 'Log Login Pengguna', ikon: KeyRound, warna: 'sky', adminSaja: true, pusat: true },
@@ -8241,7 +8241,7 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     {
       judul: 'Komunikasi',
       item: [
-        { tab: 'news', label: 'Info HRD', ikon: Megaphone, hrd: 'info_hrd' },
+        { tab: 'news', label: 'Info HRD', ikon: Megaphone, hrd: 'info_hrd', menu: 'info_hrd' },
       ]
     },
   ];
@@ -8251,7 +8251,20 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   // Admin bercakupan lokasi (mis. Admin Jakarta): item `pusat` disembunyikan.
   const panelAdmin = user.role === 'admin';
   const adminLokasi = adminTerbatas(user);
-  const itemBolehTampil = (it) => (panelAdmin && !(adminLokasi && it.pusat)) || (!it.adminSaja && !!it.hrd && menuDiizinkan(user, it.hrd));
+  // MENU PER USER (Master user): kunci menu item = `menu`, atau tab/view-nya.
+  const itemBolehTampil = (it) => (panelAdmin && !(adminLokasi && it.pusat) && menuDiizinkan(user, it.menu || it.tab || it.view))
+    || (!it.adminSaja && !!it.hrd && menuDiizinkan(user, it.hrd));
+  // Tab pembuka (mis. "Tambah user") bisa saja tidak diizinkan untuk user
+  // ini -> pindah ke tab pertama yang boleh tampil.
+  const tabBoleh = menuKelompok
+    .filter((k) => !(k.adminSaja && !panelAdmin))
+    .flatMap((k) => k.item.filter(itemBolehTampil))
+    .filter((it) => it.tab).map((it) => it.tab);
+  const tabBolehKunci = tabBoleh.join('|');
+  useEffect(() => {
+    const daftar = tabBolehKunci ? tabBolehKunci.split('|') : [];
+    if (daftar.length && !daftar.includes(activeTab)) setActiveTab(daftar[0]);
+  }, [tabBolehKunci, activeTab]);
 
   // Fungsi biasa, BUKAN komponen React. Komponen yang didefinisikan di
   // dalam render akan di-mount ulang setiap kali panel ini render, dan

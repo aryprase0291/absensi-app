@@ -26,6 +26,44 @@ const WARNA_TINGKAT = {
 };
 const pecah = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
 
+// MENU PER USER (Admin / HRD). Kunci = MENU_KATALOG di apps-script/MasterUser.gs.
+// `hrd: true` = menu yang memang bisa dipakai tingkat HRD.
+const MENU_TIDAK_ADA = '_tidak_ada';
+const KATALOG_MENU = [
+  { grup: 'Umum', item: [
+    { k: 'panel_admin', l: 'Buka Panel', hrd: true },
+    { k: 'approval', l: 'Approval pengajuan', hrd: true },
+  ] },
+  { grup: 'Pengguna', item: [
+    { k: 'user', l: 'Tambah user baru' },
+    { k: 'master_user', l: 'Master user' },
+    { k: 'master_role', l: 'Master role & lokasi' },
+  ] },
+  { grup: 'Data', item: [
+    { k: 'analysis', l: 'Analisa data' },
+    { k: 'master', l: 'Master data' },
+    { k: 'import_db', l: 'Import data mesin' },
+    { k: 'bebas_absen', l: 'Bebas absen & harian' },
+    { k: 'geomaster', l: 'Master lokasi geofence' },
+    { k: 'geofence', l: 'Akses absen & geofence' },
+    { k: 'period', l: 'Periode absensi' },
+    { k: 'approval_team', l: 'Tim approval' },
+    { k: 'perangkat', l: 'Perangkat & sesi login' },
+    { k: 'wajah', l: 'Wajah karyawan' },
+    { k: 'board', l: 'Board absensi' },
+  ] },
+  { grup: 'Laporan & Monitoring', item: [
+    { k: 'rekap', l: 'Rekap, Koreksi & Export', hrd: true },
+    { k: 'gps', l: 'Dashboard GPS' },
+    { k: 'gps_audit', l: 'Monitoring integritas GPS' },
+    { k: 'dashboard_kerani', l: 'Absen online Kerani' },
+    { k: 'log_login', l: 'Log login' },
+  ] },
+  { grup: 'Komunikasi', item: [
+    { k: 'info_hrd', l: 'Info HRD', hrd: true },
+  ] },
+];
+
 function Label({ children }) {
   return <label className="block text-[11px] font-medium text-slate-500 mb-1.5">{children}</label>;
 }
@@ -75,8 +113,9 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
   }, [list, cari, filterLokasi, filterRole]);
 
   const bukaEdit = (u) => {
-    const salinan = { ...u, akses: [...(u.akses || [])], lokasiList: pecah(u.lokasi) };
-    setAsli(salinan); setEdit({ ...salinan, akses: [...salinan.akses], lokasiList: [...salinan.lokasiList] });
+    const menu = Array.isArray(u.menu) ? u.menu.filter((k) => k !== MENU_TIDAK_ADA) : [];
+    const salinan = { ...u, akses: [...(u.akses || [])], lokasiList: pecah(u.lokasi), menuKustom: Array.isArray(u.menu), menuList: menu };
+    setAsli(salinan); setEdit({ ...salinan, akses: [...salinan.akses], lokasiList: [...salinan.lokasiList], menuList: [...menu] });
   };
   const ubah = (k, v) => setEdit((e) => ({ ...e, [k]: v }));
   const toggleAkses = (v) => setEdit((e) => ({ ...e, akses: e.akses.includes(v) ? e.akses.filter((x) => x !== v) : [...e.akses, v] }));
@@ -88,7 +127,21 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
     return { ...e, lokasiList: l };
   });
 
-  const hakBerubah = edit && asli && (edit.role !== asli.role || edit.lokasiList.join(', ') !== asli.lokasiList.join(', '));
+  const toggleMenu = (k) => setEdit((e) => ({ ...e, menuList: e.menuList.includes(k) ? e.menuList.filter((x) => x !== k) : [...e.menuList, k] }));
+  // Tingkat role yang sedang dipilih di form (admin / hrd / ...).
+  const tingkatEdit = useMemo(() => {
+    if (!edit) return '';
+    const r = opsiRole.find((x) => x.value === edit.role);
+    return String((r && r.tingkat) || edit.role || '').toLowerCase();
+  }, [edit, opsiRole]);
+  const pakaiMenu = tingkatEdit === 'admin' || tingkatEdit === 'hrd';
+  const katalogEdit = KATALOG_MENU
+    .map((g) => ({ ...g, item: g.item.filter((it) => tingkatEdit === 'admin' || it.hrd) }))
+    .filter((g) => g.item.length);
+  const menuBerubah = edit && asli && (
+    (pakaiMenu && edit.menuKustom) !== asli.menuKustom
+    || (pakaiMenu && edit.menuKustom && [...edit.menuList].sort().join() !== [...asli.menuList].sort().join()));
+  const hakBerubah = edit && asli && (edit.role !== asli.role || edit.lokasiList.join(', ') !== asli.lokasiList.join(', ') || menuBerubah);
   const diriSendiri = edit && String(edit.uuid) === String(user.id || user.userId || '');
 
   const simpan = async () => {
@@ -103,7 +156,9 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
         username: String(edit.username).trim(), nama: edit.nama, divisi: edit.divisi,
         roleUser: edit.role, aksesUser: edit.akses, payrollUser: edit.payroll,
         perusahaan: edit.perusahaan, statusKaryawan: edit.statusKaryawan,
-        emailAtasan: edit.emailAtasan, lokasiUser: edit.lokasiList.join(', ')
+        emailAtasan: edit.emailAtasan, lokasiUser: edit.lokasiList.join(', '),
+        menuKustom: pakaiMenu && edit.menuKustom,
+        menuUser: pakaiMenu && edit.menuKustom ? edit.menuList : []
       }) });
       const d = await res.json();
       alert(d.message || (d.result === 'success' ? 'Tersimpan.' : 'Gagal menyimpan.'));
@@ -183,6 +238,7 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
                     <span className={`px-1.5 py-0.5 rounded text-[10.5px] font-medium ${WARNA_TINGKAT[u.tingkat] || 'bg-slate-100 text-slate-600'}`} title={`Kode role: ${u.role}`}>{u.roleNama || u.role || '-'}</span>
                     {pecah(u.lokasi).map((l) => <span key={l} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10.5px] bg-emerald-50 text-emerald-700"><MapPin className="w-2.5 h-2.5" />{l}</span>)}
                     <span className="text-[10.5px] text-slate-400" title={(u.akses || []).join(', ')}>{(u.akses || []).length} form</span>
+                    {Array.isArray(u.menu) && <span className="px-1.5 py-0.5 rounded text-[10.5px] bg-indigo-50 text-indigo-700" title={u.menu.filter((k) => k !== MENU_TIDAK_ADA).join(', ') || 'tanpa menu'}>menu khusus · {u.menu.filter((k) => k !== MENU_TIDAK_ADA).length}</span>}
                   </div>
                 </div>
                 {kunci ? (
@@ -276,10 +332,50 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
                 {opsiMenu.length === 0 && <p className="text-[12px] text-slate-400">Belum ada form di Master Data (kategori Menu).</p>}
               </div>
 
+              {pakaiMenu && (
+                <div className="p-4">
+                  <div className="flex items-baseline justify-between mb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">Akses menu ({tingkatEdit === 'admin' ? 'Admin' : 'HRD'})</p>
+                    {edit.menuKustom && <span className="text-[11px] text-slate-400 tabular-nums">{edit.menuList.length} dipilih</span>}
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                    {[{ v: false, l: 'Ikuti role', d: 'Semua menu tingkatnya / sesuai Master role' }, { v: true, l: 'Pilih menu', d: 'Hanya menu yang dicentang' }].map((o) => (
+                      <button key={String(o.v)} type="button" disabled={diriSendiri} onClick={() => ubah('menuKustom', o.v)}
+                        className={`flex-1 text-left px-3 py-2 rounded-lg border text-[12px] disabled:opacity-60 ${edit.menuKustom === o.v ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                        <span className="block font-medium">{o.l}</span>
+                        <span className={`block text-[10.5px] ${edit.menuKustom === o.v ? 'text-white/70' : 'text-slate-400'}`}>{o.d}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {edit.menuKustom && (
+                    <div className="space-y-3">
+                      <div className="flex gap-3 text-[11.5px]">
+                        <button type="button" disabled={diriSendiri} onClick={() => ubah('menuList', katalogEdit.flatMap((g) => g.item.map((it) => it.k)))} className="text-slate-600 underline underline-offset-2">Pilih semua</button>
+                        <button type="button" disabled={diriSendiri} onClick={() => ubah('menuList', [])} className="text-slate-600 underline underline-offset-2">Kosongkan</button>
+                      </div>
+                      {katalogEdit.map((g) => (
+                        <div key={g.grup}>
+                          <p className="text-[11px] font-medium text-slate-500 mb-1">{g.grup}</p>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                            {g.item.map((it) => (
+                              <label key={it.k} className={`flex items-center gap-2.5 py-1 text-[13px] ${diriSendiri ? 'text-slate-400' : 'text-slate-700 cursor-pointer'}`}>
+                                <input type="checkbox" disabled={diriSendiri} checked={edit.menuList.includes(it.k)} onChange={() => toggleMenu(it.k)} className="w-4 h-4 shrink-0 rounded border-slate-300 text-slate-900" />
+                                {it.l}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {!edit.menuList.includes('panel_admin') && <p className="text-[11px] text-amber-700">Tanpa "Buka Panel", menu Data/Laporan di atas tidak bisa dibuka dari beranda.</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {(hakBerubah || diriSendiri) && (
                 <div className="px-4 py-3 bg-amber-50 text-[12px] text-amber-800 flex gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  {diriSendiri ? 'Ini akun Anda sendiri: role dan lokasi tidak bisa diubah dari sini.' : 'Role/lokasi berubah: sesi user ini akan dicabut dan ia harus login ulang.'}
+                  {diriSendiri ? 'Ini akun Anda sendiri: role, lokasi dan menu tidak bisa diubah dari sini.' : 'Role/lokasi/menu berubah: sesi user ini akan dicabut dan ia harus login ulang.'}
                 </div>
               )}
             </div>

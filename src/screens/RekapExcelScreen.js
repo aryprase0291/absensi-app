@@ -483,7 +483,8 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
   // datanya ke cakupan lokasinya (mis. HRD SBY -> Surabaya). Menulis
   // (koreksi, sinkron GSheet, setelan) tetap khusus admin (`isAdmin`).
   const menuRekap = !user || !Array.isArray(user.menuAkses) || user.menuAkses.length === 0 || user.menuAkses.includes('rekap');
-  const bolehLihat = isAdmin || (user && String(user.role).toLowerCase() === 'hrd' && menuRekap);
+  // Menu per user (Master user) juga berlaku untuk admin.
+  const bolehLihat = (isAdmin && menuRekap) || (user && String(user.role).toLowerCase() === 'hrd' && menuRekap);
   const cakupanLokasi = (user && (user.lokasiAkses || user.lokasi)) || 'All';
   // Admin bercakupan lokasi (mis. Admin Jakarta, kode admin_jkt): boleh
   // koreksi karyawan lokasinya, tetapi Sinkron GSheet tetap Admin pusat.
