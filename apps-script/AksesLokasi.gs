@@ -130,7 +130,11 @@ function aksesLokasiGerbang_(action, data, auth) {
   const luar = 'Karyawan ini di luar lokasi akses Anda (' + c + ').';
 
   if (AKSI_ADMIN_PUSAT.indexOf(action) !== -1) {
-    return 'Menu ini khusus Admin pusat. Akun Anda dibatasi lokasi ' + c + '.';
+    // Administrator boleh membuka menu pusat untuk admin lokasi lewat
+    // Master User > Akses menu (centang manual). Pilihan itu yang menang.
+    const kunciMenu = (typeof AKSI_MENU !== 'undefined') ? AKSI_MENU[action] : '';
+    const dicentang = !!kunciMenu && Array.isArray(auth.menu) && auth.menu.indexOf(kunciMenu) !== -1;
+    if (!dicentang) return 'Menu ini khusus Admin pusat. Akun Anda dibatasi lokasi ' + c + '.';
   }
 
   switch (action) {

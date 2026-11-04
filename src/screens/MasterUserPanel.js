@@ -33,29 +33,29 @@ export const KATALOG_MENU = [
   { no: 2, grup: 'Pengguna', ikon: '👥', item: [
     { k: 'user', l: 'Tambah user', d: 'Tombol Tambah User di Master User', chip: 'Tambah user' },
     { k: 'master_user', l: 'Kelola user & akses', d: 'Master User › User & Akses: edit, reset password, atur menu', chip: 'Kelola user' },
-    { k: 'master_role', l: 'Role & lokasi', d: 'Master User › Role & Lokasi: role, tingkat, lokasi' },
-    { k: 'approval_team', l: 'Tim approval', d: 'Kepala divisi & anggota timnya' },
+    { k: 'master_role', l: 'Role & lokasi', d: 'Master User › Role & Lokasi: role, tingkat, lokasi', pusatSaja: true },
+    { k: 'approval_team', l: 'Tim approval', d: 'Kepala divisi & anggota timnya', global: true },
   ] },
   { no: 3, grup: 'Data Absensi', ikon: '🗂️', item: [
-    { k: 'import_db', l: 'Import data mesin', d: 'Unggah file mesin fingerprint ke dbabsen', chip: 'Import' },
-    { k: 'bebas_absen', l: 'Bebas absen & harian', d: 'Karyawan tanpa scan mesin / karyawan harian' },
-    { k: 'period', l: 'Periode absensi', d: 'Rentang tanggal periode gaji / absen' },
+    { k: 'import_db', l: 'Import data mesin', d: 'Unggah file mesin fingerprint ke dbabsen', chip: 'Import', global: true },
+    { k: 'bebas_absen', l: 'Bebas absen & harian', d: 'Karyawan tanpa scan mesin / karyawan harian', pusatSaja: true },
+    { k: 'period', l: 'Periode absensi', d: 'Rentang tanggal periode gaji / absen', global: true },
     { k: 'board', l: 'Board absensi', d: 'Tampilan BOARD_ABSENSI_2026' },
-    { k: 'analysis', l: 'Analisa data', d: 'Grafik & analisa kehadiran' },
-    { k: 'master', l: 'Master data', d: 'Menu form, divisi, jam shift, sheet import' },
+    { k: 'analysis', l: 'Analisa data', d: 'Grafik & analisa kehadiran', global: true },
+    { k: 'master', l: 'Master data', d: 'Menu form, divisi, jam shift, sheet import', global: true },
   ] },
   { no: 4, grup: 'Lokasi & Perangkat', ikon: '📍', item: [
-    { k: 'geomaster', l: 'Master lokasi geofence', d: 'Titik & radius kantor' },
-    { k: 'geofence', l: 'Akses absen & geofence', d: 'Wajib area, mode online/mesin per karyawan' },
-    { k: 'perangkat', l: 'Perangkat & sesi login', d: 'Kunci HP, cabut sesi' },
-    { k: 'wajah', l: 'Wajah karyawan', d: 'Foto acuan pencocokan wajah' },
+    { k: 'geomaster', l: 'Master lokasi geofence', d: 'Titik & radius kantor', global: true },
+    { k: 'geofence', l: 'Akses absen & geofence', d: 'Wajib area, mode online/mesin per karyawan', global: true },
+    { k: 'perangkat', l: 'Perangkat & sesi login', d: 'Kunci HP, cabut sesi', global: true },
+    { k: 'wajah', l: 'Wajah karyawan', d: 'Foto acuan pencocokan wajah', global: true },
   ] },
   { no: 5, grup: 'Laporan & Monitoring', ikon: '📊', item: [
     { k: 'rekap', l: 'Rekap, koreksi & export', d: 'Dashboard rekap, koreksi absen, ABSEN-EMAIL', hrd: true, chip: 'Rekap' },
     { k: 'gps', l: 'Dashboard GPS', d: 'Posisi & jejak karyawan', chip: 'GPS' },
     { k: 'gps_audit', l: 'Monitoring integritas GPS', d: 'Deteksi fake GPS' },
     { k: 'dashboard_kerani', l: 'Absen online Kerani', d: 'Dashboard kerani pabrik' },
-    { k: 'log_login', l: 'Log login', d: 'Riwayat login pengguna' },
+    { k: 'log_login', l: 'Log login', d: 'Riwayat login pengguna', global: true },
   ] },
   { no: 6, grup: 'Komunikasi', ikon: '📣', item: [
     { k: 'info_hrd', l: 'Info HRD', d: 'Broadcast pengumuman ke karyawan', hrd: true, chip: 'Info HRD' },
@@ -234,7 +234,15 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
     return String((r && r.tingkat) || form.role || '').toLowerCase();
   }, [form, infoRole]);
   const pakaiMenu = tingkatForm === 'admin' || tingkatForm === 'hrd';
-  const menuBolehDipilih = useCallback((it) => tingkatForm === 'admin' || !!it.hrd, [tingkatForm]);
+  // Role admin bercakupan lokasi (mis. admin_jkt): kode bukan 'admin' & lokasi role bukan semua.
+  const roleLokasi = useMemo(() => {
+    if (!form || tingkatForm !== 'admin' || form.role === 'admin') return false;
+    const r = infoRole(form.role);
+    const lok = (r && r.lokasi) || [];
+    const lokasiUser = form.lokasiList.join(',').toLowerCase();
+    return lok.length ? !lok.includes('*') : !(lokasiUser === '' || lokasiUser === 'all');
+  }, [form, tingkatForm, infoRole]);
+  const menuBolehDipilih = useCallback((it) => (tingkatForm === 'admin' || !!it.hrd) && !(roleLokasi && it.pusatSaja), [tingkatForm, roleLokasi]);
 
   // ---------- salin akses ----------
   const sumberSalin = useMemo(() => list.filter((u) => (u.tingkat === 'admin' || u.tingkat === 'hrd')
@@ -627,7 +635,10 @@ export default function MasterUserPanel({ user, fetchApi, masterData, listLokasi
                                       <div className="pt-0.5"><Centang status={on} onClick={() => pilihMenu(it.k)} disabled={!bisa || diriSendiri} /></div>
                                       <span className="text-[11px] text-slate-400 tabular-nums pt-0.5 w-7 shrink-0">{g.no}.{g.item.indexOf(it) + 1}</span>
                                       <div className="min-w-0">
-                                        <p className="text-[13px] text-slate-800 leading-tight">{it.l}{!bisa && <span className="ml-1.5 text-[10px] text-slate-500">(khusus Admin)</span>}</p>
+                                        <p className="text-[13px] text-slate-800 leading-tight">{it.l}
+                                          {!bisa && <span className="ml-1.5 text-[10px] text-slate-500">({roleLokasi && it.pusatSaja ? 'khusus Admin pusat' : 'khusus Admin'})</span>}
+                                          {bisa && roleLokasi && it.global && <span className="ml-1.5 px-1 rounded bg-amber-50 text-[9.5px] text-amber-700" title="Menu ini mengatur / menampilkan data semua lokasi, bukan hanya lokasi admin ini">semua lokasi</span>}
+                                        </p>
                                         <p className="text-[11px] text-slate-400 leading-snug mt-0.5">{it.d}</p>
                                       </div>
                                     </div>

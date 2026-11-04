@@ -8224,7 +8224,15 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
   const kunciBoleh = (it) => (it.menuSalahSatu
     ? it.menuSalahSatu.some((k) => menuDiizinkan(user, k))
     : menuDiizinkan(user, it.menu || it.tab || it.view));
-  const itemBolehTampil = (it) => (panelAdmin && !(adminLokasi && it.pusat) && kunciBoleh(it))
+  // Item `pusat` tetap tampil untuk admin lokasi bila Administrator
+  // mencentangnya di Master User > Akses menu (menuAkses memuat kuncinya).
+  // Pengecualian: bebas_absen & master_role ditulis lewat Edge Function
+  // Supabase yang khusus Admin pusat, jadi tetap tersembunyi.
+  const dicentangManual = (it) => {
+    const k = it.menu || it.tab || it.view;
+    return k !== 'bebas_absen' && k !== 'master_role' && Array.isArray(user.menuAkses) && user.menuAkses.includes(k);
+  };
+  const itemBolehTampil = (it) => (panelAdmin && !(adminLokasi && it.pusat && !dicentangManual(it)) && kunciBoleh(it))
     || (!it.adminSaja && !!it.hrd && menuDiizinkan(user, it.hrd));
   // Tab pembuka (mis. "Tambah user") bisa saja tidak diizinkan untuk user
   // ini -> pindah ke tab pertama yang boleh tampil.
