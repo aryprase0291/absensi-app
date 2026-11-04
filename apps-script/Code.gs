@@ -748,7 +748,7 @@ function handleAbsen(data) {
 
   // --- SIMPAN KE SHEET ---
   sheet.appendRow([
-    uuid, waktu, data.userId, data.nama, data.tipe, data.lokasi, data.catatan, 
+    uuid, waktu, data.userId, namaKapital_(data.nama), data.tipe, data.lokasi, data.catatan, 
     fotoUrl, 
     data.tglMulai || '-', data.tglSelesai || '-', 
     data.jamMulai || '-', data.jamSelesai || '-', 
@@ -1114,7 +1114,7 @@ function handleSendRemark(data) {
     uuid,          // 0
     timeStamp,     // 1
     data.userId,   // 2
-    data.nama,     // 3
+    namaKapital_(data.nama),     // 3
     data.divisi,   // 4
     tglKoreksi,    // 5 (DULUNYA WA, SEKARANG TANGGAL)
     data.kategori, // 6
@@ -1499,7 +1499,7 @@ function buatPotonganKuotaDariRemark_(remarkRow, tipePotong, approverName, respo
       uuidAbsen,
       now,
       userId,
-      nama,
+      namaKapital_(nama),
       tipePotong,
       '-',
       catatan,
@@ -2771,7 +2771,7 @@ function handleTambahUser(data) {
   // payrollUser: data.noPayroll selalu dihapus authorizeRequest (Auth.gs),
   // jadi dulu payroll user baru tidak pernah tersimpan.
   sheet.appendRow([
-    idBaru, data.username, data.password, data.nama, 
+    idBaru, data.username, data.password, namaKapital_(data.nama), 
     data.divisi, data.roleBaru || 'karyawan', Array.isArray(data.akses) ? data.akses.join(',') : '', 
     String(data.payrollUser || data.noPayroll || '').trim().toUpperCase(), data.sisaCuti || '', '', data.perusahaan || '', 
     data.statusKaryawan || '', data.emailAtasan || '',
@@ -4421,6 +4421,7 @@ function handleGetHistory(data) {
     userMap[String(rowsUser[u][0])] = {
       noPayroll: rowsUser[u][7] || '-',
       nama: rowsUser[u][3],
+      username: String(rowsUser[u][1] || '').trim(),   // ID finger
       divisi: rowsUser[u][4] || '-', // Ambil Divisi
       lokasi: rowsUser[u][13] || '' 
     };
@@ -4465,8 +4466,11 @@ function handleGetHistory(data) {
         uuid: rowsAbsen[i][0],
         waktu: rowsAbsen[i][1],
         userId: rowUserId,
-        nama: userData.nama,
+        nama: namaKapital_(String(userData.nama || '')),
         noPayroll: userData.noPayroll, // ID AKUN
+        // Lokasi KARYAWAN (kolom N Users, dibakukan) — filter lokasi laporan.
+        // Beda dengan `lokasi` di bawah = lokasi GPS saat absen.
+        lokasiKaryawan: _rekapLokasiLabel_(userData.lokasi),
         divisi: userData.divisi,       // POSISI BAGIAN
         tipe: rowsAbsen[i][4],
         lokasi: rowsAbsen[i][5],
@@ -4486,7 +4490,9 @@ function handleGetHistory(data) {
         // jatuh ke User ID (kolom C) supaya laporan tidak lagi menampilkan '-'.
         // Sebelum perubahan ini kolom V hampir selalu kosong → kolom ID Akun
         // di laporan praktis selalu '-'.
-        idAkun: rowsAbsen[i][21] || rowUserId
+        // Kolom V kosong (mis. user dibuat lewat Tambah User) -> username /
+        // ID finger dari Users, bukan ID internal USR-xxxx.
+        idAkun: rowsAbsen[i][21] || userData.username || rowUserId
       });
     }
   }

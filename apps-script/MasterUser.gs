@@ -138,7 +138,7 @@ function handleUpdateUser(data) {
     const r = sheet.getRange(idx + 1, 1, 1, MU_KOLOM);
     const baris = r.getValues()[0];   // kolom lain (password, cuti, foto) tetap
     baris[1] = username;
-    baris[3] = nama;
+    baris[3] = namaKapital_(nama);
     baris[4] = _muTeks_(data.divisi, 80);
     baris[5] = role;
     baris[6] = _muDaftarAkses_(data.aksesUser).join(',');

@@ -784,6 +784,8 @@ const handleLogin = (userData, rawMasterData, versiServer, statsAwal, pengumuman
   const p = { menus: rawMasterData.filter(m => m.kategori === 'Menu'), roles: rawMasterData.filter(m => m.kategori === 'Role'), divisions: rawMasterData.filter(m => m.kategori === 'Divisi'), shifts: rawMasterData.filter(m => m.kategori === 'Shift'), sheetImport: rawMasterData.filter(m => m.kategori === 'SheetImport') };
   setMasterData(p);
   userData = normalisasiPeran(userData);
+  // Nama karyawan selalu HURUF KAPITAL di seluruh aplikasi.
+  if (userData && typeof userData.nama === 'string') userData = { ...userData, nama: userData.nama.toUpperCase() };
   setUser(userData);
   setApprovalNotice(null);
   setView('dashboard');
@@ -6381,6 +6383,11 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
   const [showAdvancedFilter, setShowAdvancedFilter] = useState(false);
+  // Pilihan periode (Admin Panel > Periode absensi) & filter lokasi karyawan.
+  const [reportPeriodeOpsi, setReportPeriodeOpsi] = useState([]);
+  const [reportLokasiFilter, setReportLokasiFilter] = useState([]);
+  const [bukaLokasiReport, setBukaLokasiReport] = useState(false);
+  const refLokasiReport = useRef(null);
 
   // REPORT ADVANCED FILTERS
   const [reportUserIds, setReportUserIds] = useState([]);
@@ -6437,6 +6444,26 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           fetchHistory();
       }
   }, [showWebReport]);
+
+  useEffect(() => {
+      if (!showWebReport || reportPeriodeOpsi.length) return;
+      fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_absence_period' }) })
+        .then(r => r.json())
+        .then(d => {
+          if (d.result !== 'success') return;
+          const daftar = Array.isArray(d.periods) ? d.periods : (d.period ? [{ ...d.period, aktif: true }] : []);
+          setReportPeriodeOpsi(daftar.filter(p => p && p.mulai && p.selesai)
+            .sort((a, b) => String(b.mulai).localeCompare(String(a.mulai))));
+        })
+        .catch(() => {});
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWebReport]);
+  useEffect(() => {
+      if (!bukaLokasiReport) return undefined;
+      const tutup = (e) => { if (refLokasiReport.current && !refLokasiReport.current.contains(e.target)) setBukaLokasiReport(false); };
+      document.addEventListener('mousedown', tutup);
+      return () => document.removeEventListener('mousedown', tutup);
+  }, [bukaLokasiReport]);
 
   const fetchUsers = async () => {
     try {
@@ -6669,6 +6696,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           let finalData = [];
           let availableUsers = [];
           let availableDivisions = [];
+          let availableLokasi = [];
           const start = reportStartDate ? new Date(reportStartDate).setHours(0, 0, 0, 0) : null;
           const end = reportEndDate ? new Date(reportEndDate).setHours(23, 59, 59, 999) : null;
 
@@ -6696,6 +6724,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                           id: item.userId, 
                           idAkun: item.idAkun || '-', 
                           nama: item.nama, 
+                          lokasiKaryawan: item.lokasiKaryawan, 
                           noPayroll: item.noPayroll, 
                           divisi: item.divisi || '-',
                           dateObj: new Date(acaraDateSrc), tanggal: acaraDateSrc, foto: item.foto || '-', 
@@ -6781,14 +6810,26 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
 
           if (reportUserIds.length > 0) finalData = finalData.filter(item => reportUserIds.includes(String(item.id || item.userId)));
           if (reportDivisiFilters.length > 0) finalData = finalData.filter(item => reportDivisiFilters.includes(item.divisi || '-'));
+          // Daftar lokasi dihitung SEBELUM filter lokasi supaya pilihan tidak hilang.
+          const hitungLokasi = {};
+          finalData.forEach(item => { const l = item.lokasiKaryawan || '(kosong)'; hitungLokasi[l] = (hitungLokasi[l] || 0) + 1; });
+          availableLokasi = Object.keys(hitungLokasi).sort((a, b) => hitungLokasi[b] - hitungLokasi[a]).map(l => ({ lokasi: l, jumlah: hitungLokasi[l] }));
+          if (reportLokasiFilter.length > 0) finalData = finalData.filter(item => reportLokasiFilter.includes(item.lokasiKaryawan || '(kosong)'));
 
-          return { finalData, availableUsers, availableDivisions };
+          return { finalData, availableUsers, availableDivisions, availableLokasi };
       } catch (err) {
           console.error("Error processing report:", err);
-          return { finalData: [], availableUsers: [], availableDivisions: [] };
+          return { finalData: [], availableUsers: [], availableDivisions: [], availableLokasi: [] };
       }
   };
-  const { finalData: currentReportData, availableUsers, availableDivisions } = processReportData();
+  const { finalData: currentReportData, availableUsers, availableDivisions, availableLokasi } = processReportData();
+  // Ringkasan status pada periode & filter yang sedang dipilih (Laporan Absensi).
+  const ringkasanStatus = (() => {
+      const h = {};
+      currentReportData.forEach(it => { const st = it.status || 'Pending'; h[st] = (h[st] || 0) + 1; });
+      return h;
+  })();
+  const periodeTerpilih = reportPeriodeOpsi.find(p => p.mulai === reportStartDate && p.selesai === reportEndDate);
 
   // Kunci pengajuan dobel: karyawan + form + periode yang sama.
   const reportDuplicateKeys = (() => {
@@ -7053,6 +7094,23 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
           <div className="bg-white/90 backdrop-blur-md shadow-sm z-20 border border-gray-100 mx-2 mt-2 rounded-2xl flex-none flex flex-col overflow-visible">
               <div className="p-4 flex flex-wrap gap-4 items-center justify-between">
                   <div className="flex flex-wrap gap-3 items-center">
+                      {reportPeriodeOpsi.length > 0 && (
+                        <div className="relative">
+                          <CalendarRange className="w-3.5 h-3.5 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <select
+                            value={periodeTerpilih ? `${periodeTerpilih.mulai}|${periodeTerpilih.selesai}` : ''}
+                            onChange={(e) => { if (!e.target.value) return; const [m, sl] = e.target.value.split('|'); setReportStartDate(m); setReportEndDate(sl); }}
+                            className="appearance-none pl-8 pr-8 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-full cursor-pointer outline-none transition-all shadow-sm max-w-[260px]">
+                            <option value="">{reportStartDate || reportEndDate ? 'Tanggal manual' : 'Pilih periode…'}</option>
+                            {reportPeriodeOpsi.map(p => (
+                              <option key={`${p.mulai}|${p.selesai}`} value={`${p.mulai}|${p.selesai}`}>
+                                {formatDateShort(p.mulai)} – {formatDateShort(p.selesai)}{p.aktif ? ' (aktif)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="w-3 h-3 text-indigo-400 absolute right-3 top-2 pointer-events-none"/>
+                        </div>
+                      )}
                       <div className="flex items-center bg-slate-50 border border-slate-200 rounded-full px-4 py-1.5 shadow-sm">
                           <span className="text-[10px] text-slate-500 font-bold mr-2 uppercase tracking-wider">Periode</span>
                           <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} className="bg-transparent text-xs font-bold text-slate-700 outline-none w-24 cursor-pointer" />
@@ -7076,6 +7134,39 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                             <ChevronDown className="w-3 h-3 text-slate-400 absolute right-3 top-2 pointer-events-none"/>
                           </div>
                       )}
+                      {canViewAll && reportCategory !== 'RunningShift' && availableLokasi.length > 0 && !(availableLokasi.length === 1 && availableLokasi[0].lokasi === '(kosong)' && !reportLokasiFilter.length) && (
+                        <div className="relative" ref={refLokasiReport}>
+                          <button type="button" onClick={() => setBukaLokasiReport(v => !v)}
+                            className={`flex items-center gap-1.5 pl-3 pr-3 py-1.5 rounded-full text-xs font-bold border shadow-sm transition-all ${reportLokasiFilter.length ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+                            <MapPin className="w-3.5 h-3.5" />
+                            {reportLokasiFilter.length === 0 ? 'Semua Lokasi' : reportLokasiFilter.length <= 2 ? reportLokasiFilter.join(', ') : `${reportLokasiFilter.length} lokasi`}
+                            <ChevronDown className={`w-3 h-3 transition ${bukaLokasiReport ? 'rotate-180' : ''}`} />
+                          </button>
+                          {bukaLokasiReport && (
+                            <div className="absolute left-0 top-full mt-1.5 z-50 w-60 rounded-xl border border-slate-200 bg-white shadow-xl p-2">
+                              <div className="flex items-center justify-between px-2 pb-2 mb-1 border-b border-slate-100">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Lokasi karyawan</span>
+                                <div className="flex gap-2 text-[11px] font-semibold">
+                                  <button type="button" onClick={() => setReportLokasiFilter(availableLokasi.map(x => x.lokasi))} className="text-blue-600 hover:underline">Semua</button>
+                                  <button type="button" onClick={() => setReportLokasiFilter([])} className="text-slate-500 hover:underline">Reset</button>
+                                </div>
+                              </div>
+                              <div className="max-h-64 overflow-y-auto">
+                                {availableLokasi.map(({ lokasi, jumlah }) => (
+                                  <label key={lokasi} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs text-slate-700">
+                                    <input type="checkbox" checked={reportLokasiFilter.includes(lokasi)}
+                                      onChange={() => setReportLokasiFilter(prev => prev.includes(lokasi) ? prev.filter(x => x !== lokasi) : [...prev, lokasi])}
+                                      className="w-4 h-4 rounded border-slate-300 text-emerald-600" />
+                                    <span className="flex-1 font-medium">{lokasi}</span>
+                                    <span className="text-[10px] text-slate-400 tabular-nums">{jumlah}</span>
+                                  </label>
+                                ))}
+                              </div>
+                              <p className="px-2 pt-2 mt-1 border-t border-slate-100 text-[10px] text-slate-400">Tidak ada yang dicentang = semua lokasi.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                   </div>
                   <div className="flex items-center gap-3">
                       <button onClick={async () => { setIsReportLoading(true); try { if (reportCategory === 'RunningShift') await fetchShiftReport(); else await fetchHistory(reportStartDate, reportEndDate); } catch (e) { console.error(e); } finally { setTimeout(() => setIsReportLoading(false), 500); } }} className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold transition-all border shadow-sm bg-white text-slate-600 border-slate-200 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 active:scale-95 group">
@@ -7096,7 +7187,43 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                       </div>
                   </div>
               </div>
-              {/* Filter Panel content... (same as before) */}
+              {/* RINGKASAN STATUS — jumlah pengajuan per status pada periode & filter terpilih.
+                  Klik chip untuk menyaring kolom STATUS; klik lagi untuk melepas. */}
+              {reportCategory === 'General' && (
+                <div className="px-4 pb-3 -mt-1 flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                    {periodeTerpilih ? `Periode ${formatDateShort(periodeTerpilih.mulai)} – ${formatDateShort(periodeTerpilih.selesai)}` : 'Ringkasan'}
+                  </span>
+                  {(() => {
+                    const aktif = reportColumnFilters.status || [];
+                    const urutan = ['Pending', 'Approved', 'Verified', 'Rejected'];
+                    const daftar = [...urutan.filter(st => ringkasanStatus[st]), ...Object.keys(ringkasanStatus).filter(st => !urutan.includes(st))];
+                    const warna = { Pending: 'amber', Approved: 'emerald', Verified: 'sky', Rejected: 'rose' };
+                    const kelas = {
+                      amber: 'bg-amber-50 text-amber-700 border-amber-200', emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      sky: 'bg-sky-50 text-sky-700 border-sky-200', rose: 'bg-rose-50 text-rose-700 border-rose-200', slate: 'bg-slate-50 text-slate-700 border-slate-200'
+                    };
+                    return (
+                      <>
+                        <button type="button" onClick={() => setReportColumnFilters(prev => ({ ...prev, status: [] }))}
+                          className={`px-3 py-1 rounded-full border text-xs font-bold transition ${aktif.length === 0 ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                          Total <span className="tabular-nums ml-1">{currentReportData.length}</span>
+                        </button>
+                        {daftar.map(st => {
+                          const on = aktif.includes(st);
+                          return (
+                            <button key={st} type="button"
+                              onClick={() => setReportColumnFilters(prev => ({ ...prev, status: on ? [] : [st] }))}
+                              className={`px-3 py-1 rounded-full border text-xs font-bold transition ${kelas[warna[st] || 'slate']} ${on ? 'ring-2 ring-offset-1 ring-slate-400' : 'hover:brightness-95'}`}>
+                              {st} <span className="tabular-nums ml-1">{ringkasanStatus[st]}</span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
           </div>
 
           <div className="flex-1 overflow-hidden relative flex flex-col mx-2 mb-2 rounded-b-2xl">

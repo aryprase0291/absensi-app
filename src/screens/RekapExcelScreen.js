@@ -596,9 +596,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
 
   const terapkanData = useCallback((data) => {
     setSudahDimuat(true);
-    setRawRecords(data.rawRecords || []);
-    setDashboardData(data.dashboardData || []);
-    setKoreksiList(data.koreksiList || []);
+    // Nama karyawan selalu HURUF KAPITAL (data mesin kadang campur huruf).
+    const kapital = (arr) => (arr || []).map(x => (x && typeof x.nama === 'string' ? { ...x, nama: x.nama.toUpperCase() } : x));
+    setRawRecords(kapital(data.rawRecords));
+    setDashboardData(kapital(data.dashboardData));
+    setKoreksiList(kapital(data.koreksiList));
     if (Array.isArray(data.periodeAktif)) setPeriodeList(data.periodeAktif);
     if (data.hariIni) setHariIniServer(data.hariIni);
 

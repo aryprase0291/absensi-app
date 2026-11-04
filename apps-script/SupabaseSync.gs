@@ -89,6 +89,9 @@ function _sbPanggil(namaFungsi, muatan) {
  */
 function SUPABASE_SINKRON_MASTER() {
   const t0 = new Date().getTime();
+  // Nama karyawan HURUF KAPITAL (NamaKapital.gs) — sebelum sheet dibaca,
+  // supaya yang terkirim ke Supabase sudah kapital.
+  if (typeof NAMA_KAPITAL_JAGA_ === 'function') NAMA_KAPITAL_JAGA_();
 
   const shUsers = SS.getSheetByName(SHEET_USERS);
   const rows = bacaSheet(shUsers, 14);
