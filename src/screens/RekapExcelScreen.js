@@ -4,8 +4,8 @@ import {
   FileSpreadsheet, Download, Edit3, Trash2, Plus, Search,
   Building, RefreshCcw, Check, X, Loader2,
   ShieldAlert, Layers, PieChart, Sparkles, Tag, AlertTriangle,
-  Eye, Copy, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays,
-  Maximize2, Minimize2, UploadCloud, Mail, MapPin, ChevronDown, Users
+  Eye, EyeOff, Printer, CheckCircle2, UserCheck, CalendarDays,
+  Maximize2, Minimize2, UploadCloud, Mail, MapPin, ChevronDown, Users, Camera
 } from 'lucide-react';
 import { SCRIPT_URL } from '../config/constants';
 import BackButton from '../components/BackButton';
@@ -1041,8 +1041,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
         .some(f => (Number(d[f]) || 0) > 0)
     );
   }, [filteredDashboard, tampilSemuaPegawai]);
-  const urutDashboard = useUrutCari(dashboardAdaPengajuan, KOLOM_DASHBOARD);
-  const urutTabel = useUrutCari(filteredRecords, KOLOM_TABEL);
+  // Mode tim (atasan): tanpa kolom nominal denda & Kartu Detail.
+  const kolomDashboard = useMemo(() => (modeTim ? KOLOM_DASHBOARD.filter(k => k.key !== 'nominalTerlambat' && k.key !== 'aksi') : KOLOM_DASHBOARD), [modeTim]);
+  const kolomTabel = useMemo(() => (modeTim ? KOLOM_TABEL.filter(k => k.key !== 'nominal') : KOLOM_TABEL), [modeTim]);
+  const urutDashboard = useUrutCari(dashboardAdaPengajuan, kolomDashboard);
+  const urutTabel = useUrutCari(filteredRecords, kolomTabel);
 
   // Ukur posisi kiri kolom-kolom freeze tabel DB_FIX (ikut berubah saat layar/lebar tabel berubah).
   const pengamatFreezeRef = useRef(null);
@@ -2228,13 +2231,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutDashboard} /></div>
               </div>
               <div className={kelasGulir}>
-                <table onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(KOLOM_DASHBOARD) }}>
+                <table onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(kolomDashboard) }}>
                   <colgroup>
-                    {KOLOM_DASHBOARD.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
+                    {kolomDashboard.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
                   </colgroup>
                   <thead>
                     <tr className="text-slate-600 font-bold text-[10px] whitespace-nowrap">
-                      {KOLOM_DASHBOARD.map(k => (
+                      {kolomDashboard.map(k => (
                         <th key={k.key} className={`px-1.5 py-1.5 border-r border-slate-200/50 bg-slate-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutDashboard} align={k.align} />
                         </th>
@@ -2244,14 +2247,14 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   <tbody className="divide-y divide-slate-100">
                     {loading ? (
                       <tr>
-                        <td colSpan="15" className="p-8 text-center text-slate-400">
+                        <td colSpan={kolomDashboard.length} className="p-8 text-center text-slate-400">
                           <Loader2 className="w-6 h-6 animate-spin mx-auto text-blue-500 mb-2" />
                           <span>Memuat data rekapitulasi...</span>
                         </td>
                       </tr>
                     ) : urutDashboard.rows.length === 0 ? (
                       <tr>
-                        <td colSpan="15" className="p-8 text-center text-slate-400">
+                        <td colSpan={kolomDashboard.length} className="p-8 text-center text-slate-400">
                           {serverError ? 'Data belum dapat dimuat dari server.' : (tampilSemuaPegawai ? 'Tidak ada data rekap yang sesuai filter.' : 'Tidak ada pegawai dengan pengajuan pada filter ini.')}
                         </td>
                       </tr>
@@ -2285,6 +2288,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                           <td className="p-3 text-center text-slate-600 border-r border-slate-100">{d.tdkAbsenPulang || '-'}</td>
                           <td className="p-3 text-center font-bold text-amber-600 bg-amber-50/30 border-r border-slate-100">{d.telat || '-'}</td>
                           
+                          {!modeTim && (<>
                           {/* NOMINAL TERLAMBAT */}
                           <td className="p-3 text-right font-mono font-bold text-amber-700 border-r border-slate-100">
                             {d.nominalTerlambat > 0 ? (
@@ -2325,6 +2329,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                               </button>
                             </div>
                           </td>
+                          </>)}
                         </tr>
                       ))
                     )}
@@ -2566,13 +2571,13 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 <div className="flex justify-end empty:hidden"><TombolResetKolom state={urutTabel} /></div>
               </div>
               <div className={kelasGulir}>
-                <table ref={refTabelDbFix} onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(KOLOM_TABEL) }}>
+                <table ref={refTabelDbFix} onMouseOver={tooltipSelTerpotong} className="tabel-rekap text-left text-xs border-collapse" style={{ minWidth: lebarTotal(kolomTabel) }}>
                   <colgroup>
-                    {KOLOM_TABEL.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
+                    {kolomTabel.map(k => <col key={k.key} style={{ width: k.lebar }} />)}
                   </colgroup>
                   <thead>
                     <tr className="text-slate-700 font-bold text-[10.5px] whitespace-nowrap">
-                      {KOLOM_TABEL.map((k, i) => (
+                      {kolomTabel.map((k, i) => (
                         <th key={k.key} style={gayaFz(i, { zIndex: 30 })} className={`px-1.5 py-1.5 border-r border-emerald-200/50 bg-emerald-50 ${TH_STICKY} ${k.kelas || ''}`}>
                           <IsiKepala kolom={k} state={urutTabel} align={k.align} />
                         </th>
@@ -2639,6 +2644,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                             <td className="px-2 py-2.5 font-mono text-slate-600 border-r border-slate-100">{r.waktuScan || '-'}</td>
                             <td className="px-2 py-2.5 text-center font-semibold text-slate-600 border-r border-slate-100">{r.week || '-'}</td>
                             
+                            {!modeTim && (<>
                             {/* NOMINAL (DENDA TELAT) */}
                             <td className="px-2 py-2.5 text-right font-mono font-bold text-amber-700 border-r border-slate-100">
                               {nominalDenda > 0 ? (
@@ -2647,6 +2653,7 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                                 <span className="text-slate-300">-</span>
                               )}
                             </td>
+                            </>)}
 
                             {/* SUMBER (MESIN / ONLINE) */}
                             <td className="px-2 py-2.5 text-center border-r border-slate-100">
@@ -2947,14 +2954,15 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                   <button
                     type="button"
                     onClick={() => setShowDetailNominal(!showDetailNominal)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
+                    title={showDetailNominal ? 'Sembunyikan nominal denda' : 'Tampilkan nominal denda'}
+                    aria-label={showDetailNominal ? 'Sembunyikan nominal denda' : 'Tampilkan nominal denda'}
+                    className={`p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
                       showDetailNominal
                         ? 'bg-amber-50 text-amber-800 border-amber-300'
                         : 'bg-slate-100 text-slate-600 border-slate-200'
                     }`}
                   >
-                    {showDetailNominal ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                    <span>{showDetailNominal ? 'Sembunyikan Nominal' : 'Tampilkan Nominal'}</span>
+                    {showDetailNominal ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                   </button>
                 )}
               </div>
@@ -3042,11 +3050,11 @@ export default function RekapExcelScreen({ user, setView, fetchApi: customFetchA
                 <button
                   type="button"
                   onClick={handleCopyCardImage}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95 transition"
-                  title="Salin gambar kartu ke Clipboard untuk di-paste langsung ke WhatsApp"
+                  className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95 transition"
+                  title="Salin gambar kartu (siap paste ke WhatsApp)"
+                  aria-label="Salin gambar kartu"
                 >
-                  <Copy className="w-4 h-4" />
-                  <span>📸 Salin Gambar (Siap Paste WhatsApp)</span>
+                  <Camera className="w-5 h-5" />
                 </button>
               </div>
 

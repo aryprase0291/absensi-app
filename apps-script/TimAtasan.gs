@@ -76,6 +76,9 @@ function handleGetRekapTim(data) {
   j.rawRecords = (j.rawRecords || []).filter(boleh);
   j.dashboardData = (j.dashboardData || []).filter(boleh);
   j.koreksiList = [];   // koreksi admin tidak ditampilkan ke atasan
+  // Nominal denda telat tidak untuk atasan.
+  j.dashboardData.forEach(function (d) { delete d.nominalTerlambat; });
+  j.rawRecords.forEach(function (r) { delete r.nominal; });
   j.tim = {
     sumber: tim.sumber,
     anggota: tim.anggota.map(function (u) { return { nama: u.nama, payroll: u.payroll, divisi: u.divisi, lokasi: u.lokasi, departemen: u.departemen || '' }; })
