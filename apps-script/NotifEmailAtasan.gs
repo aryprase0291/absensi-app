@@ -89,8 +89,13 @@ function infoKeputusanKeAtasan_(row, statusFinal, approverName, alasan) {
   const nama = row[3];
   try {
     const tipe = String(row[4] || '');
-    // Tipe tanpa approval atasan tidak pernah dikirimi email permohonan.
-    if (['Cuti', 'Sakit', 'Cuti EO', 'Lembur', 'Tukar Shift'].indexOf(tipe) === -1) return;
+    // Hanya tipe yang melewati approval. Off/Standby (auto-approve), Dinas
+    // dan absen biasa tidak butuh info. 'Ijin' sengaja ikut: pengajuan Ijin
+    // diproses HRD di aplikasi dan atasan tetap perlu diberi tahu.
+    if (['Ijin', 'Cuti', 'Sakit', 'Cuti EO', 'Lembur', 'Tukar Shift'].indexOf(tipe) === -1) {
+      catatLogEmail_('INFO-KEPUTUSAN', uuid, nama, '-', 'DILEWATI', 'Tipe "' + tipe + '" tidak dikirimi info atasan');
+      return;
+    }
 
     const rowsUsers = bacaSheet(SS.getSheetByName(SHEET_USERS), 14);
     const penerima = cariPenerimaInfoAtasan_(row[2], rowsUsers);
