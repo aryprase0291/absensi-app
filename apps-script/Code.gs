@@ -4312,10 +4312,13 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
     // Tampilan Jam (Opsional)
     let jamDisplay = "";
     if (jamMulai && jamMulai !== '-' && jamSelesai && jamSelesai !== '-') {
+       // Jam dari sel Sheet bisa berupa Date 1899 -> "HH:mm" (NotifEmailAtasan.gs).
+       const jm = _jamTeks_(jamMulai), js = _jamTeks_(jamSelesai);
+       const rentangJam = (jm === js) ? jm : (jm + ' - ' + js);
        jamDisplay = `
          <tr>
-           <td style="color: #64748b; padding: 5px 0;">Jam Pilihan</td>
-           <td style="font-weight: bold; text-align: right; color: #2563eb;">${jamMulai} - ${jamSelesai}</td>
+           <td style="color: #64748b; padding: 5px 0;">Waktu ${tipe}</td>
+           <td style="font-weight: bold; text-align: right; color: #2563eb;">${rentangJam} WIB</td>
          </tr>
        `;
     }

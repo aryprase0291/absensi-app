@@ -82,6 +82,18 @@ function cariPenerimaInfoAtasan_(userId, rowsUsers) {
   return hasil;
 }
 
+// Jam dari sel Sheet bisa berupa objek Date (tanggal dasar 30 Des 1899) atau
+// teks. Hasil selalu "HH:mm" (mis. "09:15"); teks yang tidak dikenali
+// dikembalikan apa adanya.
+function _jamTeks_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'HH:mm');
+  }
+  const s = String(v == null ? '' : v).trim();
+  const m = s.match(/(\d{1,2})[:.](\d{2})/);
+  return m ? (m[1].length === 1 ? '0' : '') + m[1] + ':' + m[2] : s;
+}
+
 // Selisih dua waktu dalam bahasa Indonesia, mis. "5 menit", "1 jam 20 menit",
 // "2 hari 3 jam". Mengembalikan '-' bila waktu tidak valid.
 function _selisihWaktu_(dari, sampai) {
