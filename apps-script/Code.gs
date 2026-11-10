@@ -5660,6 +5660,12 @@ function handleUpdateStatusAbsen(data) {
       notifKaryawanDariPengajuan_(row, isBatal ? 'Batal' : newStatus, approverName, keterangan);
     }
 
+    // Info keputusan HRD ke atasan (NotifEmailAtasan.gs). Pembatalan dikirim
+    // sebagai Rejected. Tidak pernah melempar error.
+    if (typeof infoKeputusanKeAtasan_ === 'function') {
+      infoKeputusanKeAtasan_(row, newStatus, approverName, isBatal ? ('Dibatalkan: ' + keterangan) : keterangan);
+    }
+
     // Approval yang dibatalkan: bersihkan simbol yang dulu ditulis
     // syncToExternalPayroll di sheet payroll eksternal.
     let infoPayroll = '';
