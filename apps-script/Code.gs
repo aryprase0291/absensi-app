@@ -838,6 +838,7 @@ function handleAbsen(data) {
           );
           return responseJSON({ result: 'success', message: `Permohonan ${data.tipe} ✉️Berhasil Dikirim ke Pimpinan` });
       } else {
+          catatLogEmail_('PERMOHONAN', uuid, data.nama, '-', 'DILEWATI', 'Email atasan kosong/tidak valid (Users kolom M)');
           return responseJSON({ result: 'success', message: `${data.tipe} Tersimpan (Email Pimpinan belum ditambahkan)` });
       }
   }
@@ -971,8 +972,11 @@ function kirimRequestApproval(uuid, namaKaryawan, tipe, periode, keterangan, sis
         <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 11px; color: #cbd5e1;">&copy; e-Form Online | by : IT SUPPORT</div>
       </div>
     `;
-    MailApp.sendEmail({ to: emailTujuan, subject: `[APPROVAL] ${tipe} - ${namaKaryawan}`, htmlBody: htmlBody });
-  } catch (e) { console.log("Error kirim email: " + e.toString()); }
+    kirimEmailTercatat_('PERMOHONAN', uuid, namaKaryawan, emailTujuan, `[APPROVAL] ${tipe} - ${namaKaryawan}`, htmlBody);
+  } catch (e) {
+    console.log("Error kirim email: " + e.toString());
+    catatLogEmail_('PERMOHONAN', uuid, namaKaryawan, emailTujuan, 'GAGAL', e.toString());
+  }
 }
 
 // ==========================================
@@ -1058,7 +1062,8 @@ function handleRequestApprovalEmail(data) {
         </div>
       `;
 
-      MailApp.sendEmail({ to: emailAtasan, subject: subject, htmlBody: body });
+      const okKirim = kirimEmailTercatat_('KIRIM-ULANG', targetUuid, namaKaryawan, emailAtasan, subject, body);
+      if (!okKirim) return responseJSON({ result: 'error', message: `Email ke ${emailAtasan} gagal terkirim (lihat sheet LogEmail).` });
       return responseJSON({ result: 'success', message: `Email terkirim ke: ${emailAtasan}` });
 
   } catch (e) {
@@ -4074,6 +4079,11 @@ function processApprovalLogic(uuid, decision, approverName, alasanAdmin) {
 }
       // ============================================================
 
+      // Info keputusan ke atasan (NotifEmailAtasan.gs). Tidak pernah melempar error.
+      if (typeof infoKeputusanKeAtasan_ === 'function') {
+        infoKeputusanKeAtasan_(rows[i], statusFinal, approverName, alasanAdmin);
+      }
+
       const userId = rows[i][2];
       const namaKaryawan = rows[i][3];
       const tipeAbsen = rows[i][4];
@@ -4327,7 +4337,7 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
           <h2 style="color: #ffffff; margin: 0; font-size: 20px;">Konfirmasi Keputusan</h2>
         </div>
         <div style="padding: 25px;">
-          <p style="text-align:center; font-size: 16px; margin-bottom: 20px;">Keputusan Anda telah berhasil dicatat oleh sistem.</p>
+          <p style="text-align:center; font-size: 16px; margin-bottom: 20px;">Pengajuan karyawan di bawah Anda telah diproses. Email ini hanya sebagai informasi.</p>
           <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
              <table style="width: 100%; font-size: 14px;">
                <tr><td style="color: #64748b; padding: 5px 0;">Karyawan</td><td style="font-weight: bold; text-align: right;">${nama}</td></tr>
@@ -4340,17 +4350,20 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
 
                <tr><td style="border-top: 1px dashed #cbd5e1; padding: 10px 0 5px 0; color: #64748b;">Keputusan</td><td style="border-top: 1px dashed #cbd5e1; padding: 10px 0 5px 0; font-weight: bold; color: ${headerColor}; text-align: right;">${statusText} ${icon}</td></tr>
                
-               ${rowAlasan} <tr><td style="color: #64748b; padding: 5px 0;">Disetujui Oleh</td><td style="font-weight: bold; text-align: right;">${namaApprover || 'System'}</td></tr>
+               ${rowAlasan} <tr><td style="color: #64748b; padding: 5px 0;">Diproses Oleh</td><td style="font-weight: bold; text-align: right;">${namaApprover || 'System'}</td></tr>
                <tr><td style="color: #64748b; padding: 5px 0;">Waktu Approval</td><td style="text-align: right;">${waktuDisplay}</td></tr>
              </table>
           </div>
-          <p style="text-align: center; font-size: 12px; color: #94a3b8; margin-top: 25px;">Terima kasih atas respon Anda (Durasi: ${durasi}).</p>
+          <p style="text-align: center; font-size: 12px; color: #94a3b8; margin-top: 25px;">Durasi: ${durasi}</p>
         </div>
       </div>
     `;
     
-    MailApp.sendEmail({ to: email, subject: `[KONFIRMASI] Info Keputusan ${decision.toUpperCase()} - ${nama}`, htmlBody: htmlBody });
-  } catch (e) { console.log("Gagal kirim email konfirmasi: " + e.toString()); }
+    kirimEmailTercatat_('INFO-KEPUTUSAN', '', nama, email, `[INFO] Keputusan ${decision.toUpperCase()} - ${nama}`, htmlBody);
+  } catch (e) {
+    console.log("Gagal kirim email konfirmasi: " + e.toString());
+    catatLogEmail_('INFO-KEPUTUSAN', '', nama, email, 'GAGAL', e.toString());
+  }
 }
 
 // ==========================================
