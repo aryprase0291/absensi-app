@@ -4299,13 +4299,15 @@ function createRejectForm(uuid) {
 }
 
 // [UPDATE] Tambahkan parameter 'alasanReject' di akhir
-function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe, jamMulai, jamSelesai, namaApprover, catatanUser, periodeDisplay, alasanReject) {
+function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe, jamMulai, jamSelesai, namaApprover, catatanUser, periodeDisplay, alasanReject, waktuPengajuan) {
   try {
     const isApprove = decision === 'approve';
     const headerColor = isApprove ? '#10b981' : '#ef4444'; 
     const statusText = isApprove ? 'DISETUJUI (APPROVED)' : 'DITOLAK (REJECTED)';
     const icon = isApprove ? '✅' : '❎';
     let waktuDisplay = formatDateTimeFull(waktu);
+    const waktuPengajuanDisplay = waktuPengajuan ? formatDateTimeFull(waktuPengajuan) : '-';
+    const hasilKata = isApprove ? 'disetujui' : 'ditolak';
 
     // Tampilan Jam (Opsional)
     let jamDisplay = "";
@@ -4334,10 +4336,10 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
     const htmlBody = `
       <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
         <div style="background-color: ${headerColor}; padding: 20px; text-align: center;">
-          <h2 style="color: #ffffff; margin: 0; font-size: 20px;">Konfirmasi Keputusan</h2>
+          <h2 style="color: #ffffff; margin: 0; font-size: 20px;">Pemberitahuan Hasil Pengajuan</h2>
         </div>
         <div style="padding: 25px;">
-          <p style="text-align:center; font-size: 16px; margin-bottom: 20px;">Pengajuan karyawan di bawah Anda telah diproses. Email ini hanya sebagai informasi.</p>
+          <p style="text-align:center; font-size: 15px; line-height: 1.6; margin-bottom: 20px;">Yth. Bapak/Ibu,<br>dengan hormat kami informasikan bahwa pengajuan ${tipe} atas nama <b>${nama}</b> telah ${hasilKata}. Email ini bersifat pemberitahuan, tidak diperlukan tindakan lebih lanjut.</p>
           <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">
              <table style="width: 100%; font-size: 14px;">
                <tr><td style="color: #64748b; padding: 5px 0;">Karyawan</td><td style="font-weight: bold; text-align: right;">${nama}</td></tr>
@@ -4347,6 +4349,7 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
                ${jamDisplay}
 
                <tr><td style="color: #64748b; padding: 5px 0; vertical-align: top;">Keterangan</td><td style="font-style: italic; text-align: right;">"${catatanUser || '-'}"</td></tr>
+               <tr><td style="color: #64748b; padding: 5px 0;">Waktu Pengajuan</td><td style="text-align: right;">${waktuPengajuanDisplay}</td></tr>
 
                <tr><td style="border-top: 1px dashed #cbd5e1; padding: 10px 0 5px 0; color: #64748b;">Keputusan</td><td style="border-top: 1px dashed #cbd5e1; padding: 10px 0 5px 0; font-weight: bold; color: ${headerColor}; text-align: right;">${statusText} ${icon}</td></tr>
                
@@ -4354,12 +4357,12 @@ function kirimEmailKonfirmasiPimpinan(email, decision, nama, waktu, durasi, tipe
                <tr><td style="color: #64748b; padding: 5px 0;">Waktu Approval</td><td style="text-align: right;">${waktuDisplay}</td></tr>
              </table>
           </div>
-          <p style="text-align: center; font-size: 12px; color: #94a3b8; margin-top: 25px;">Durasi: ${durasi}</p>
+          <p style="text-align: center; font-size: 12px; color: #94a3b8; margin-top: 25px;">Pengajuan diproses ${durasi} setelah diajukan.</p>
         </div>
       </div>
     `;
     
-    kirimEmailTercatat_('INFO-KEPUTUSAN', '', nama, email, `[INFO] Keputusan ${decision.toUpperCase()} - ${nama}`, htmlBody);
+    kirimEmailTercatat_('INFO-KEPUTUSAN', '', nama, email, `Pemberitahuan: Pengajuan ${tipe} ${nama} telah ${hasilKata}`, htmlBody);
   } catch (e) {
     console.log("Gagal kirim email konfirmasi: " + e.toString());
     catatLogEmail_('INFO-KEPUTUSAN', '', nama, email, 'GAGAL', e.toString());

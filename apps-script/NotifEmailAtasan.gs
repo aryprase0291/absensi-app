@@ -82,6 +82,21 @@ function cariPenerimaInfoAtasan_(userId, rowsUsers) {
   return hasil;
 }
 
+// Selisih dua waktu dalam bahasa Indonesia, mis. "5 menit", "1 jam 20 menit",
+// "2 hari 3 jam". Mengembalikan '-' bila waktu tidak valid.
+function _selisihWaktu_(dari, sampai) {
+  const a = new Date(dari), b = new Date(sampai);
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return '-';
+  const menit = Math.round((b - a) / 60000);
+  if (menit < 0) return '-';
+  if (menit < 1) return 'kurang dari 1 menit';
+  if (menit < 60) return menit + ' menit';
+  const jam = Math.floor(menit / 60), sisaMenit = menit % 60;
+  if (jam < 24) return jam + ' jam' + (sisaMenit ? ' ' + sisaMenit + ' menit' : '');
+  const hari = Math.floor(jam / 24), sisaJam = jam % 24;
+  return hari + ' hari' + (sisaJam ? ' ' + sisaJam + ' jam' : '');
+}
+
 // Dipanggil setelah status pengajuan berubah (Approved / Rejected).
 // `row` = baris Absensi (nilai sebelum diubah, index kolom tetap).
 function infoKeputusanKeAtasan_(row, statusFinal, approverName, alasan) {
@@ -115,11 +130,15 @@ function infoKeputusanKeAtasan_(row, statusFinal, approverName, alasan) {
         durasi = (Math.round(Math.abs(b - a) / 86400000) + 1) + ' hari';
       }
     }
+    // Lama izin/cuti ditempel di baris tanggal; "durasi" di email sekarang
+    // = selisih waktu pengajuan sampai diproses.
+    if (periode.indexOf('s/d') !== -1) periode += ' (' + durasi + ')';
+    const sekarang = new Date();
     const decision = statusFinal === 'Approved' ? 'approve' : 'reject';
     kirimEmailKonfirmasiPimpinan(
-      penerima.join(','), decision, nama, new Date(), durasi, tipe,
+      penerima.join(','), decision, nama, sekarang, _selisihWaktu_(row[1], sekarang), tipe,
       row[10], row[11], approverName, row[6], periode,
-      decision === 'reject' ? alasan : ''
+      decision === 'reject' ? alasan : '', row[1]
     );
   } catch (e) {
     catatLogEmail_('INFO-KEPUTUSAN', uuid, nama, '-', 'GAGAL', e.message || e.toString());
