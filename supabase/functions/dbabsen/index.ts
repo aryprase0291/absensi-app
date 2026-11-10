@@ -1,5 +1,6 @@
 import { klienAdmin, jawab, CORS, rahasiaSinkronSah } from "../_bersama/util.ts";
 import { bacaToken } from "../_bersama/token.ts";
+import { peranDari } from "../_bersama/peran.ts";
 
 // NF = karyawan bebas absen mesin (tabel karyawan_bebas_absen) -> dihitung masuk.
 const SIMBOL_HADIR = ["H","I","T","TPC","PC","Si","So","TSi","TSo","SiSo","SiPC","DL","ONL","NF"];
@@ -28,16 +29,27 @@ Deno.serve(async (req) => {
     const dariAppsScript = rahasiaSinkronSah(req);
 
     let peran = "";
+    let kodeRole = "";
     if (!dariAppsScript) {
       const rahasia = Deno.env.get("AUTH_SECRET") || "";
       const token = await bacaToken(body.token, rahasia);
       if (!token) {
         return jawab({ result: "error", code: "AUTH_REQUIRED", message: "Sesi Anda sudah berakhir. Silakan login ulang." });
       }
-      peran = token.r;
+      kodeRole = token.r;
     }
 
     const db = klienAdmin();
+
+    // [9 Nov 2026] Token membawa KODE role (mis. "admin_jkt"), bukan
+    // tingkat. Dulu dibandingkan mentah dengan "admin", sehingga Admin
+    // Jakarta ditolak, import diam-diam jatuh ke Apps Script (lambat) dan
+    // hasilnya tertimpa cermin sheet dari Postgres. Sekarang diterjemahkan
+    // lewat master_role, sama seperti peranEfektif_() di Apps Script.
+    if (!dariAppsScript) {
+      const p = await peranDari(db, kodeRole).catch(() => null);
+      peran = p ? p.tingkat : kodeRole;
+    }
 
     if (aksi === "impor_potongan" || aksi === "impor_commit" || aksi === "impor_batal") {
       if (!dariAppsScript && peran !== "admin") {
