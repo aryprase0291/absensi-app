@@ -7919,6 +7919,33 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
     finally { setLoading(false); }
   };
 
+  // Ganti atasan (11 Nov 2026): seluruh tim atasan lama dipindah ke atasan
+  // baru, anggota & departemen tetap. Kalau atasan baru belum berrole
+  // approval, rolenya dinaikkan dulu. Perubahan ini data (sheet), tidak
+  // perlu update versi aplikasi.
+  const handleGantiAtasanApproval = async ({ kepalaLamaId, kepalaBaruId, jabatan, role, perluRole }) => {
+    try {
+      if (perluRole) {
+        const resRole = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+          action: 'set_approval_role', roleRequester: user.role,
+          targetUuid: kepalaBaruId, newRole: String(role || 'kepala_divisi').trim().toLowerCase()
+        }) });
+        const dataRole = await resRole.json();
+        if (dataRole.result !== 'success') { alert(dataRole.message || 'Gagal mengubah role atasan baru.'); return false; }
+      }
+      const res = await fetchApi(SCRIPT_URL, { method: 'POST', body: JSON.stringify({
+        action: 'ganti_atasan_approval', roleRequester: user.role,
+        kepalaLamaId, kepalaBaruId, jabatan
+      }) });
+      const data = await res.json();
+      if (data.result !== 'success') { alert(data.message || 'Gagal mengganti atasan.'); return false; }
+      alert(data.message || 'Atasan berhasil diganti.');
+      if (String(atKepalaId) === String(kepalaLamaId)) { setAtKepalaId(''); setAtDepartemen(''); setAtMemberIds([]); }
+      await fetchApprovalTeamConfig();
+      return true;
+    } catch (e) { alert('Gagal koneksi saat mengganti atasan.'); return false; }
+  };
+
   const handleHapusGrupApproval = async (departemen) => {
     if (!window.confirm(`Hapus grup approval "${departemen}" untuk kepala ini?`)) return;
     setLoading(true);
@@ -9097,6 +9124,8 @@ function AdminPanel({ user, setView, masterData, setMasterData }) {
                   handleEditGrupApproval(departemen, rows);
                   setTimeout(() => { const el = document.getElementById('editor-tim-approval'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
                 }}
+                onGanti={handleGantiAtasanApproval} isApprovalRole={isApprovalRole}
+                roleChoices={APPROVAL_HEAD_ROLES.map(v => ({ value: v, label: ROLE_LABEL_FALLBACK[v] || v }))}
                 onTambah={() => {
                   handlePilihKepalaTeam('');
                   setTimeout(() => { const el = document.getElementById('editor-tim-approval'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);

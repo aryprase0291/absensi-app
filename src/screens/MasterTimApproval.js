@@ -10,14 +10,32 @@
 // =====================================================================
 
 import React, { useMemo, useState } from 'react';
-import { Search, Users, UserPlus, Pencil, MapPin, Eye, ShieldCheck } from 'lucide-react';
+import { Search, Users, UserPlus, Pencil, MapPin, Eye, ShieldCheck, Replace, X, Loader2 } from 'lucide-react';
 
 const WARNA = ['bg-indigo-600', 'bg-rose-600', 'bg-emerald-600', 'bg-teal-600', 'bg-blue-600', 'bg-amber-600', 'bg-violet-600', 'bg-cyan-600'];
 const inisial = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
 const warnaDari = (s) => WARNA[[...String(s)].reduce((a, c) => a + c.charCodeAt(0), 0) % WARNA.length];
 
-export default function MasterTimApproval({ users, assignments, onKelola, onTambah }) {
+export default function MasterTimApproval({ users, assignments, onKelola, onTambah, onGanti, isApprovalRole, roleChoices }) {
   const [cari, setCari] = useState('');
+  // Edit / ganti atasan (11 Nov 2026): timnya tetap, hanya atasannya diganti.
+  const [edit, setEdit] = useState(null);        // atasan yang sedang diedit
+  const [baruId, setBaruId] = useState('');
+  const [cariBaru, setCariBaru] = useState('');
+  const [jabatanBaru, setJabatanBaru] = useState('');
+  const [roleBaru, setRoleBaru] = useState('kepala_divisi');
+  const [menyimpan, setMenyimpan] = useState(false);
+
+  const bukaEdit = (x) => { setEdit(x); setBaruId(''); setCariBaru(''); setJabatanBaru(x.jabatan || ''); setRoleBaru('kepala_divisi'); };
+  const tutupEdit = () => { if (!menyimpan) setEdit(null); };
+  const simpanEdit = async () => {
+    if (!edit || !baruId) return;
+    setMenyimpan(true);
+    try {
+      const ok = await onGanti({ kepalaLamaId: edit.id, kepalaBaruId: baruId, jabatan: jabatanBaru.trim(), role: roleBaru, perluRole: !(isApprovalRole && isApprovalRole((petaUser[baruId] || {}).role)) });
+      if (ok) setEdit(null);
+    } finally { setMenyimpan(false); }
+  };
 
   const petaUser = useMemo(() => {
     const m = {};
@@ -108,6 +126,10 @@ export default function MasterTimApproval({ users, assignments, onKelola, onTamb
                     {x.lokasi && <span className="inline-flex items-center gap-0.5 px-1.5 py-px rounded bg-emerald-50 text-emerald-700 text-[10px]"><MapPin className="w-2.5 h-2.5" />{x.lokasi}</span>}
                   </div>
                 </div>
+                <button type="button" onClick={() => bukaEdit(x)} title="Ganti atasan, tim tetap sama"
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-200 bg-white text-[11px] font-medium text-slate-600 hover:text-indigo-700 hover:border-indigo-300">
+                  <Replace className="w-3 h-3" /> Edit atasan
+                </button>
                 <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-slate-200 text-[11px] text-slate-600 tabular-nums"><Users className="w-3 h-3" />{x.total}</span>
               </div>
               <div className="divide-y divide-slate-100">
@@ -137,6 +159,62 @@ export default function MasterTimApproval({ users, assignments, onKelola, onTamb
           ))}
         </div>
       </div>
+      {edit && (() => {
+        const q = cariBaru.trim().toLowerCase();
+        const kandidat = (users || []).filter((u) => String(u.uuid) !== edit.id && (!q || String(u.nama || '').toLowerCase().includes(q))).slice(0, 80);
+        const baru = petaUser[baruId] || null;
+        const perluRole = !!baru && !(isApprovalRole && isApprovalRole(baru.role));
+        const sudahPunyaTim = !!baru && atasan.some((a) => a.id === baruId);
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4" onClick={tutupEdit}>
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+                <p className="text-[14px] font-semibold text-slate-900 flex-1">Ganti atasan</p>
+                <button type="button" onClick={tutupEdit} className="p-1 rounded-md text-slate-400 hover:bg-slate-100"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-[12px] text-slate-600">
+                  Atasan saat ini: <b className="text-slate-900">{edit.nama}</b> · {edit.total} anggota. Seluruh timnya akan dipindahkan ke atasan baru, anggota & departemen tidak berubah.
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Atasan pengganti</label>
+                  <input value={cariBaru} onChange={(e) => setCariBaru(e.target.value)} placeholder="Cari nama user…"
+                    className="w-full h-9 px-3 mb-2 rounded-lg border border-slate-200 bg-slate-50 text-[13px] outline-none focus:bg-white focus:border-indigo-400" />
+                  <select value={baruId} onChange={(e) => setBaruId(e.target.value)} size={6}
+                    className="w-full rounded-lg border border-slate-200 bg-white text-[13px] outline-none focus:border-indigo-400">
+                    {kandidat.map((u) => (
+                      <option key={u.uuid} value={String(u.uuid)}>{u.nama} · {u.divisi || '-'} · {isApprovalRole && isApprovalRole(u.role) ? (u.role || '-') : 'belum approval'}</option>
+                    ))}
+                  </select>
+                </div>
+                {baru && perluRole && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 space-y-1.5">
+                    <p className="text-[11.5px] text-amber-800"><b>{baru.nama}</b> belum berrole approval (saat ini: {baru.role || '-'}). Role akan diubah menjadi:</p>
+                    <select value={roleBaru} onChange={(e) => setRoleBaru(e.target.value)} className="w-full h-9 px-2 rounded-lg border border-amber-200 bg-white text-[13px]">
+                      {(roleChoices || []).map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  </div>
+                )}
+                {baru && sudahPunyaTim && (
+                  <p className="text-[11.5px] text-indigo-700 bg-indigo-50 rounded-lg px-2.5 py-1.5">{baru.nama} sudah punya tim sendiri — anggota di departemen yang sama akan digabung tanpa duplikat.</p>
+                )}
+                <div>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1.5">Jabatan tampilan (opsional)</label>
+                  <input value={jabatanBaru} onChange={(e) => setJabatanBaru(e.target.value)} placeholder="mis. KA. Depo PK"
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-slate-50 text-[13px] outline-none focus:bg-white focus:border-indigo-400" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50/60">
+                <button type="button" onClick={tutupEdit} disabled={menyimpan} className="h-9 px-3.5 rounded-lg border border-slate-200 bg-white text-[12.5px] text-slate-600 hover:bg-slate-50">Batal</button>
+                <button type="button" onClick={simpanEdit} disabled={!baruId || menyimpan}
+                  className="h-9 px-3.5 inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 text-white text-[12.5px] font-medium hover:bg-indigo-700 disabled:opacity-50">
+                  {menyimpan && <Loader2 className="w-4 h-4 animate-spin" />} Ganti atasan
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

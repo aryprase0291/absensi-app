@@ -266,6 +266,7 @@ const ACTION_ROLES = {
   // --- Admin saja ---
   'get_approval_team_config': ['admin'],
   'save_approval_team_config': ['admin'],
+  'ganti_atasan_approval': ['admin'],
   'set_approval_role': ['admin'],
   'reset_password_user': ['admin'],
   'update_user': ['admin'],   // MasterUser.gs

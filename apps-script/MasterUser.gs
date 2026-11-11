@@ -205,7 +205,7 @@ const AKSI_MENU = {
   save_geofence_master: 'geomaster',
   save_geofence_config: 'geofence', apply_geofence_divisi: 'geofence', apply_mode_absen_divisi: 'geofence',
   save_absence_period: 'period', save_absence_periods: 'period',
-  get_approval_team_config: 'approval_team', save_approval_team_config: 'approval_team', set_approval_role: 'approval_team',
+  get_approval_team_config: 'approval_team', save_approval_team_config: 'approval_team', ganti_atasan_approval: 'approval_team', set_approval_role: 'approval_team',
   get_device_list: 'perangkat', get_device_audit: 'perangkat', save_device_config: 'perangkat',
   lepas_device: 'perangkat', cabut_sesi_user: 'perangkat', set_device_mode: 'perangkat',
   get_wajah_list: 'wajah', daftar_wajah: 'wajah', hapus_wajah: 'wajah', set_face_config: 'wajah',

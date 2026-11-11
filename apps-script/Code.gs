@@ -261,6 +261,7 @@ function _doPostInti_(e) {
     if (action === 'get_user_list_admin') return handleGetUserListAdmin(data); // Ambil list user lengkap
     if (action === 'get_approval_team_config') return handleGetApprovalTeamConfig(data);
     if (action === 'save_approval_team_config') return handleSaveApprovalTeamConfig(data);
+    if (action === 'ganti_atasan_approval') return handleGantiAtasanApproval(data);
     if (action === 'get_alamat') return handleGetAlamat(data);
     if (action === 'get_gps_audit') return handleGetGpsAudit(data);
     // --- PELACAKAN POSISI KARYAWAN (lihat GpsTracking.gs) ---
@@ -3739,6 +3740,80 @@ function handleSaveApprovalTeamConfig(data) {
       : `Tim approval ${departemen} untuk ${kepala.nama} dikosongkan.`,
     assignments: _ambilApprovalTeamAssignments()
   });
+}
+
+/**
+ * GANTI ATASAN (11 Nov 2026) — pindahkan SELURUH tim (semua departemen) dari
+ * atasan lama ke atasan baru. Anggota & departemen tetap sama; yang berubah
+ * hanya KepalaID/KepalaNama. Jabatan tampilan boleh diganti (opsional).
+ * Bila atasan baru sudah punya grup di departemen yang sama, anggotanya
+ * digabung (tanpa duplikat). Atasan baru tidak boleh jadi anggota timnya
+ * sendiri. Atasan lama tidak diubah rolenya.
+ */
+function handleGantiAtasanApproval(data) {
+  if (String(data.roleRequester || '').toLowerCase() !== 'admin') {
+    return responseJSON({ result: 'error', message: 'Hanya Admin yang boleh mengatur tim approval.' });
+  }
+  const lamaId = String(data.kepalaLamaId || '').trim();
+  const baruId = String(data.kepalaBaruId || '').trim();
+  const jabatan = (data.jabatan === undefined || data.jabatan === null) ? null : String(data.jabatan).trim();
+  if (!lamaId || !baruId) return responseJSON({ result: 'error', message: 'Atasan lama dan atasan baru wajib dipilih.' });
+  if (lamaId === baruId) return responseJSON({ result: 'error', message: 'Atasan baru sama dengan atasan lama.' });
+
+  const rowsUsers = bacaSheet(SS.getSheetByName(SHEET_USERS), 14);
+  const userMap = {};
+  rowsUsers.slice(1).forEach(row => {
+    const id = String(row[0] || '').trim();
+    if (id) userMap[id] = { id: id, nama: row[3] || '', role: row[5] || '' };
+  });
+  const baru = userMap[baruId];
+  if (!baru) return responseJSON({ result: 'error', message: 'Atasan baru tidak ditemukan.' });
+  if (!_isApprovalRoleValue(baru.role)) {
+    return responseJSON({ result: 'error', message: 'Role atasan baru harus role approval (mis. kepala_divisi, supervisor, pimpinan, manager).' });
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sheet = _pastikanSheetApprovalTeams();
+    const rows = bacaSheet(sheet, APPROVAL_TEAM_HEADERS.length);
+    const now = new Date();
+    const oleh = data._auth ? data._auth.u : 'admin';
+    const kunciBaru = {};   // departemen|anggota yang sudah dimiliki atasan baru
+    let jumlahLama = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const k = String(rows[i][0] || '').trim();
+      if (k === baruId) kunciBaru[String(rows[i][4] || '').trim() + '|' + String(rows[i][2] || '').trim()] = true;
+      if (k === lamaId) jumlahLama++;
+    }
+    if (!jumlahLama) return responseJSON({ result: 'error', message: 'Atasan lama tidak punya tim di Master Tim Approval.' });
+
+    // Dari bawah ke atas supaya penghapusan baris tidak menggeser indeks.
+    let dipindah = 0;
+    for (let i = rows.length - 1; i >= 1; i--) {
+      if (String(rows[i][0] || '').trim() !== lamaId) continue;
+      const anggotaId = String(rows[i][2] || '').trim();
+      const dep = String(rows[i][4] || '').trim();
+      if (anggotaId === baruId || kunciBaru[dep + '|' + anggotaId]) {
+        sheet.deleteRow(i + 1);      // atasan baru tak boleh jadi anggotanya sendiri / sudah ada → buang duplikat
+        continue;
+      }
+      const r = i + 1;
+      sheet.getRange(r, 1, 1, 2).setValues([[baruId, baru.nama]]);
+      sheet.getRange(r, 6, 1, 2).setValues([[now, oleh]]);
+      if (jabatan !== null) sheet.getRange(r, 8).setValue(jabatan);
+      dipindah++;
+    }
+    SpreadsheetApp.flush();
+    const nmLama = (userMap[lamaId] && userMap[lamaId].nama) || lamaId;
+    return responseJSON({
+      result: 'success',
+      message: `Atasan ${nmLama} diganti ${baru.nama}. ${dipindah} anggota tim dipindahkan.`,
+      assignments: _ambilApprovalTeamAssignments()
+    });
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**

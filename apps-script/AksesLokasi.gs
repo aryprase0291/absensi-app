@@ -24,7 +24,7 @@ const AKSI_ADMIN_PUSAT = [
   'save_absence_period', 'save_absence_periods',
   'save_geofence_config', 'save_geofence_master', 'apply_geofence_divisi',
   'apply_mode_absen_divisi',
-  'get_approval_team_config', 'save_approval_team_config', 'set_approval_role',
+  'get_approval_team_config', 'save_approval_team_config', 'ganti_atasan_approval', 'set_approval_role',
   'set_sinkron_gsheet', 'sinkron_gsheet',
   'get_log_login', 'get_device_list', 'get_device_audit', 'save_device_config',
   'lepas_device', 'cabut_sesi_user', 'set_device_mode',
