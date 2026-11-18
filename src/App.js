@@ -274,6 +274,19 @@ const tglLokal = (d = getServerNow()) =>
 
 const formatDateIndo = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}); } catch (e) { return d; } };
 const formatDateShort = (d) => { if (!d || d === '-') return '-'; try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric'}); } catch (e) { return d; } };
+// Potongan yang dibuat HRD lewat Lapor HRD (Koreksi Absensi): catatannya diawali "Potongan dari Lapor HRD"
+// (Ijin/Cuti) atau "Lupa pengajuan DL (Lapor HRD)" (Dinas). Dipakai untuk memberi tahu karyawan.
+const keteranganPotonganLaporHrd = (item) => {
+  if (!item) return '';
+  const cat = String(item.catatan || '');
+  if (item.tipe === 'Ijin' && cat.indexOf('Potongan dari Lapor HRD') === 0)
+    return 'Permohonan Anda di Lapor HRD telah diproses HRD dengan mengambil/memotong jatah (sisa) Ijin Anda.';
+  if (item.tipe === 'Cuti' && cat.indexOf('Potongan dari Lapor HRD') === 0)
+    return 'Permohonan Anda di Lapor HRD telah diproses HRD dengan mengambil/memotong jatah (sisa) Cuti Anda.';
+  if (item.tipe === 'Dinas' && cat.indexOf('Lupa pengajuan DL (Lapor HRD)') === 0)
+    return 'Permohonan Anda di Lapor HRD (lupa pengajuan DL) telah diproses HRD dan dicatat sebagai Dinas Luar.';
+  return '';
+};
 // Ikon dipilih per makna, bukan per kemiripan bentuk:
 // Sakit = medis (bukan segitiga peringatan), Tukar Shift = panah dua arah
 // (dulu memakai ikon kalender yang sama persis dengan Off).
@@ -6432,6 +6445,7 @@ const handleDecision = async (uuid, decision, namaUser) => {
                             <td colSpan={7} className="px-4 py-3">
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Keterangan / Alasan</p>
                               <p className="text-xs text-slate-600 italic mb-2 leading-relaxed">"{item.catatan || '-'}"</p>
+                              {keteranganPotonganLaporHrd(item) && <p className="mb-2 text-[11px] leading-snug text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md px-2 py-1">ℹ️ {keteranganPotonganLaporHrd(item)}</p>}
 
                               {item.status !== 'Pending' && (
                                 <p className="text-[11px] text-slate-500 mb-2">
@@ -6516,6 +6530,7 @@ const handleDecision = async (uuid, decision, namaUser) => {
                              <div className="col-span-2 border-t border-dashed border-slate-200 pt-2 mt-1">
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Keterangan / Alasan</p>
                                 <p className="text-xs text-slate-600 italic leading-relaxed">"{item.catatan || '-'}"</p>
+                                {keteranganPotonganLaporHrd(item) && <p className="mt-1.5 text-[11px] leading-snug text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md px-2 py-1">ℹ️ {keteranganPotonganLaporHrd(item)}</p>}
                              </div>
                         </div>
                     </div>
@@ -7725,6 +7740,7 @@ function HistoryScreen({ user, setView, setEditItem, masterData }) {
                         {item.status === 'Rejected' && item.alasan && <p className="text-red-600 italic mb-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3"/> {item.alasan}</p>}
                         {(item.tglMulai && item.tglMulai !== '-') && <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded w-fit mb-1"><CalendarDays className="w-3 h-3"/> {formatDateShort(item.tglMulai)} - {formatDateShort(item.tglSelesai)}</div>}
                         {item.catatan && <p className="text-slate-500 italic">"{item.catatan}"</p>}
+                        {keteranganPotonganLaporHrd(item) && <p className="mt-1.5 text-[11px] leading-snug text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md px-2 py-1 not-italic">ℹ️ {keteranganPotonganLaporHrd(item)}</p>}
                     </div>
                 )}
                 <div className="flex gap-2 mt-2">
