@@ -103,7 +103,7 @@ function _sgTambahLog_(st) {
   try {
     const sa = st.sinkronAbsensi || {};
     const ket = st.ok
-      ? (sa.dilewati ? 'ABSENSI-email dilewati: ' + sa.dilewati : '')
+      ? (st.peringatan ? 'PERINGATAN: ' + st.peringatan : (sa.dilewati ? 'ABSENSI-email dilewati: ' + sa.dilewati : ''))
       : String(st.pesan || '');
     const entri = {
       w: st.waktu, ok: !!st.ok, a: st.asal || '', o: String(st.oleh || '').slice(0, 60),
@@ -348,6 +348,7 @@ function _sgJalankan_(asal, oleh) {
       const pa = _sgPindahAbsensi_(hasil.ss, { hariMasukHarian: hariMasukHarian });
       tahap.absensi = Date.now() - t0;
       st.sinkronAbsensi = pa;
+      if (pa.peringatan) st.peringatan = pa.peringatan;
       st.pesan += pa.dilewati ? ' Sinkron Absensi dilewati: ' + pa.dilewati : ' Sinkron Absensi: ' + pa.pesan;
     } catch (e2) {
       st.sinkronAbsensi = { ok: false, pesan: e2.message };
@@ -487,7 +488,19 @@ function _sgTulis_(cfg, rec) {
     const nilai = rec.map(function (r) {
       return peta.map(function (f) { return f && f !== '_id' ? _sgNilai_(r, f) : ''; });
     });
-    sh.getRange(2, 1, n, lebar).setValues(nilai);
+    // PERBAIKAN 24 Nov 2026: tulis HANYA kolom yang dikenal (per deret kolom
+    // berurutan). Dulu seluruh lebar baris ditimpa nilai, sehingga kolom lain
+    // (ID4, kode, FORM, LATE, ... yang berisi RUMUS) ikut dikosongkan dan
+    // tidak pulih bila rumus baris 2 pernah kosong. Kolom tak dikenal kini
+    // tidak disentuh (lihat DIAGNOSA-ABSEN-EMAIL-KOSONG.md).
+    let k0 = 0;
+    while (k0 < lebar) {
+      if (!peta[k0] || peta[k0] === '_id') { k0++; continue; }
+      let k1 = k0;
+      while (k1 + 1 < lebar && peta[k1 + 1] && peta[k1 + 1] !== '_id') k1++;
+      sh.getRange(2, k0 + 1, n, k1 - k0 + 1).setValues(nilai.map(function (b) { return b.slice(k0, k1 + 1); }));
+      k0 = k1 + 1;
+    }
     rumusKolom.forEach(function (rumus, c) {
       if (!rumus) return;
       const isi = [];
@@ -522,6 +535,10 @@ const SA_N_DAYS = 31;         // kolom L..BU
 const SA_HEADER_DATE_ROW = 3;
 const SA_DAY_NAME_ROW = 4;
 const SA_FIRST_ROW = 9;
+// Peringatan bila lebih dari 60% sel ABSEN karyawan kosong di ABSENSI (lalu
+// diisi 'O'). Normal sekitar 20-35% (hari libur). Mendekati 100% = ABSENSI/DB1
+// kosong, mis. rumus DB1 menunjuk kolom db1-absen yang kosong.
+const SG_BATAS_O = 0.6;
 const SA_SRC_ID_COL = 6;      // F = PAYROLL di ABSENSI
 const SA_NAMA_BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
@@ -681,7 +698,7 @@ function _sgPindahAbsensi_(ss, opsi) {
   const dRange = dst.getRange(startRow, 1, nRows, nCols);
   const dForm = dRange.getFormulas();
   const nameBg = src.getRange(startRow, 1 + SA_OFFSET + 4, nRows, 1).getBackgrounds();
-  let redRows = 0, filledO = 0, skippedF = 0, harianDiisi = 0;
+  let redRows = 0, filledO = 0, skippedF = 0, harianDiisi = 0, selAbsen = 0;
   const out = [];
   const tzTm = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || 'Asia/Jakarta';
   const ymdHari = [];
@@ -706,6 +723,7 @@ function _sgPindahAbsensi_(ss, opsi) {
       if (isRed && isAbsen) { o.push('A'); continue; }
       if (dForm[r][c]) { o.push(dForm[r][c]); skippedF++; continue; }
       let v = sVals[r][c];
+      if (isEmployee && isAbsen) selAbsen++;
       if (isEmployee && isAbsen && String(v).trim() === '') {
         const hariKe = Math.floor((col - SA_DATE_START) / 2);
         // Hari sebelum TGL MASUK dibiarkan kosong (belum bekerja), bukan O.
@@ -719,11 +737,16 @@ function _sgPindahAbsensi_(ss, opsi) {
   SpreadsheetApp.flush();
   let ringkasan = { diisi: 0 };
   try { ringkasan = _saIsiRingkasan_(dst, startRow, endRow); } catch (eR) { console.warn('Isi rumus ringkasan gagal: ' + eR.message); }
+  const persenO = selAbsen ? filledO / selAbsen : 0;
+  const peringatan = (selAbsen >= 20 && persenO > SG_BATAS_O)
+    ? Math.round(persenO * 100) + '% sel ABSEN kosong di ABSENSI (diisi O). Cek sheet DB1 / kolom db1-absen yang dipakai rumus DB1 (lihat DIAGNOSA-ABSEN-EMAIL-KOSONG.md).'
+    : '';
   const pesan = 'periode ' + p.label + ' (' + nHari + ' hari), baris ' + startRow + '-' + endRow + ' tersalin ke ABSENSI-email.' +
     (ringkasan.diisi ? ' Rumus ringkasan (DL/CT/SK/EO/A…TOTAL) diisi di ' + ringkasan.diisi + ' baris baru.' : '') +
-    (harianDiisi ? ' HARI KERJA ' + harianDiisi + ' karyawan harian = jumlah hari masuk.' : '');
-  _saToast_(ss, pesan, 'Sinkron absensi selesai');
-  return { ok: true, pesan: pesan, periode: p.label, baris: nRows, diisiO: filledO, namaMerah: redRows, rumusDilewati: skippedF };
+    (harianDiisi ? ' HARI KERJA ' + harianDiisi + ' karyawan harian = jumlah hari masuk.' : '') +
+    (peringatan ? ' PERINGATAN: ' + peringatan : '');
+  _saToast_(ss, pesan, peringatan ? 'Sinkron absensi selesai, ADA PERINGATAN' : 'Sinkron absensi selesai');
+  return { ok: true, pesan: pesan, periode: p.label, baris: nRows, diisiO: filledO, selAbsen: selAbsen, namaMerah: redRows, rumusDilewati: skippedF, peringatan: peringatan };
 }
 
 // ================================================================
