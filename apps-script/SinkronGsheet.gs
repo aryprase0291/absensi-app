@@ -339,6 +339,7 @@ function _sgJalankan_(asal, oleh) {
     tahap.db1 = Date.now() - t0;
     st.baris = hasil.baris;
     st.namaFile = hasil.namaFile;
+    st.sebelumMasuk = hasil.sebelumMasuk || 0;
     st.pesan = hasil.baris + ' baris periode ' + dari + ' s/d ' + sampai + ' tertulis ke "' + hasil.namaFile + '" / ' + cfg.sheet + '.' +
       (hasil.sebelumMasuk ? ' ' + hasil.sebelumMasuk + ' hari sebelum TGL MASUK (Alpa dari mesin) tidak ditulis.' : '');
     // Lanjut: "Sinkron Absensi" di file tujuan (ABSENSI -> ABSENSI-email),
@@ -746,7 +747,7 @@ function _sgPindahAbsensi_(ss, opsi) {
     (harianDiisi ? ' HARI KERJA ' + harianDiisi + ' karyawan harian = jumlah hari masuk.' : '') +
     (peringatan ? ' PERINGATAN: ' + peringatan : '');
   _saToast_(ss, pesan, peringatan ? 'Sinkron absensi selesai, ADA PERINGATAN' : 'Sinkron absensi selesai');
-  return { ok: true, pesan: pesan, periode: p.label, baris: nRows, diisiO: filledO, selAbsen: selAbsen, namaMerah: redRows, rumusDilewati: skippedF, peringatan: peringatan };
+  return { ok: true, pesan: pesan, periode: p.label, hari: nHari, barisAwal: startRow, barisAkhir: endRow, baris: nRows, diisiO: filledO, selAbsen: selAbsen, namaMerah: redRows, harianDiisi: harianDiisi, rumusDilewati: skippedF, peringatan: peringatan };
 }
 
 // ================================================================
@@ -936,10 +937,45 @@ function SINKRON_BOT_KUNCI_BUAT() {
   Logger.log('URL web app: ' + ScriptApp.getService().getUrl());
 }
 
+function _sgAngka_(n) { return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function _sgDtkTeks_(ms) { return (Math.round((Number(ms) || 0) / 100) / 10).toString().replace('.', ','); }
+
+/** Ringkasan status untuk bot Telegram / tab Sinkron: rapi, per baris, dengan ikon. */
 function _sgRingkasStatus_(st) {
   if (!st) return 'Belum pernah sinkron.';
   const w = Utilities.formatDate(new Date(st.waktu), 'Asia/Jakarta', 'dd/MM/yyyy HH:mm');
-  return (st.ok ? '✅ ' : '❌ ') + w + ' WIB (' + st.asal + (st.oleh ? ', ' + st.oleh : '') + ')\n' + st.pesan;
+  const garis = '━━━━━━━━━━━━━━━━━━';
+  const pa = st.sinkronAbsensi || {};
+  // Gagal, atau status lama (sebelum format ini): tampilan sederhana.
+  if (!st.ok || !st.tahap || !pa.barisAwal) {
+    if (!st.ok) {
+      return '❌ SINKRON GAGAL\n' + garis + '\n🕒 Waktu : ' + w + ' WIB\n👤 Dipicu : ' + (st.oleh || st.asal || '-') +
+        '\n⚠️ Penyebab : ' + st.pesan;
+    }
+    return '✅ ' + w + ' WIB (' + st.asal + (st.oleh ? ', ' + st.oleh : '') + ')\n' + st.pesan;
+  }
+  const t = st.tahap;
+  const baris = [
+    '✅ SINKRON GSHEET BERHASIL',
+    garis,
+    '🕒 Waktu : ' + w + ' WIB',
+    '👤 Dipicu oleh : ' + (st.oleh || st.asal || '-'),
+    '📅 Periode : ' + (pa.periode || (st.dari + ' s/d ' + st.sampai)) + (pa.hari ? ' (' + pa.hari + ' hari)' : ''),
+    '📄 File : ' + (st.namaFile || '-') + ' › ' + (st.sheet || 'db1-absen'),
+    garis,
+    '📥 db1-absen : ' + _sgAngka_(st.baris) + ' baris ditulis',
+    '📧 ABSENSI-email : ' + _sgAngka_(pa.baris) + ' baris (baris ' + pa.barisAwal + '–' + pa.barisAkhir + ')',
+    '👷 Karyawan harian : ' + _sgAngka_(pa.harianDiisi) + ' orang (HARI KERJA = jumlah hari masuk)'
+  ];
+  if (st.sebelumMasuk) baris.push('🚫 Sebelum TGL MASUK : ' + _sgAngka_(st.sebelumMasuk) + ' hari tidak ditulis');
+  if (pa.namaMerah) baris.push('🔴 Nama merah (A) : ' + _sgAngka_(pa.namaMerah) + ' baris');
+  baris.push(garis);
+  baris.push('⏱ Durasi total : ' + _sgDtkTeks_((st.durasiDetik || 0) * 1000) + ' dtk');
+  baris.push('   ▫️ Ambil data : ' + _sgDtkTeks_(t.data) + ' dtk');
+  baris.push('   ▫️ Tulis db1-absen : ' + _sgDtkTeks_(t.db1) + ' dtk');
+  baris.push('   ▫️ ABSENSI-email : ' + _sgDtkTeks_(t.absensi) + ' dtk');
+  if (st.peringatan) { baris.push(garis); baris.push('⚠️ PERINGATAN : ' + st.peringatan); }
+  return baris.join('\n');
 }
 
 function handleSinkronGsheetBot(data) {
