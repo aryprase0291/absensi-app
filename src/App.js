@@ -2366,13 +2366,13 @@ const Skeleton = ({ className }) => (
 
       {/* --- POPUP APPROVAL (gaya sama dengan Informasi HRD) --- */}
       {tampilPopupApproval && (
-        <div className="fixed inset-0 z-[99] flex items-center justify-center p-4 font-sans" style={{ perspective: '1000px' }}>
+        <div className="fixed inset-0 z-[99] flex items-center justify-center px-4 font-sans" style={{ perspective: '1000px', paddingTop: 'max(1.25rem, env(safe-area-inset-top))', paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
           <div
             className="absolute inset-0 bg-slate-900/40 backdrop-blur-[6px] transition-all duration-500"
             onClick={tutupPopupApproval}
           ></div>
 
-          <div className="relative w-full max-w-md bg-white rounded-[2.5rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] border border-white/50 overflow-hidden transform transition-all animate-[softPopApproval_0.6s_cubic-bezier(0.22,1,0.36,1)_forwards]">
+          <div className="relative w-full max-w-md max-h-full flex flex-col bg-white rounded-[2rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] border border-white/50 overflow-hidden transform transition-all animate-[softPopApproval_0.6s_cubic-bezier(0.22,1,0.36,1)_forwards]">
              <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-gradient-to-br from-indigo-50 via-white to-sky-50 opacity-60 pointer-events-none z-0"></div>
              <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
 
@@ -2383,8 +2383,8 @@ const Skeleton = ({ className }) => (
                 <X className="w-5 h-5" />
              </button>
 
-             <div className="relative z-10 pt-10 px-8 text-center">
-                <div className="relative mx-auto w-20 h-20 bg-white rounded-3xl shadow-xl shadow-indigo-100 flex items-center justify-center mb-5 rotate-3 hover:rotate-0 transition-transform duration-500 border border-slate-50">
+             <div className="relative z-10 shrink-0 pt-8 px-6 text-center">
+                <div className="relative mx-auto w-20 h-20 bg-white rounded-3xl shadow-xl shadow-indigo-100 flex items-center justify-center mb-4 rotate-3 hover:rotate-0 transition-transform duration-500 border border-slate-50">
                     <UsersRound className="w-9 h-9 text-indigo-500" />
                     <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-rose-600 text-white text-[11px] font-bold flex items-center justify-center shadow-md ring-2 ring-white">
                         {approvalNotice.total}
@@ -2393,7 +2393,7 @@ const Skeleton = ({ className }) => (
 
                 <h3 className="text-2xl font-black text-slate-800 tracking-tight mb-2">Menunggu Approval</h3>
 
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-50 border border-slate-100 rounded-full mb-6">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-50 border border-slate-100 rounded-full mb-4">
                     <ClipboardList className="w-3.5 h-3.5 text-slate-400" />
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                         {approvalNotice.total} Pengajuan
@@ -2401,9 +2401,9 @@ const Skeleton = ({ className }) => (
                 </div>
              </div>
 
-             <div className="relative z-10 px-8 pb-8">
-                <div className="bg-slate-50/80 p-6 rounded-3xl border border-slate-100/80 max-h-[60vh] overflow-y-auto custom-scrollbar shadow-inner text-left">
-                    <p className="text-sm md:text-[15px] text-slate-700 font-medium leading-loose">
+             <div className="relative z-10 flex flex-col flex-1 min-h-0 px-6 pb-6">
+                <div className="bg-slate-50/80 p-5 rounded-3xl border border-slate-100/80 flex-1 min-h-0 overflow-y-auto overscroll-contain custom-scrollbar shadow-inner text-left">
+                    <p className="text-sm md:text-[15px] text-slate-700 font-medium leading-relaxed">
                         Halo <span className="font-bold text-slate-800">{approvalNotice.nama}</span>, terdapat <span className="font-bold text-indigo-600">{approvalNotice.total}</span> pengajuan yang menunggu persetujuan Anda dan bisa disetujui langsung di aplikasi.
                     </p>
                     {approvalNotice.divisiCounts && Object.keys(approvalNotice.divisiCounts).length > 0 && (
@@ -2417,7 +2417,7 @@ const Skeleton = ({ className }) => (
                     )}
                 </div>
 
-                <div className="mt-6 grid grid-cols-1 gap-2.5">
+                <div className="mt-4 shrink-0 grid grid-cols-1 gap-2.5">
                     <button
                         onClick={() => {
                           tutupPopupApproval();
@@ -2425,14 +2425,14 @@ const Skeleton = ({ className }) => (
                           setApprovalNotice(null);
                           setView('approval');
                         }}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-bold shadow-xl shadow-indigo-200 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-bold shadow-xl shadow-indigo-200 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
                     >
                         <span>Buka Approval</span>
                         <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                     </button>
                     <button
                         onClick={tutupPopupApproval}
-                        className="w-full bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-2xl font-bold shadow-xl shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
+                        className="w-full bg-slate-800 hover:bg-slate-900 text-white py-3.5 rounded-2xl font-bold shadow-xl shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
                     >
                         <span>Nanti Saja</span>
                         <Check className="w-5 h-5 text-emerald-400" />
